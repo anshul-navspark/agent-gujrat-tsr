@@ -1,0 +1,26 @@
+2025-02-18 17:55:41,263 - INFO - Starting TSR generation process
+2025-02-18 17:55:41,264 - INFO - Extracting text from PDF: test_files/13_anyror.pdf
+2025-02-18 17:55:41,398 - INFO - Generating structured content from PDF text
+2025-02-18 17:55:41,398 - INFO - Initializing Azure OpenAI client
+2025-02-18 17:55:41,484 - INFO - Sending prompt to Azure OpenAI
+2025-02-18 17:56:00,756 - INFO - HTTP Request: POST https://tsrvision2155864922.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview "HTTP/1.1 200 OK"
+2025-02-18 17:56:00,778 - INFO - Received response from Azure OpenAI
+2025-02-18 17:56:00,779 - INFO - Starting JSON cleaning and validation
+2025-02-18 17:56:00,779 - INFO - Basic JSON string cleaning completed
+2025-02-18 17:56:00,780 - INFO - Successfully parsed JSON
+2025-02-18 17:56:00,780 - INFO - Starting data validation and cleaning
+2025-02-18 17:56:00,780 - INFO - Data validation and cleaning completed
+2025-02-18 17:56:00,780 - INFO - Data validation and cleanup completed
+2025-02-18 17:56:00,780 - INFO - Successfully cleaned and validated JSON response
+2025-02-18 17:56:00,780 - INFO - Creating DOCX report
+2025-02-18 17:56:00,781 - INFO - Starting TSR document generation
+2025-02-18 17:56:00,796 - INFO - Created new Document object
+2025-02-18 17:56:00,806 - INFO - Processing Section 3: Chain of Title
+2025-02-18 17:56:00,807 - INFO - Found 2 chain of title entries
+2025-02-18 17:56:00,809 - INFO - Processing Section 4: Findings & Opinion
+2025-02-18 17:56:00,809 - INFO - Adding Findings & Opinion section
+2025-02-18 17:56:00,810 - INFO - Processing standard findings
+2025-02-18 17:56:00,825 - INFO - Findings section completed
+2025-02-18 17:56:00,826 - INFO - Adding conclusion
+2025-02-18 17:56:00,834 - INFO - Document saved successfully as 13_TSR.docx
+2025-02-18 17:56:00,834 - INFO - Report generated successfully: 13_TSR.docx

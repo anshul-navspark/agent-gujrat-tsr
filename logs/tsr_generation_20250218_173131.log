@@ -1,0 +1,54 @@
+2025-02-18 17:31:31,995 - INFO - Starting TSR generation process
+2025-02-18 17:31:31,995 - INFO - Extracting text from PDF: test_files/13_anyror.pdf
+2025-02-18 17:31:32,130 - INFO - Generating structured content from PDF text
+2025-02-18 17:31:32,130 - INFO - Initializing Azure OpenAI client
+2025-02-18 17:31:32,218 - INFO - Sending prompt to Azure OpenAI
+2025-02-18 17:31:45,326 - INFO - HTTP Request: POST https://tsrvision2155864922.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview "HTTP/1.1 200 OK"
+2025-02-18 17:31:45,342 - INFO - Received response from Azure OpenAI
+2025-02-18 17:31:45,342 - INFO - Starting JSON cleaning and validation
+2025-02-18 17:31:45,342 - INFO - Basic JSON string cleaning completed
+2025-02-18 17:31:45,342 - INFO - Successfully parsed JSON
+2025-02-18 17:31:45,342 - INFO - Starting data validation and cleaning
+2025-02-18 17:31:45,342 - INFO - Data validation and cleaning completed
+2025-02-18 17:31:45,342 - INFO - Data validation and cleanup completed
+2025-02-18 17:31:45,342 - INFO - Successfully cleaned and validated JSON response
+2025-02-18 17:31:45,343 - INFO - Creating DOCX report
+2025-02-18 17:31:45,343 - INFO - Starting TSR document generation
+2025-02-18 17:31:45,354 - INFO - Created new Document object
+2025-02-18 17:31:45,354 - INFO - Setting up document styles
+2025-02-18 17:31:45,356 - INFO - Configuring document margins
+2025-02-18 17:31:45,356 - INFO - Adding reference number and date
+2025-02-18 17:31:45,357 - INFO - Adding document title
+2025-02-18 17:31:45,357 - INFO - Adding address block
+2025-02-18 17:31:45,358 - INFO - Adding introduction
+2025-02-18 17:31:45,358 - INFO - Processing Section 1: Property Details
+2025-02-18 17:31:45,359 - INFO - Found 1 property details entries
+2025-02-18 17:31:45,362 - INFO - Processing Section 2: Documents Scrutinized
+2025-02-18 17:31:45,363 - INFO - Found 2 documents
+2025-02-18 17:31:45,365 - INFO - Processing Section 3: Chain of Title
+2025-02-18 17:31:45,368 - INFO - Found 2 chain of title entries
+2025-02-18 17:31:45,372 - INFO - Processing Section 4: Findings & Opinion
+2025-02-18 17:31:45,372 - INFO - Adding Findings & Opinion section
+2025-02-18 17:31:45,373 - INFO - Processing standard findings
+2025-02-18 17:31:45,375 - ERROR - Error during document generation: name 'WD_CELL_VERTICAL_ALIGNMENT' is not defined
+2025-02-18 17:31:45,375 - ERROR - Stack trace:
+Traceback (most recent call last):
+  File "/Users/rishabhjain/Desktop/TSR_gujart/gujrat_tsr_agent/anyrortoTSR.py", line 500, in create_docx_report
+    add_findings_section(doc, content)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/rishabhjain/Desktop/TSR_gujart/gujrat_tsr_agent/anyrortoTSR.py", line 366, in add_findings_section
+    cells[i].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'WD_CELL_VERTICAL_ALIGNMENT' is not defined
+2025-02-18 17:31:45,377 - ERROR - An error occurred: name 'WD_CELL_VERTICAL_ALIGNMENT' is not defined
+2025-02-18 17:31:45,377 - ERROR - Stack trace:
+Traceback (most recent call last):
+  File "/Users/rishabhjain/Desktop/TSR_gujart/gujrat_tsr_agent/anyrortoTSR.py", line 548, in <module>
+    output_file = create_docx_report(structured_content, "13_TSR.docx")
+  File "/Users/rishabhjain/Desktop/TSR_gujart/gujrat_tsr_agent/anyrortoTSR.py", line 500, in create_docx_report
+    add_findings_section(doc, content)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+  File "/Users/rishabhjain/Desktop/TSR_gujart/gujrat_tsr_agent/anyrortoTSR.py", line 366, in add_findings_section
+    cells[i].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+NameError: name 'WD_CELL_VERTICAL_ALIGNMENT' is not defined

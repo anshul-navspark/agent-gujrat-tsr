@@ -1,0 +1,23 @@
+2025-02-18 14:01:56,524 - INFO - Starting AnyRoR automation script
+2025-02-18 14:01:56,524 - INFO - Parameters - District: પાટણ, Taluka: પાટણ, Village: અનાવાડા - 091, Survey/Block: 0z૧
+2025-02-18 14:01:56,524 - INFO - Setting up ChromeDriver
+2025-02-18 14:01:56,525 - INFO - Initializing Chrome WebDriver
+2025-02-18 14:01:57,929 - INFO - Navigating to AnyRoR website
+2025-02-18 14:01:58,153 - INFO - Selecting Land Record Type
+2025-02-18 14:02:02,795 - ERROR - An error occurred: 'NoneType' object has no attribute 'is_displayed'
+2025-02-18 14:02:02,798 - ERROR - Traceback (most recent call last):
+  File "/Users/rishabhjain/Desktop/TSR_gujart/gujrat_tsr_agent/anyror_new.py", line 167, in main
+    land_record_dropdown = wait.until(
+        EC.visibility_of_element_located((By.ID, "ContentPlaceHolder1_drpLandRecord"))
+    )
+  File "/Users/rishabhjain/Desktop/TSR_gujart/gujrat_tsr_agent/venv/lib/python3.13/site-packages/selenium/webdriver/support/wait.py", line 137, in until
+    value = method(self._driver)
+  File "/Users/rishabhjain/Desktop/TSR_gujart/gujrat_tsr_agent/venv/lib/python3.13/site-packages/selenium/webdriver/support/expected_conditions.py", line 224, in _predicate
+    return _element_if_visible(driver.find_element(*locator))
+  File "/Users/rishabhjain/Desktop/TSR_gujart/gujrat_tsr_agent/venv/lib/python3.13/site-packages/selenium/webdriver/support/expected_conditions.py", line 280, in _element_if_visible
+    return element if element.is_displayed() == visibility else False
+                      ^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'is_displayed'
+
+2025-02-18 14:02:02,798 - INFO - Cleaning up resources
+2025-02-18 14:02:02,877 - INFO - Script execution completed

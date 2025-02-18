@@ -1,0 +1,35 @@
+2025-02-18 13:58:02,894 - INFO - Starting AnyRoR automation script
+2025-02-18 13:58:02,894 - INFO - Parameters - District: પાટણ, Taluka: પાટણ, Village: અનાવાડા - 091, Survey/Block: 0z૧
+2025-02-18 13:58:02,894 - INFO - Setting up ChromeDriver
+2025-02-18 13:58:02,894 - INFO - Initializing Chrome WebDriver
+2025-02-18 13:58:04,318 - INFO - Navigating to AnyRoR website
+2025-02-18 13:58:04,976 - INFO - Selecting Land Record Type
+2025-02-18 13:58:05,032 - INFO - Selected Land Record Type: INTEGRATED SURVEY NO DETAILS
+2025-02-18 13:58:07,037 - INFO - Selecting District: પાટણ
+2025-02-18 13:58:07,131 - INFO - District selected successfully
+2025-02-18 13:58:09,136 - INFO - Selecting Taluka: પાટણ
+2025-02-18 13:58:09,231 - INFO - Taluka selected successfully
+2025-02-18 13:58:11,236 - INFO - Selecting Village: અનાવાડા - 091
+2025-02-18 13:58:11,319 - INFO - Village selected successfully
+2025-02-18 13:58:13,321 - INFO - Selecting Survey/Block Number: 0z૧
+2025-02-18 13:58:13,460 - INFO - Survey/Block Number selected successfully
+2025-02-18 13:58:15,465 - INFO - Starting captcha recognition process
+2025-02-18 13:58:15,465 - INFO - Starting captcha recognition with 3 max attempts
+2025-02-18 13:58:17,997 - INFO - Attempt 1 of 3
+2025-02-18 13:58:17,997 - INFO - Locating captcha image element
+2025-02-18 13:58:18,004 - INFO - Extracting captcha image data
+2025-02-18 13:58:18,038 - INFO - Starting captcha image preprocessing
+2025-02-18 13:58:18,051 - INFO - Successfully preprocessed captcha image
+2025-02-18 13:58:18,051 - INFO - Performing OCR on preprocessed image
+2025-02-18 13:58:18,422 - INFO - OCR result: ['25 3 2 58']
+2025-02-18 13:58:18,422 - INFO - Extracting digits from OCR text: 25 3 2 58
+2025-02-18 13:58:18,422 - INFO - Extracted digits: 253258
+2025-02-18 13:58:18,422 - INFO - Successfully extracted 6 digits
+2025-02-18 13:58:18,422 - INFO - Successfully recognized captcha: 253258
+2025-02-18 13:58:18,668 - INFO - Entered captcha value: 253258
+2025-02-18 13:58:19,673 - INFO - Submitting the form
+2025-02-18 13:58:23,742 - INFO - No alert present, continuing with PDF generation
+2025-02-18 13:58:26,747 - INFO - Attempting to generate PDF
+2025-02-18 13:58:26,922 - INFO - PDF saved successfully to: /Users/rishabhjain/Downloads/land_record.pdf
+2025-02-18 13:58:26,922 - INFO - Cleaning up resources
+2025-02-18 13:58:27,009 - INFO - Script execution completed

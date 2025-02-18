@@ -1,0 +1,36 @@
+2025-02-18 17:23:43,042 - INFO - Starting TSR generation process
+2025-02-18 17:23:43,042 - INFO - Extracting text from PDF: test_files/13_anyror.pdf
+2025-02-18 17:23:43,175 - INFO - Generating structured content from PDF text
+2025-02-18 17:23:43,175 - INFO - Initializing Azure OpenAI client
+2025-02-18 17:23:43,260 - INFO - Sending prompt to Azure OpenAI
+2025-02-18 17:23:57,324 - INFO - HTTP Request: POST https://tsrvision2155864922.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview "HTTP/1.1 200 OK"
+2025-02-18 17:23:57,334 - INFO - Received response from Azure OpenAI
+2025-02-18 17:23:57,334 - INFO - Starting JSON cleaning and validation
+2025-02-18 17:23:57,334 - INFO - Basic JSON string cleaning completed
+2025-02-18 17:23:57,334 - INFO - Successfully parsed JSON
+2025-02-18 17:23:57,334 - INFO - Starting data validation and cleaning
+2025-02-18 17:23:57,334 - INFO - Data validation and cleaning completed
+2025-02-18 17:23:57,334 - INFO - Data validation and cleanup completed
+2025-02-18 17:23:57,334 - INFO - Successfully cleaned and validated JSON response
+2025-02-18 17:23:57,334 - INFO - Creating DOCX report
+2025-02-18 17:23:57,335 - INFO - Starting TSR document generation
+2025-02-18 17:23:57,343 - INFO - Created new Document object
+2025-02-18 17:23:57,343 - INFO - Setting up document styles
+2025-02-18 17:23:57,345 - INFO - Configuring document margins
+2025-02-18 17:23:57,345 - INFO - Adding reference number and date
+2025-02-18 17:23:57,345 - INFO - Adding document title
+2025-02-18 17:23:57,345 - INFO - Adding address block
+2025-02-18 17:23:57,345 - INFO - Adding introduction
+2025-02-18 17:23:57,345 - INFO - Processing Section 1: Property Details
+2025-02-18 17:23:57,346 - INFO - Found 1 property details entries
+2025-02-18 17:23:57,349 - INFO - Processing Section 2: Documents Scrutinized
+2025-02-18 17:23:57,350 - INFO - Found 2 documents
+2025-02-18 17:23:57,352 - INFO - Processing Section 3: Chain of Title
+2025-02-18 17:23:57,353 - INFO - Found 2 chain of title entries
+2025-02-18 17:23:57,356 - INFO - Processing Section 4: Findings & Opinion
+2025-02-18 17:23:57,357 - INFO - Found 3 findings
+2025-02-18 17:23:57,359 - INFO - Adding conclusion
+2025-02-18 17:23:57,359 - INFO - Adding signature block
+2025-02-18 17:23:57,360 - INFO - Saving document as 13_TSR.docx
+2025-02-18 17:23:57,368 - INFO - Document saved successfully
+2025-02-18 17:23:57,368 - INFO - Report generated successfully: 13_TSR.docx
