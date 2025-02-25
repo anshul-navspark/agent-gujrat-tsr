@@ -1,9 +1,0 @@
-2025-02-18 17:15:39,339 - INFO - Starting TSR generation process
-2025-02-18 17:15:39,340 - INFO - Extracting text from PDF: 13_anyror.pdf
-2025-02-18 17:15:39,340 - ERROR - Failed to extract text from PDF
-2025-02-18 17:15:39,340 - ERROR - An error occurred: Failed to extract text from PDF
-2025-02-18 17:15:39,340 - ERROR - Stack trace:
-Traceback (most recent call last):
-  File "/Users/rishabhjain/Desktop/TSR_gujart/gujrat_tsr_agent/anyrortoTSR.py", line 378, in <module>
-    raise Exception("Failed to extract text from PDF")
-Exception: Failed to extract text from PDF

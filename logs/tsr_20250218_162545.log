@@ -1,7 +1,0 @@
-2025-02-18 16:25:45,757 - ERROR - Error in main execution: 'utf-8' codec can't decode byte 0xd3 in position 10: invalid continuation byte
-2025-02-18 16:25:45,757 - ERROR - Stack trace:
-Traceback (most recent call last):
-  File "/Users/rishabhjain/Desktop/TSR_gujart/gujrat_tsr_agent/anyrortoTSR.py", line 127, in main
-    pdf_text = f.read()
-  File "<frozen codecs>", line 325, in decode
-UnicodeDecodeError: 'utf-8' codec can't decode byte 0xd3 in position 10: invalid continuation byte

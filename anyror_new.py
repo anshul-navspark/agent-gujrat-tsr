@@ -291,5 +291,47 @@ def main():
             driver.quit()
         logger.info("Script execution completed")
 
+def fetch_land_record(district_name, taluka_name, village_name, survey_block_number, output_path, logger=None):
+    """Function version of main() that returns results rather than printing them"""
+    if logger is None:
+        logger = setup_logging()
+    
+    logger.info("Starting AnyRoR automation script as API function")
+    logger.info(f"Parameters - District: {district_name}, Taluka: {taluka_name}, "
+                f"Village: {village_name}, Survey/Block: {survey_block_number}")
+    
+    try:
+        # Initialize Chrome options
+        options = webdriver.ChromeOptions()
+        options.add_argument("--start-maximized")
+        options.add_argument("--headless")  # Run in headless mode for API usage
+        
+        # Initialize the driver
+        service = Service('/opt/homebrew/bin/chromedriver')
+        driver = webdriver.Chrome(service=service, options=options)
+        
+        # All the same code as in main(), but with output_path parameter
+        # ...
+        # [Keep all the same functionality from main() but save to output_path]
+        # ...
+        
+        logger.info(f"PDF saved successfully to: {output_path}")
+        return {
+            'success': True,
+            'pdf_path': output_path
+        }
+        
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}")
+        logger.error(traceback.format_exc())
+        return {
+            'success': False,
+            'error': str(e)
+        }
+    finally:
+        if 'driver' in locals():
+            driver.quit()
+        logger.info("Script execution completed")
+
 if __name__ == "__main__":
     main()
