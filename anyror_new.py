@@ -7,12 +7,15 @@ import os
 import base64
 from PIL import Image
 import io
-import easyocr
 import re
 from selenium.webdriver.chrome.service import Service
 import logging
 from datetime import datetime
 import traceback
+from langchain_openai import AzureChatOpenAI
+from langchain_core.messages import HumanMessage
+from pydantic import SecretStr
+import tempfile
 
 def setup_logging():
     """Setup logging configuration"""
@@ -33,128 +36,84 @@ def setup_logging():
             logging.StreamHandler()  # Also print to console
         ]
     )
+    
+    # Disable verbose logging from Selenium/urllib3
+    logging.getLogger('selenium').setLevel(logging.WARNING)
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
+    
     return logging.getLogger(__name__)
 
-def preprocess_captcha_image(image_data, logger):
-    """Preprocess the captcha image to improve OCR accuracy"""
-    logger.info("Starting captcha image preprocessing")
+def recognize_captcha_with_llm(image_data, logger):
+    """Use Azure OpenAI to recognize captcha"""
+    logger.info("Using LLM to recognize captcha")
     try:
+        # Initialize the LLM
+        llm = AzureChatOpenAI(
+            model="gpt-4o",
+            api_version='2024-02-15-preview',
+            azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT', ''),
+            api_key=SecretStr(os.getenv('AZURE_OPENAI_KEY', '')),
+            temperature=0.0
+        )
+        
+        # Convert image data to base64 for sending to the LLM
         img = Image.open(io.BytesIO(image_data))
-        # Convert to grayscale
-        img = img.convert('L')
-        # Increase contrast
-        img = img.point(lambda x: 0 if x < 128 else 255, '1')
-        logger.info("Successfully preprocessed captcha image")
-        return img
+        
+        # Save to a temporary file
+        with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
+            img.save(temp_file, format='PNG')
+            temp_file_path = temp_file.name
+        
+        # Create a message with the image
+        message = HumanMessage(
+            content=[
+                {
+                    "type": "text", 
+                    "text": "This is a captcha image. Please identify the 6 digits shown in the image. Return ONLY the digits with no additional text or explanation."
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/png;base64,{base64.b64encode(open(temp_file_path, 'rb').read()).decode('utf-8')}"
+                    }
+                }
+            ]
+        )
+        
+        # Get response from LLM
+        response = llm.invoke([message])
+        
+        # Clean up the temporary file
+        os.unlink(temp_file_path)
+        
+        # Extract only digits from the response
+        captcha_text = ''.join(re.findall(r'\d', response.content))
+        
+        logger.info(f"LLM recognized captcha: {captcha_text}")
+        return captcha_text
+        
     except Exception as e:
-        logger.error(f"Error preprocessing captcha image: {str(e)}")
+        logger.error(f"Error recognizing captcha with LLM: {str(e)}")
         logger.error(traceback.format_exc())
-        raise
+        return None
 
-def extract_digits_from_text(text, logger):
-    """Extract digits from OCR text and ensure we get exactly 6 digits"""
-    logger.info(f"Extracting digits from OCR text: {text}")
-    digits = ''.join(re.findall(r'\d', text))
-    logger.info(f"Extracted digits: {digits}")
-    if len(digits) == 6:
-        logger.info("Successfully extracted 6 digits")
-        return digits
-    logger.warning(f"Failed to extract exactly 6 digits. Found {len(digits)} digits")
-    return None
-
-def recognize_captcha(driver, logger, max_attempts=3):
-    """Recognize the 6-digit captcha using EasyOCR with multiple attempts"""
-    logger.info(f"Starting captcha recognition with {max_attempts} max attempts")
-    reader = easyocr.Reader(['en'])
+def fetch_land_record(district_name, taluka_name, village_name, survey_block_number, output_path, logger=None):
+    """Function version of main() that returns results rather than printing them"""
+    if logger is None:
+        logger = setup_logging()
     
-    for attempt in range(max_attempts):
-        try:
-            logger.info(f"Attempt {attempt + 1} of {max_attempts}")
-            
-            # Find the captcha image element
-            logger.info("Locating captcha image element")
-            captcha_element = WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.ID, "ContentPlaceHolder1_i_captcha_1"))
-            )
-
-            # Get the image source
-            logger.info("Extracting captcha image data")
-            img_base64 = driver.execute_script("""
-                var canvas = document.createElement('canvas');
-                var context = canvas.getContext('2d');
-                var img = document.getElementById('ContentPlaceHolder1_i_captcha_1');
-                canvas.width = img.width;
-                canvas.height = img.height;
-                context.drawImage(img, 0, 0);
-                return canvas.toDataURL('image/png').split(',')[1];
-            """)
-
-            # Convert base64 to image
-            image_data = base64.b64decode(img_base64)
-            
-            # Preprocess the image
-            processed_img = preprocess_captcha_image(image_data, logger)
-            
-            # Save processed image to bytes
-            img_byte_arr = io.BytesIO()
-            processed_img.save(img_byte_arr, format='PNG')
-            img_byte_arr = img_byte_arr.getvalue()
-
-            # Perform OCR
-            logger.info("Performing OCR on preprocessed image")
-            result = reader.readtext(img_byte_arr, detail=0)
-            logger.info(f"OCR result: {result}")
-            
-            # Extract exactly 6 digits from the result
-            if result:
-                digits = extract_digits_from_text(''.join(result), logger)
-                if digits:
-                    logger.info(f"Successfully recognized captcha: {digits}")
-                    return digits
-
-            # If we didn't get 6 digits, refresh the captcha
-            if attempt < max_attempts - 1:
-                logger.info("Refreshing captcha for next attempt")
-                refresh_link = driver.find_element(By.ID, "ContentPlaceHolder1_lb_refresh_1")
-                refresh_link.click()
-                time.sleep(2)
-
-        except Exception as e:
-            logger.error(f"Error in captcha recognition attempt {attempt + 1}: {str(e)}")
-            logger.error(traceback.format_exc())
-            if attempt < max_attempts - 1:
-                continue
-            
-    # If all attempts fail, ask for manual input
-    logger.warning("Automated captcha recognition failed. Falling back to manual input.")
-    return input("Please enter the 6-digit captcha manually: ")
-
-def main():
-    # Setup logging
-    logger = setup_logging()
-    logger.info("Starting AnyRoR automation script")
-
-    # --- User-defined parameters ---
-    district_name = "પાટણ"         # Desired District (જીલ્લો)
-    taluka_name = "પાટણ"           # Desired Taluka (તાલુકો)
-    village_name = "અનાવાડા - 091"  # Desired Village (ગામ)
-    survey_block_number = "0z૧"     # Survey/Block Number
-
+    logger.info("Starting AnyRoR automation script as API function")
     logger.info(f"Parameters - District: {district_name}, Taluka: {taluka_name}, "
                 f"Village: {village_name}, Survey/Block: {survey_block_number}")
-
+    
     try:
-        # Setup ChromeDriver service
-        logger.info("Setting up ChromeDriver")
-        service = Service('/opt/homebrew/bin/chromedriver')
-        
         # Initialize Chrome options
         options = webdriver.ChromeOptions()
         options.add_argument("--start-maximized")
-        options.binary_location = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        options.add_argument("--headless")  # Run in headless mode for API usage
         
         # Initialize the driver
-        logger.info("Initializing Chrome WebDriver")
+        service = Service('/opt/homebrew/bin/chromedriver')
         driver = webdriver.Chrome(service=service, options=options)
         wait = WebDriverWait(driver, 30)
 
@@ -198,8 +157,13 @@ def main():
                 found_taluka = True
                 logger.info("Taluka selected successfully")
                 break
+        
         if not found_taluka:
-            logger.error(f"Taluka not found matching: {taluka_name}")
+            logger.error(f"Taluka '{taluka_name}' not found in dropdown")
+            return {
+                'success': False,
+                'error': f"Taluka '{taluka_name}' not found in dropdown"
+            }
         time.sleep(2)
 
         # --- Step 4: Set the Village ---
@@ -215,11 +179,16 @@ def main():
                 found_village = True
                 logger.info("Village selected successfully")
                 break
+        
         if not found_village:
-            logger.error(f"Village not found matching: {village_name}")
+            logger.error(f"Village '{village_name}' not found in dropdown")
+            return {
+                'success': False,
+                'error': f"Village '{village_name}' not found in dropdown"
+            }
         time.sleep(2)
 
-        # --- Step 5: Set the Survey/Block Number ---
+        # --- Step 5: Enter Survey/Block Number ---
         logger.info(f"Selecting Survey/Block Number: {survey_block_number}")
         survey_dropdown = wait.until(
             EC.element_to_be_clickable((By.ID, "ContentPlaceHolder1_ddlSurveyNo"))
@@ -238,7 +207,27 @@ def main():
 
         # --- Step 6: Handle Captcha with AI ---
         logger.info("Starting captcha recognition process")
-        captcha_value = recognize_captcha(driver, logger)
+        
+        # Capture captcha image data
+        captcha_img = wait.until(
+            EC.visibility_of_element_located((By.ID, "ContentPlaceHolder1_i_captcha_1"))
+        )
+        
+        # Convert captcha to base64
+        captcha_base64 = driver.execute_script("""
+            var canvas = document.createElement('canvas');
+            var context = canvas.getContext('2d');
+            var img = document.getElementById('ContentPlaceHolder1_i_captcha_1');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            context.drawImage(img, 0, 0);
+            return canvas.toDataURL('image/png').replace(/^data:image\/(png|jpg);base64,/, '');
+        """)
+        
+        # Decode base64 to binary data
+        captcha_data = base64.b64decode(captcha_base64)
+        
+        captcha_value = recognize_captcha_with_llm(captcha_data, logger)
         captcha_input = wait.until(
             EC.visibility_of_element_located((By.ID, "ContentPlaceHolder1_txt_captcha_1"))
         )
@@ -247,80 +236,69 @@ def main():
         logger.info(f"Entered captcha value: {captcha_value}")
         time.sleep(1)
 
-        # --- Step 7: Submit the Form ---
+        # --- Step 7: Submit the form ---
         logger.info("Submitting the form")
         submit_button = wait.until(
             EC.element_to_be_clickable((By.ID, "ContentPlaceHolder1_btnGo"))
         )
         submit_button.click()
-
-        # Handle potential alert
+        
+        # Check for alert (captcha error)
         try:
-            alert = WebDriverWait(driver, 3).until(EC.alert_is_present())
+            WebDriverWait(driver, 2).until(EC.alert_is_present())
+            alert = driver.switch_to.alert
             alert_text = alert.text
             logger.warning(f"Alert present: {alert_text}")
             alert.accept()
-            return
+            
+            if "Capcha is not matched" in alert_text:
+                # Try again with a new captcha
+                return {
+                    'success': False,
+                    'error': f"Captcha not matched: {alert_text}"
+                }
+            else:
+                # Some other error
+                return {
+                    'success': False,
+                    'error': f"Alert: {alert_text}"
+                }
         except:
-            logger.info("No alert present, continuing with PDF generation")
-
-        time.sleep(3)
+            # No alert means success
+            logger.info("Form submitted successfully")
 
         # --- Step 8: Generate PDF ---
         logger.info("Attempting to generate PDF")
+        
+        # Create output directory if it doesn't exist
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        
         try:
             result = driver.execute_cdp_cmd("Page.printToPDF", {"printBackground": True})
             pdf_data = result.get("data")
             if pdf_data:
-                pdf_file = os.path.join(os.path.expanduser("~"), "Downloads", "land_record.pdf")
-                with open(pdf_file, "wb") as f:
-                    f.write(bytearray(pdf_data, "utf-8"))
-                logger.info(f"PDF saved successfully to: {pdf_file}")
+                # Use the provided output_path instead of hardcoding the path
+                with open(output_path, "wb") as f:
+                    f.write(base64.b64decode(pdf_data))
+                logger.info(f"PDF saved successfully to: {output_path}")
+                return {
+                    'success': True,
+                    'pdf_path': output_path
+                }
             else:
                 logger.error("PDF generation did not return any data")
+                return {
+                    'success': False,
+                    'error': "PDF generation did not return any data"
+                }
         except Exception as e:
             logger.error(f"Error generating PDF: {str(e)}")
             logger.error(traceback.format_exc())
-
-    except Exception as e:
-        logger.error(f"An error occurred: {str(e)}")
-        logger.error(traceback.format_exc())
-    finally:
-        logger.info("Cleaning up resources")
-        if 'driver' in locals():
-            driver.quit()
-        logger.info("Script execution completed")
-
-def fetch_land_record(district_name, taluka_name, village_name, survey_block_number, output_path, logger=None):
-    """Function version of main() that returns results rather than printing them"""
-    if logger is None:
-        logger = setup_logging()
-    
-    logger.info("Starting AnyRoR automation script as API function")
-    logger.info(f"Parameters - District: {district_name}, Taluka: {taluka_name}, "
-                f"Village: {village_name}, Survey/Block: {survey_block_number}")
-    
-    try:
-        # Initialize Chrome options
-        options = webdriver.ChromeOptions()
-        options.add_argument("--start-maximized")
-        options.add_argument("--headless")  # Run in headless mode for API usage
-        
-        # Initialize the driver
-        service = Service('/opt/homebrew/bin/chromedriver')
-        driver = webdriver.Chrome(service=service, options=options)
-        
-        # All the same code as in main(), but with output_path parameter
-        # ...
-        # [Keep all the same functionality from main() but save to output_path]
-        # ...
-        
-        logger.info(f"PDF saved successfully to: {output_path}")
-        return {
-            'success': True,
-            'pdf_path': output_path
-        }
-        
+            return {
+                'success': False,
+                'error': f"PDF generation error: {str(e)}"
+            }
+            
     except Exception as e:
         logger.error(f"An error occurred: {str(e)}")
         logger.error(traceback.format_exc())
@@ -332,6 +310,36 @@ def fetch_land_record(district_name, taluka_name, village_name, survey_block_num
         if 'driver' in locals():
             driver.quit()
         logger.info("Script execution completed")
+
+def main():
+    # Setup logging
+    logger = setup_logging()
+    logger.info("Starting AnyRoR automation script")
+
+    # --- User-defined parameters ---
+    district_name = "પાટણ"         # Desired District (જીલ્લો)
+    taluka_name = "પાટણ"           # Desired Taluka (તાલુકો)
+    village_name = "અનાવાડા - 091"  # Desired Village (ગામ)
+    survey_block_number = "0z૧"     # Survey/Block Number
+    output_path = os.path.join(os.path.expanduser("~"), "Downloads", "land_record.pdf")
+
+    logger.info(f"Parameters - District: {district_name}, Taluka: {taluka_name}, "
+                f"Village: {village_name}, Survey/Block: {survey_block_number}")
+    
+    # Call the function version with the parameters
+    result = fetch_land_record(
+        district_name=district_name,
+        taluka_name=taluka_name,
+        village_name=village_name,
+        survey_block_number=survey_block_number,
+        output_path=output_path,
+        logger=logger
+    )
+    
+    if result['success']:
+        logger.info(f"Land record fetched successfully: {result['pdf_path']}")
+    else:
+        logger.error(f"Failed to fetch land record: {result['error']}")
 
 if __name__ == "__main__":
     main()

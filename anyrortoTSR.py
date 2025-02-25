@@ -102,8 +102,6 @@ def translate_gujarati_text(text):
         'હુકમથી': 'Order',
         'માત': 'Certified',
         'પ્રમાણિત': 'Certified',
-        'કરીમના ફનુ મુલા': 'Karimna Fanu Mula',
-        'કરીમના કનુ મુલા': 'Karimna Kanu Mula',
         'ખેતીલાયક ઉપયોગ': 'Agricultural Use',
         'જુની શરત': 'Old Tenure',
         'સરવે નંબર': 'Survey Number',

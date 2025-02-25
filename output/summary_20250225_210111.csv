@@ -1,0 +1,2 @@
+row,district,taluka,village,survey,pdf_success,pdf_path,tsr_success,tsr_path,error,processing_time
+2,Kachchh,Abdasa,Trambo,150/p1,False,,False,,Failed to fetch land record for row 2: Alert: Select Survey Number.,19.581156969070435
