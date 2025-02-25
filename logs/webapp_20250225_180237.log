@@ -1,0 +1,58 @@
+2025-02-25 18:02:37,067 - WARNING -  * Debugger is active!
+2025-02-25 18:02:37,097 - INFO -  * Debugger PIN: 101-593-820
+2025-02-25 18:02:37,189 - INFO - 127.0.0.1 - - [25/Feb/2025 18:02:37] "GET / HTTP/1.1" 200 -
+2025-02-25 18:02:37,294 - INFO - 127.0.0.1 - - [25/Feb/2025 18:02:37] "[36mGET /static/js/main.js HTTP/1.1[0m" 304 -
+2025-02-25 18:02:37,301 - INFO - 127.0.0.1 - - [25/Feb/2025 18:02:37] "[36mGET /static/css/style.css HTTP/1.1[0m" 304 -
+2025-02-25 18:02:45,311 - INFO - Starting TSR generation
+2025-02-25 18:02:45,316 - INFO - Using uploaded PDF file: uploads/Any_RoR__Anywhere__.pdf
+2025-02-25 18:02:45,316 - INFO - Extracting text from PDF: uploads/Any_RoR__Anywhere__.pdf
+2025-02-25 18:02:45,461 - INFO - Extracting entry details using Azure OpenAI
+2025-02-25 18:02:49,605 - INFO - HTTP Request: POST https://tsrvision2155864922.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview "HTTP/1.1 200 OK"
+2025-02-25 18:02:49,629 - INFO - Received response from Azure OpenAI
+2025-02-25 18:02:49,629 - ERROR - Error using Azure OpenAI to extract entries: Invalid control character at: line 6 column 36 (char 139)
+2025-02-25 18:02:49,630 - ERROR - Stack trace:
+Traceback (most recent call last):
+  File "/Users/rishabhjain/Desktop/TSR_gujart/gujrat_tsr_agent/anyrortoTSR.py", line 165, in extract_entry_details
+    entries = json.loads(json_str)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/decoder.py", line 361, in raw_decode
+    obj, end = self.scan_once(s, idx)
+               ~~~~~~~~~~~~~~^^^^^^^^
+json.decoder.JSONDecodeError: Invalid control character at: line 6 column 36 (char 139)
+2025-02-25 18:02:49,632 - WARNING - Creating generic entry due to extraction error
+2025-02-25 18:02:49,633 - INFO - Translated 1 entries
+2025-02-25 18:02:49,633 - INFO - Extracting land details using Azure OpenAI
+2025-02-25 18:02:56,377 - INFO - HTTP Request: POST https://tsrvision2155864922.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview "HTTP/1.1 200 OK"
+2025-02-25 18:02:56,379 - INFO - Received response from Azure OpenAI for land details
+2025-02-25 18:02:56,379 - ERROR - Error extracting land details: Invalid control character at: line 5 column 23 (char 105)
+2025-02-25 18:02:56,380 - ERROR - Traceback (most recent call last):
+  File "/Users/rishabhjain/Desktop/TSR_gujart/gujrat_tsr_agent/anyrortoTSR.py", line 408, in extract_land_details
+    land_details = json.loads(json_content)
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.1/Frameworks/Python.framework/Versions/3.13/lib/python3.13/json/decoder.py", line 361, in raw_decode
+    obj, end = self.scan_once(s, idx)
+               ~~~~~~~~~~~~~~^^^^^^^^
+json.decoder.JSONDecodeError: Invalid control character at: line 5 column 23 (char 105)
+
+2025-02-25 18:02:56,381 - INFO - Generating standard findings
+2025-02-25 18:02:56,381 - INFO - Generated 22 standard findings
+2025-02-25 18:02:56,381 - INFO - Creating DOCX report
+2025-02-25 18:02:56,381 - INFO - Creating TSR document
+2025-02-25 18:02:56,412 - INFO - Adding Chain of Title section
+2025-02-25 18:02:56,414 - INFO - Adding 1 chain of title entries
+2025-02-25 18:02:56,415 - INFO - Chain of title section completed
+2025-02-25 18:02:56,415 - INFO - Adding Findings section
+2025-02-25 18:02:56,430 - INFO - Findings section completed
+2025-02-25 18:02:56,442 - INFO - Document saved successfully as output/TSR_output_20250225_180245.docx
+2025-02-25 18:02:56,442 - INFO - Report generated successfully: output/TSR_output_20250225_180245.docx
+2025-02-25 18:02:56,443 - INFO - 127.0.0.1 - - [25/Feb/2025 18:02:56] "POST /generate-tsr HTTP/1.1" 200 -

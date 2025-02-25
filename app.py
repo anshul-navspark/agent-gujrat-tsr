@@ -158,5 +158,48 @@ def download_file(filename):
     file = os.path.basename(filename)
     return send_file(os.path.join(directory, file), as_attachment=True)
 
+@app.route('/debug-extraction', methods=['POST'])
+def debug_extraction():
+    logger.info("Starting debug extraction")
+    try:
+        if 'pdf_file' in request.files and request.files['pdf_file'].filename:
+            pdf_file = request.files['pdf_file']
+            filename = secure_filename(pdf_file.filename)
+            pdf_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            pdf_file.save(pdf_path)
+            
+            # Extract text from PDF
+            pdf_text = anyrortoTSR.extract_text_from_pdf(pdf_path)
+            if pdf_text is None:
+                return jsonify({
+                    'success': False,
+                    'message': 'Failed to extract text from PDF'
+                })
+            
+            # Extract land details
+            land_details = anyrortoTSR.extract_land_details(pdf_text)
+            
+            # Extract entries
+            entries = anyrortoTSR.extract_entry_details(pdf_text)
+            
+            return jsonify({
+                'success': True,
+                'land_details': land_details,
+                'entries_count': len(entries),
+                'sample_entries': entries[:3] if entries else []
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'No PDF file uploaded'
+            })
+    except Exception as e:
+        logger.error(f"Error in debug-extraction: {str(e)}")
+        logger.error(traceback.format_exc())
+        return jsonify({
+            'success': False,
+            'message': f"An error occurred: {str(e)}"
+        })
+
 if __name__ == '__main__':
     app.run(debug=True) 

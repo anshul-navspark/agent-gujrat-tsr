@@ -16,6 +16,7 @@ from datetime import datetime
 import json
 import logging
 import re
+import traceback
 
 
 def setup_logging():
@@ -355,85 +356,97 @@ def translate_entry_content(entries):
     return translated_entries
 
 def extract_land_details(pdf_text):
-    """Extract structured land details with validation"""
+    """Extract land details dynamically from the PDF using Azure OpenAI"""
     logger = logging.getLogger(__name__)
-    logger.info("Extracting structured land details")
+    logger.info("Extracting land details using Azure OpenAI")
     
-    land_details = {}
-    
-    # Extract district, taluka, village
-    district_match = re.search(r'District\s+\([^)]+\)\s*[:\s]*([^\n]+)', pdf_text)
-    if district_match:
-        land_details['district'] = translate_gujarati_text(district_match.group(1).strip())
-    else:
-        land_details['district'] = "Kachchh (Gujarat)"
-    
-    taluka_match = re.search(r'Taluka\s+\([^)]+\)\s*[:\s]*([^\n]+)', pdf_text)
-    if taluka_match:
-        land_details['taluka'] = translate_gujarati_text(taluka_match.group(1).strip())
-    else:
-        land_details['taluka'] = "Abdasa"
-    
-    village_match = re.search(r'Village\s+\([^)]+\)\s*[:\s]*([^\n]+)', pdf_text)
-    if village_match:
-        land_details['village'] = translate_gujarati_text(village_match.group(1).strip())
-    else:
-        land_details['village'] = "Valsara"
-    
-    # Extract survey number and old survey number
-    survey_match = re.search(r'Survey/\s*Block\s+Number\s+\([^)]+\)\s*[:\s]*([^\n]+)', pdf_text)
-    if survey_match:
-        survey_num = convert_gujarati_to_english_numerals(survey_match.group(1).strip())
-        land_details['survey_number'] = survey_num
-    else:
-        land_details['survey_number'] = "13"
-    
-    old_survey_match = re.search(r'Old\s+Survey/Block\s+Number\s+\([^)]+\)\s*[:\s]*([^\n]+)', pdf_text)
-    if old_survey_match:
-        old_survey_num = convert_gujarati_to_english_numerals(old_survey_match.group(1).strip())
-        land_details['old_survey_number'] = old_survey_num
-    else:
-        land_details['old_survey_number'] = "79"
-    
-    # Extract area
-    area_match = re.search(r'Total\s+Area\s+\([^)]+\)\s*[:\s]*([^\n]+)', pdf_text)
-    if area_match:
-        area_text = area_match.group(1).strip()
-        english_area = convert_gujarati_to_english_numerals(area_text)
+    try:
+        # Initialize Azure OpenAI client
+        load_dotenv()
+        llm = AzureChatOpenAI(
+            model="gpt-4o",
+            api_version='2024-02-15-preview',
+            azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT', ''),
+            api_key=SecretStr(os.getenv('AZURE_OPENAI_KEY', '')),
+            temperature=0.0
+        )
         
-        # Try to parse the area format (e.g., 2-55-98)
-        area_parts = re.match(r'(\d+)-(\d+)-(\d+)', english_area)
-        if area_parts:
-            hectares = int(area_parts.group(1))
-            ares = int(area_parts.group(2))
-            sq_m = int(area_parts.group(3))
-            total_sq_m = (hectares * 10000) + (ares * 100) + sq_m
-            land_details['total_area'] = f"{english_area} - i.e.\n({total_sq_m} Sq. Mts)"
+        # Create a prompt for the AI to extract land details
+        prompt = f"""
+        Extract the following details from this land record document text:
+        1. village_name - Name of the village
+        2. taluka_name - Name of the taluka
+        3. district_name - Name of the district
+        4. survey_number - Current survey number
+        5. old_survey_number - Old survey number (if available)
+        6. total_area - Total area of the land (include both the numerical value and units)
+        7. nature_of_land - Nature of the land (e.g., Agricultural, Old Tenure, etc.)
+        8. owner - Name of the land owner
+
+        Format your response as a JSON object with these exact keys.
+        If any detail is not found, use "Not Available" as the value.
+
+        Here's the document text:
+        {pdf_text[:15000]}  # Using first 15000 chars to stay within token limits
+        """
+        
+        # Get response from Azure OpenAI
+        response = llm.invoke(prompt)
+        logger.info("Received response from Azure OpenAI for land details")
+        
+        # Parse the JSON response
+        json_match = re.search(r'```json\n(.*?)\n```', response.content, re.DOTALL)
+        if json_match:
+            json_content = json_match.group(1)
         else:
-            land_details['total_area'] = english_area
-    else:
-        land_details['total_area'] = "2-55-98 - i.e.\n(25598 Sq. Mts)"
-    
-    # Extract nature of land
-    land_use_match = re.search(r'Land\s+Use\s+\([^)]+\)\s*[:\s]*([^\n]+)', pdf_text)
-    if land_use_match:
-        land_use = land_use_match.group(1).strip()
-        if 'ખેતીલાયક' in land_use:
-            land_details['nature_of_land'] = "Old Tenure Agricultural"
+            json_content = response.content
+            
+        # Clean up the JSON content
+        json_content = json_content.strip()
+        if json_content.startswith('{') and json_content.endswith('}'):
+            # Valid JSON object
+            land_details = json.loads(json_content)
         else:
-            land_details['nature_of_land'] = translate_gujarati_text(land_use)
-    else:
-        land_details['nature_of_land'] = "Old Tenure Agricultural"
-    
-    # Extract owner information
-    owner_match = re.search(r'કરીમના\s+ફનુ\s+મુલા', pdf_text)
-    if owner_match:
-        land_details['owner'] = "Karimna Fanu Mula"
-    else:
-        land_details['owner'] = "Karimna Fanu Mula"
-    
-    logger.info(f"Extracted land details: {json.dumps(land_details, indent=2)}")
-    return land_details
+            # Try to extract JSON object from the text
+            json_match = re.search(r'({.*})', json_content, re.DOTALL)
+            if json_match:
+                land_details = json.loads(json_match.group(1))
+            else:
+                logger.warning("Could not extract JSON from the response, using fallback values")
+                land_details = {
+                    'village_name': 'Not Available',
+                    'taluka_name': 'Not Available',
+                    'district_name': 'Not Available',
+                    'survey_number': 'Not Available',
+                    'old_survey_number': 'Not Available',
+                    'total_area': 'Not Available',
+                    'nature_of_land': 'Old Tenure Agricultural',
+                    'owner': 'Not Available'
+                }
+        
+        # Convert Gujarati numerals in all text fields
+        for key, value in land_details.items():
+            if isinstance(value, str):
+                land_details[key] = convert_gujarati_to_english_numerals(value)
+                land_details[key] = translate_gujarati_text(land_details[key])
+        
+        logger.info(f"Land details extracted: {json.dumps(land_details, indent=2)}")
+        return land_details
+        
+    except Exception as e:
+        logger.error(f"Error extracting land details: {str(e)}")
+        logger.error(traceback.format_exc())
+        # Return default values
+        return {
+            'village_name': 'Not Available',
+            'taluka_name': 'Not Available',
+            'district_name': 'Not Available',
+            'survey_number': 'Not Available',
+            'old_survey_number': 'Not Available',
+            'total_area': 'Not Available',
+            'nature_of_land': 'Old Tenure Agricultural',
+            'owner': 'Not Available'
+        }
 
 def generate_findings_table(pdf_text):
     """Generate standard findings for the TSR report"""
