@@ -135,20 +135,24 @@ def extract_entry_details(pdf_text):
         
         # Create a prompt for the AI to extract entry details
         prompt = f"""
-        Extract all entry details from the following land record document text. 
-        For each entry, provide:
-        1. Entry number
-        2. Date (if available)
-        3. Type (e.g., Promulgation, Order, etc.)
-        4. Description of what the entry is about
-        
-        Format your response as a JSON array of objects with the keys: entry_number, date, type, description.
-        
+        Extract the following details from this land record document text, TRANSLATING ALL GUJARATI TEXT TO ENGLISH:
+        1. village_name - Name of the village in English
+        2. taluka_name - Name of the taluka in English
+        3. district_name - Name of the district in English
+        4. survey_number - Current survey number. If it contains "પૈકી", translate it as "Part" (e.g., "150/P1")
+        5. old_survey_number - Old survey number (if available)
+        6. total_area - Total area of the land in English
+        7. nature_of_land - Nature of the land in English
+        8. owner - Name of the land owner, completely transliterated to English
+
+        IT IS CRITICAL THAT YOUR RESPONSE CONTAIN NO GUJARATI CHARACTERS AT ALL.
+        All text must be fully translated or transliterated to English.
+    
+        Format your response as a JSON object with these exact keys.
+        If any detail is not found, use "Not Available" as the value.
+
         Here's the document text:
-        {pdf_text[:10000]}  # Using first 10000 chars to stay within token limits
-        
-        If you can't find specific entries, look for sections labeled "Entry Details" or similar.
-        Extract any entries you can find in the document.
+        {pdf_text[:2000]}
         """
         
         # Get response from Azure OpenAI
@@ -189,17 +193,17 @@ def extract_entry_details(pdf_text):
             alt_prompt = f"""
             I need to extract all entry records from this land document. 
             Look for any numbered entries, records, or notes in the document.
-            
+            Enrties should be in a table under the headings નાધ નંબરનાધનીતારીખફેરફારનાેપ્રકારનાધની,તનાધની વગત ફેરફારનેસંબંધત,સરવે નંબરતપાસણી કરનાર,અધકારીનાે શેરાે
+
             For each entry you find, extract:
             1. The entry/record number
             2. Any date associated with it
             3. The type of entry (like Order, Promulgation, etc.)
-            4. A detailed description of what the entry is about
+            4. A detailed description of what the entry is about translated to English 
             
             Format your response as a JSON array of objects with the keys: entry_number, date, type, description.
-            
-            Here's the document text:
-            {pdf_text[10000:20000]}  # Using next 10000 chars to look at different part of document
+            Here is the document text:
+            {pdf_text[2000:20000]} 
             """
             
             alt_response = llm.invoke(alt_prompt)
@@ -371,7 +375,7 @@ def extract_land_details(pdf_text):
         
         # Create a prompt for the AI to extract land details
         prompt = f"""
-        Extract the following details from this land record document text:
+        Extract the following details from this land record document text, TRANSLATING ALL GUJARATI TEXT TO ENGLISH:
         1. village_name - Name of the village
         2. taluka_name - Name of the taluka
         3. district_name - Name of the district
@@ -880,25 +884,31 @@ def generate_tsr_from_pdf(pdf_path, output_path, logger=None):
             }
         
         # Extract entry details from PDF dynamically
+        logger.info("Extracting entry details from PDF")
         entries = extract_entry_details(pdf_text)
         
         # Translate Gujarati content to English
+        logger.info("Translating Gujarati content to English")
         entries = translate_entry_content(entries)
         
         # Extract land details
+        logger.info("Extracting land details")
         land_details = extract_land_details(pdf_text)
         
         # Generate findings
+        logger.info("Generating findings")
         findings = generate_findings_table(pdf_text)
         
         # Create DOCX report
-        logger.info("Creating DOCX report")
+        logger.info(f"Creating DOCX report: {output_path}")
         output_file = create_tsr_document(entries, land_details, findings, output_path)
         logger.info(f"Report generated successfully: {output_file}")
         
         return {
             'success': True,
-            'tsr_path': output_file
+            'tsr_path': output_file,
+            'land_details': land_details,
+            'entries_count': len(entries)
         }
         
     except Exception as e:
@@ -908,3 +918,30 @@ def generate_tsr_from_pdf(pdf_path, output_path, logger=None):
             'success': False,
             'error': str(e)
         }
+
+def main():
+    """Main function to run the script from command line"""
+    import argparse
+    
+    # Set up argument parser
+    parser = argparse.ArgumentParser(description='Generate TSR from PDF')
+    parser.add_argument('pdf_path', help='Path to the PDF file')
+    parser.add_argument('--output', '-o', default='tsr_output.docx', help='Output path for the TSR document')
+    args = parser.parse_args()
+    
+    # Set up logging
+    logger = setup_logging()
+    
+    # Generate TSR
+    logger.info(f"Starting TSR generation for {args.pdf_path}")
+    result = generate_tsr_from_pdf(args.pdf_path, args.output, logger)
+    
+    if result['success']:
+        logger.info(f"TSR generated successfully: {result['tsr_path']}")
+        print(f"TSR generated successfully: {result['tsr_path']}")
+    else:
+        logger.error(f"Failed to generate TSR: {result['error']}")
+        print(f"Failed to generate TSR: {result['error']}")
+
+if __name__ == "__main__":
+    main()

@@ -70,6 +70,14 @@ def convert_survey_number(survey_number):
     - Numbers with paiki paiki (પૈકી પૈકી) are formatted as "number/પૈ/પૈ" (e.g., "144/પૈ/પૈ")
     - Numbers with 'q' or 'ર' are formatted as "number/ર" (e.g., "154/ર")
     - Numbers with 'e' or 'ૈ' are formatted as "number/ૈ" (e.g., "161/ૈ")
+    - Numbers with 'p1' are formatted as "number/p૧" (with Gujarati numeral ૧)
+    - Numbers with 'p2' are formatted as "number/p૨" (with Gujarati numeral ૨)
+    - Numbers with 'p3' are formatted as "number/p૩" (with Gujarati numeral ૩)
+    - Numbers with '/1' are formatted as "/૧" (with Gujarati numeral ૧)
+    - Numbers with '/2' are formatted as "/૨" (with Gujarati numeral ૨)
+    - Numbers with '/3' are formatted as "/૩" (with Gujarati numeral ૩)
+    - Complex patterns like 'p1/p1' are converted to 'p૧/p૧'
+    - Special patterns like 'paq', 'pae', 'pac', 'pu', 'pa3e' are handled
     
     Args:
         survey_number (str): The original survey number
@@ -93,31 +101,91 @@ def convert_survey_number(survey_number):
     
     base_number = base_match.group(1)
     
-    # Check for different patterns and convert accordingly
+    # Dictionary to map Latin digits to Gujarati digits
+    digit_map = {
+        '0': '૦',
+        '1': '૧',
+        '2': '૨',
+        '3': '૩',
+        '4': '૪',
+        '5': '૫',
+        '6': '૬',
+        '7': '૭',
+        '8': '૮',
+        '9': '૯'
+    }
+    
+    # Function to convert a digit to Gujarati
+    def to_gujarati_digit(match):
+        digit = match.group(1)
+        return digit_map.get(digit, digit)
+    
+    # Extract the suffix (everything after the base number)
+    suffix = survey_number[len(base_number):]
+    suffix_lower = suffix.lower()
+    
+    # Handle special complex patterns from the image
+    if '/paq' in suffix_lower:
+        return f"{base_number}/પા૧"
+    elif '/pae' in suffix_lower:
+        return f"{base_number}/પાૈ"
+    elif '/pac' in suffix_lower:
+        return f"{base_number}/પાચ"
+    elif '/pu' in suffix_lower:
+        return f"{base_number}/પુ"
+    elif '/pa3e' in suffix_lower:
+        return f"{base_number}/પા૩ૈ"
+    elif '/pax' in suffix_lower:
+        return f"{base_number}/પાક્ષ"
+    elif '/pax/pa' in suffix_lower:
+        return f"{base_number}/પાક્ષ/પા"
+    elif '/pae' in suffix_lower:
+        return f"{base_number}/પાૈ"
+    elif '/pa30' in suffix_lower:
+        return f"{base_number}/પા૩૦"
+    
+    # Handle complex patterns with multiple components
+    if '/p1/p1' in suffix_lower:
+        return f"{base_number}/p૧/p૧"
+    elif '/p2/p2' in suffix_lower:
+        return f"{base_number}/p૨/p૨"
+    elif '/p3/p3' in suffix_lower:
+        return f"{base_number}/p૩/p૩"
+    
+    # Handle p1, p2, p3 patterns
+    if '/p1' in suffix_lower:
+        suffix = re.sub(r'/p1', r'/p૧', suffix.lower())
+    elif '/p2' in suffix_lower:
+        suffix = re.sub(r'/p2', r'/p૨', suffix.lower())
+    elif '/p3' in suffix_lower:
+        suffix = re.sub(r'/p3', r'/p૩', suffix.lower())
+    
+    # Handle direct digit patterns (convert /1 to /૧, etc.)
+    suffix = re.sub(r'/(\d)', lambda m: f"/{digit_map[m.group(1)]}", suffix)
     
     # Check for paiki paiki notation (abbreviated as "pa/pa" in English)
-    if re.search(r'/pa/pa', survey_number.lower()) or re.search(r'/પૈ/પૈ', survey_number):
+    if re.search(r'/pa/pa', suffix.lower()) or re.search(r'/પૈ/પૈ', suffix):
         return f"{base_number}/પૈ/પૈ"
     
     # Check for paiki notation (abbreviated as "pa" in English)
-    if re.search(r'/pa\b', survey_number.lower()) or re.search(r'/પૈ\b', survey_number):
+    if re.search(r'/pa\b', suffix.lower()) or re.search(r'/પૈ\b', suffix):
         return f"{base_number}/પૈ"
     
     # Check for pe notation (alternative spelling of paiki)
-    if re.search(r'/pe\b', survey_number.lower()) or re.search(r'/પૈ\b', survey_number):
+    if re.search(r'/pe\b', suffix.lower()) or re.search(r'/પૈ\b', suffix):
         return f"{base_number}/પૈ"
     
     # Check for 'q' or 'ર' notation (Gujarati letter 'ra')
-    if re.search(r'/q\b', survey_number.lower()) or re.search(r'/ર\b', survey_number):
+    if re.search(r'/q\b', suffix.lower()) or re.search(r'/ર\b', suffix):
         return f"{base_number}/ર"
     
     # Check for 'e' or 'ૈ' notation (Gujarati vowel sign)
-    if re.search(r'/e\b', survey_number.lower()) or re.search(r'/ૈ\b', survey_number):
+    if re.search(r'/e\b', suffix.lower()) or re.search(r'/ૈ\b', suffix):
         return f"{base_number}/ૈ"
     
-    # Check for 'p3' or 'પ૩' notation (Gujarati letter 'pa' with number 3)
-    if re.search(r'/p3\b', survey_number.lower()) or re.search(r'/પ૩\b', survey_number):
-        return f"{base_number}/પ૩"
+    # If we've modified the suffix but none of the specific patterns matched
+    if suffix != survey_number[len(base_number):]:
+        return f"{base_number}{suffix}"
     
     # If no pattern matches, return as is
     return survey_number
@@ -400,71 +468,211 @@ def process_bhuj_solar_data(args):
 
 def get_alternative_survey_formats(survey):
     """
-    Generate alternative survey number formats to try if the primary format fails.
+    Generate alternative formats for a survey number to increase the chances of finding a match.
     
     Args:
         survey (str): The original survey number
         
     Returns:
-        list: List of alternative survey number formats to try
+        list: A list of alternative formats for the survey number
     """
-    alternative_formats = []
+    # Convert to string if not already
+    survey = str(survey).strip()
     
-    # Extract base number
+    # Start with the original survey as the first alternative
+    alternative_formats = [survey]
+    
+    # Extract the base number (everything before the first slash or non-digit)
     base_match = re.match(r'^(\d+)', survey)
     if not base_match:
+        # If no base number found, return just the original
         return alternative_formats
     
     base_number = base_match.group(1)
     
-    # Always try the base number by itself
-    alternative_formats.append(base_number)
+    # Extract the suffix (everything after the base number)
+    suffix = survey[len(base_number):]
+    suffix_lower = suffix.lower()
     
-    # Add format-specific alternatives
-    if '/pa/pa' in survey.lower() or '/પૈ/પૈ' in survey:
+    # Dictionary to map Latin digits to Gujarati digits
+    digit_map = {
+        '0': '૦',
+        '1': '૧',
+        '2': '૨',
+        '3': '૩',
+        '4': '૪',
+        '5': '૫',
+        '6': '૬',
+        '7': '૭',
+        '8': '૮',
+        '9': '૯'
+    }
+    
+    # Handle special complex patterns
+    if '/paq' in suffix_lower:
         alternative_formats.extend([
-            f"{base_number}/પૈ/પૈ",
-            f"{base_number}/પૈકી/પૈકી",
-            f"{base_number}/પૈ",
-            f"{base_number}/પૈકી"
-        ])
-    elif '/pa' in survey.lower() or '/પૈ' in survey:
-        alternative_formats.extend([
+            f"{base_number}/પા૧",
             f"{base_number}/પૈ",
             f"{base_number}/પૈકી",
             f"{base_number}/પૈ/પૈ"
         ])
-    elif '/pe' in survey.lower():
+    elif '/pae' in suffix_lower:
         alternative_formats.extend([
+            f"{base_number}/પાૈ",
+            f"{base_number}/પૈ",
+            f"{base_number}/પૈકી",
+            f"{base_number}/પૈ/પૈ"
+        ])
+    elif '/pac' in suffix_lower:
+        alternative_formats.extend([
+            f"{base_number}/પાચ",
+            f"{base_number}/પૈ",
+            f"{base_number}/પૈકી",
+            f"{base_number}/પૈ/પૈ"
+        ])
+    elif '/pu' in suffix_lower:
+        alternative_formats.extend([
+            f"{base_number}/પુ",
+            f"{base_number}/પૈ",
+            f"{base_number}/ર",
+            f"{base_number}/ૈ",
+            f"{base_number}/પૈકી",
+            f"{base_number}/પૈ/પૈ",
+            f"{base_number}/pa",
+            f"{base_number}/pe",
+            f"{base_number}/q",
+            f"{base_number}/e"
+        ])
+    elif '/pa3e' in suffix_lower:
+        alternative_formats.extend([
+            f"{base_number}/પા૩ૈ",
+            f"{base_number}/પૈ",
+            f"{base_number}/પૈકી",
+            f"{base_number}/પૈ/પૈ"
+        ])
+    elif '/pax' in suffix_lower:
+        alternative_formats.extend([
+            f"{base_number}/પાક્ષ",
+            f"{base_number}/પૈ",
+            f"{base_number}/પૈકી",
+            f"{base_number}/પૈ/પૈ"
+        ])
+    elif '/pax/pa' in suffix_lower:
+        alternative_formats.extend([
+            f"{base_number}/પાક્ષ/પા",
+            f"{base_number}/પૈ/પૈ",
+            f"{base_number}/પૈકી/પૈકી"
+        ])
+    elif '/pa30' in suffix_lower:
+        alternative_formats.extend([
+            f"{base_number}/પા૩૦",
             f"{base_number}/પૈ",
             f"{base_number}/પૈકી"
         ])
-    elif '/q' in survey.lower() or '/ર' in survey:
+    # Handle complex patterns with multiple components
+    elif '/p1/p1' in suffix_lower:
         alternative_formats.extend([
-            f"{base_number}/ર",
-            f"{base_number}/ર્"
+            f"{base_number}/p૧/p૧",
+            f"{base_number}/પ૧/પ૧",
+            f"{base_number}/p1/p1",
+            f"{base_number}/પૈ/પૈ",
+            f"{base_number}/પૈકી/પૈકી"
         ])
-    elif '/e' in survey.lower() or '/ૈ' in survey:
+    elif '/p2/p2' in suffix_lower:
         alternative_formats.extend([
-            f"{base_number}/ૈ",
-            f"{base_number}/પૈ"
+            f"{base_number}/p૨/p૨",
+            f"{base_number}/પ૨/પ૨",
+            f"{base_number}/p2/p2",
+            f"{base_number}/પૈ/પૈ",
+            f"{base_number}/પૈકી/પૈકી"
         ])
-    elif '/p3' in survey.lower() or '/પ૩' in survey:
+    elif '/p3/p3' in suffix_lower:
         alternative_formats.extend([
+            f"{base_number}/p૩/p૩",
+            f"{base_number}/પ૩/પ૩",
+            f"{base_number}/p3/p3",
+            f"{base_number}/પૈ/પૈ",
+            f"{base_number}/પૈકી/પૈકી"
+        ])
+    # Handle p1, p2, p3 patterns
+    elif '/p1' in suffix_lower:
+        alternative_formats.extend([
+            f"{base_number}/p૧",
+            f"{base_number}/પ૧",
+            f"{base_number}/p1",
+            f"{base_number}/૧"
+        ])
+    elif '/p2' in suffix_lower:
+        alternative_formats.extend([
+            f"{base_number}/p૨",
+            f"{base_number}/પ૨",
+            f"{base_number}/p2",
+            f"{base_number}/૨"
+        ])
+    elif '/p3' in suffix_lower:
+        alternative_formats.extend([
+            f"{base_number}/p૩",
             f"{base_number}/પ૩",
-            f"{base_number}/પ3"
+            f"{base_number}/p3",
+            f"{base_number}/૩"
         ])
-    else:
-        # If no specific pattern, try common formats
+    # Handle direct digit patterns
+    elif re.search(r'/\d', suffix):
+        digit = re.search(r'/(\d)', suffix).group(1)
+        gujarati_digit = digit_map.get(digit, digit)
+        alternative_formats.extend([
+            f"{base_number}/{gujarati_digit}",
+            f"{base_number}/p{gujarati_digit}",
+            f"{base_number}/{digit}"
+        ])
+    # Check for paiki paiki notation (abbreviated as "pa/pa" in English)
+    elif re.search(r'/pa/pa', suffix_lower) or re.search(r'/પૈ/પૈ', suffix):
+        alternative_formats.extend([
+            f"{base_number}/પૈ/પૈ",
+            f"{base_number}/પૈકી/પૈકી",
+            f"{base_number}/pa/pa",
+            f"{base_number}/pe/pe"
+        ])
+    # Check for paiki notation (abbreviated as "pa" in English)
+    elif re.search(r'/pa\b', suffix_lower) or re.search(r'/પૈ\b', suffix):
         alternative_formats.extend([
             f"{base_number}/પૈ",
+            f"{base_number}/પૈકી",
+            f"{base_number}/pa",
+            f"{base_number}/pe"
+        ])
+    # Check for pe notation (alternative spelling of paiki)
+    elif re.search(r'/pe\b', suffix_lower) or re.search(r'/પૈ\b', suffix):
+        alternative_formats.extend([
+            f"{base_number}/પૈ",
+            f"{base_number}/પૈકી",
+            f"{base_number}/pa",
+            f"{base_number}/pe"
+        ])
+    # Check for 'q' or 'ર' notation (Gujarati letter 'ra')
+    elif re.search(r'/q\b', suffix_lower) or re.search(r'/ર\b', suffix):
+        alternative_formats.extend([
             f"{base_number}/ર",
-            f"{base_number}/ૈ"
+            f"{base_number}/ર્",
+            f"{base_number}/q"
+        ])
+    # Check for 'e' or 'ૈ' notation (Gujarati vowel sign)
+    elif re.search(r'/e\b', suffix_lower) or re.search(r'/ૈ\b', suffix):
+        alternative_formats.extend([
+            f"{base_number}/ૈ",
+            f"{base_number}/પૈ",
+            f"{base_number}/e"
         ])
     
     # Remove duplicates while preserving order
     seen = set()
-    return [x for x in alternative_formats if not (x in seen or seen.add(x))]
+    unique_alternatives = []
+    for alt in alternative_formats:
+        if alt not in seen:
+            seen.add(alt)
+            unique_alternatives.append(alt)
+    
+    return unique_alternatives
 
 def main():
     """Main entry point"""

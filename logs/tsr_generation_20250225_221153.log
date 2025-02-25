@@ -1,0 +1,41 @@
+2025-02-25 22:11:53,338 - INFO - Extracting text from PDF: output/pdfs/land_record_row2_survey150_p1.pdf
+2025-02-25 22:11:53,545 - INFO - Extracting entry details from PDF
+2025-02-25 22:11:53,545 - INFO - Extracting entry details using Azure OpenAI
+2025-02-25 22:11:56,502 - INFO - HTTP Request: POST https://tsrvision2155864922.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview "HTTP/1.1 200 OK"
+2025-02-25 22:11:56,514 - INFO - Received response from Azure OpenAI
+2025-02-25 22:11:56,514 - WARNING - JSON not found in response, attempting to parse structured data
+2025-02-25 22:11:56,514 - WARNING - No entries found with first prompt, trying alternative approach
+2025-02-25 22:12:03,671 - INFO - HTTP Request: POST https://tsrvision2155864922.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview "HTTP/1.1 200 OK"
+2025-02-25 22:12:03,672 - INFO - Extracted 3 entries using Azure OpenAI
+2025-02-25 22:12:03,672 - INFO - Translating Gujarati content to English
+2025-02-25 22:12:03,672 - INFO - Translated 3 entries
+2025-02-25 22:12:03,672 - INFO - Extracting land details
+2025-02-25 22:12:03,672 - INFO - Extracting land details using Azure OpenAI
+2025-02-25 22:12:08,159 - INFO - HTTP Request: POST https://tsrvision2155864922.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview "HTTP/1.1 200 OK"
+2025-02-25 22:12:08,160 - INFO - Received response from Azure OpenAI for land details
+2025-02-25 22:12:08,160 - INFO - Land details extracted: {
+  "village_name": "Trambo",
+  "taluka_name": "Abdasa",
+  "district_name": "Kutch",
+  "survey_number": "150/Part 1",
+  "old_survey_number": "Not Available",
+  "total_area": "1-37-25 Hectares-Ares-Square Meters",
+  "nature_of_land": "Old Tenure (Ju. Sh.)",
+  "owner": [
+    "Shantaben Narayan alias Narayan Bhanushali",
+    "Vasant Narayan Bhanushali",
+    "Yogesh Narayan Bhanushali"
+  ]
+}
+2025-02-25 22:12:08,161 - INFO - Generating findings
+2025-02-25 22:12:08,161 - INFO - Generating standard findings
+2025-02-25 22:12:08,161 - INFO - Generated 22 standard findings
+2025-02-25 22:12:08,161 - INFO - Creating DOCX report: output/test_tsr_output.docx
+2025-02-25 22:12:08,161 - INFO - Creating TSR document
+2025-02-25 22:12:08,182 - INFO - Adding Chain of Title section
+2025-02-25 22:12:08,184 - INFO - Adding 3 chain of title entries
+2025-02-25 22:12:08,187 - INFO - Chain of title section completed
+2025-02-25 22:12:08,187 - INFO - Adding Findings section
+2025-02-25 22:12:08,199 - INFO - Findings section completed
+2025-02-25 22:12:08,212 - INFO - Document saved successfully as output/test_tsr_output.docx
+2025-02-25 22:12:08,212 - INFO - Report generated successfully: output/test_tsr_output.docx
