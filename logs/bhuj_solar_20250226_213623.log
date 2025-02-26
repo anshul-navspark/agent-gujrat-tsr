@@ -1,0 +1,120 @@
+2025-02-26 21:36:23,324 - INFO - Starting Bhuj Solar Land Survey processing
+2025-02-26 21:36:23,326 - INFO - Created directory: output\pdfs
+2025-02-26 21:36:23,327 - INFO - Created directory: output\tsr
+2025-02-26 21:36:23,327 - INFO - Reading Excel file: Bhuj Solar Land Survey List Feb 24 2025.xlsx
+2025-02-26 21:36:23,769 - INFO - Excel columns: ['Block', 'Sr. No.', 'Village', 'Tehsil', 'District', 'Survey Nos', 'Unnamed: 6', 'Area', 'Unnamed: 8', 'Farmers Name', 'Title Clearance Date', 'ATL Date', 'Lease Deed', 'Unnamed: 13', 'NA', 'Unnamed: 15', 'Unnamed: 16', 'Unnamed: 17', 'Unnamed: 18', 'Unnamed: 19', 'Measurement', 'Unnamed: 21']
+2025-02-26 21:36:23,769 - INFO - Successfully read data with 57 records
+2025-02-26 21:36:23,770 - INFO - Starting to process 5 rows from the Bhuj Solar Land Survey List
+2025-02-26 21:36:23,773 - INFO - Processing in parallel with 4 workers
+2025-02-26 21:36:23,796 - INFO - Fetching land record for row 5
+2025-02-26 21:36:23,804 - INFO - Fetching land record for row 6
+2025-02-26 21:36:23,814 - INFO - Fetching land record for row 7
+2025-02-26 21:36:23,815 - INFO - Starting AnyRoR automation script as API function
+2025-02-26 21:36:23,816 - INFO - Fetching land record for row 8
+2025-02-26 21:36:23,819 - INFO - Starting AnyRoR automation script as API function
+2025-02-26 21:36:23,820 - INFO - Starting AnyRoR automation script as API function
+2025-02-26 21:36:23,820 - INFO - Starting AnyRoR automation script as API function
+2025-02-26 21:36:23,823 - INFO - ====== WebDriver manager ======
+2025-02-26 21:36:23,832 - INFO - ====== WebDriver manager ======
+2025-02-26 21:36:23,846 - INFO - ====== WebDriver manager ======
+2025-02-26 21:36:23,837 - INFO - ====== WebDriver manager ======
+2025-02-26 21:36:31,230 - INFO - Get LATEST chromedriver version for google-chrome
+2025-02-26 21:36:31,250 - INFO - Get LATEST chromedriver version for google-chrome
+2025-02-26 21:36:31,423 - INFO - Get LATEST chromedriver version for google-chrome
+2025-02-26 21:36:31,431 - INFO - Get LATEST chromedriver version for google-chrome
+2025-02-26 21:36:31,458 - INFO - Get LATEST chromedriver version for google-chrome
+2025-02-26 21:36:31,536 - INFO - Driver [C:\Users\yoris\.wdm\drivers\chromedriver\win64\133.0.6943.141\chromedriver-win32/chromedriver.exe] found in cache
+2025-02-26 21:36:31,555 - INFO - Driver [C:\Users\yoris\.wdm\drivers\chromedriver\win64\133.0.6943.141\chromedriver-win32/chromedriver.exe] found in cache
+2025-02-26 21:36:31,582 - INFO - Get LATEST chromedriver version for google-chrome
+2025-02-26 21:36:31,687 - INFO - Driver [C:\Users\yoris\.wdm\drivers\chromedriver\win64\133.0.6943.141\chromedriver-win32/chromedriver.exe] found in cache
+2025-02-26 21:36:35,166 - INFO - Navigating to AnyRoR website
+2025-02-26 21:36:35,226 - INFO - Navigating to AnyRoR website
+2025-02-26 21:36:35,369 - INFO - Navigating to AnyRoR website
+2025-02-26 21:36:35,435 - INFO - Get LATEST chromedriver version for google-chrome
+2025-02-26 21:36:35,536 - INFO - Get LATEST chromedriver version for google-chrome
+2025-02-26 21:36:35,636 - INFO - Driver [C:\Users\yoris\.wdm\drivers\chromedriver\win64\133.0.6943.141\chromedriver-win32/chromedriver.exe] found in cache
+2025-02-26 21:36:36,709 - INFO - Selecting Land Record Type
+2025-02-26 21:36:37,022 - INFO - Selecting Land Record Type
+2025-02-26 21:36:37,048 - INFO - Selecting Land Record Type
+2025-02-26 21:36:39,503 - INFO - Selected Land Record Type: INTEGRATED SURVEY NO DETAILS
+2025-02-26 21:36:39,532 - INFO - Selected Land Record Type: INTEGRATED SURVEY NO DETAILS
+2025-02-26 21:36:39,731 - INFO - Selected Land Record Type: INTEGRATED SURVEY NO DETAILS
+2025-02-26 21:36:40,353 - INFO - Navigating to AnyRoR website
+2025-02-26 21:36:41,470 - INFO - Selecting Land Record Type
+2025-02-26 21:36:42,679 - INFO - Selected Land Record Type: INTEGRATED SURVEY NO DETAILS
+2025-02-26 21:36:43,334 - INFO - District selected successfully
+2025-02-26 21:36:43,411 - INFO - District selected successfully
+2025-02-26 21:36:44,113 - INFO - District selected successfully
+2025-02-26 21:36:45,195 - INFO - District selected successfully
+2025-02-26 21:36:45,842 - INFO - Taluka selected successfully
+2025-02-26 21:36:46,217 - INFO - Taluka selected successfully
+2025-02-26 21:36:46,898 - INFO - Taluka selected successfully
+2025-02-26 21:36:47,787 - INFO - Taluka selected successfully
+2025-02-26 21:36:48,992 - INFO - Village selected successfully
+2025-02-26 21:36:49,417 - INFO - Village selected successfully
+2025-02-26 21:36:50,669 - INFO - Village selected successfully
+2025-02-26 21:36:50,993 - INFO - Selecting Survey/Block Number: 152
+2025-02-26 21:36:52,385 - INFO - Village selected successfully
+2025-02-26 21:36:52,676 - INFO - Selecting Survey/Block Number: 151
+2025-02-26 21:36:58,766 - INFO - Survey/Block Number selected successfully
+2025-02-26 21:36:59,276 - INFO - Survey/Block Number selected successfully
+2025-02-26 21:36:59,614 - INFO - Survey/Block Number selected successfully
+2025-02-26 21:36:59,844 - INFO - Survey/Block Number selected successfully
+2025-02-26 21:37:00,767 - INFO - Starting captcha recognition process
+2025-02-26 21:37:00,876 - INFO - Using LLM to recognize captcha
+2025-02-26 21:37:01,277 - INFO - Starting captcha recognition process
+2025-02-26 21:37:01,380 - INFO - Using LLM to recognize captcha
+2025-02-26 21:37:01,616 - INFO - Starting captcha recognition process
+2025-02-26 21:37:01,751 - INFO - Using LLM to recognize captcha
+2025-02-26 21:37:01,844 - INFO - Starting captcha recognition process
+2025-02-26 21:37:01,927 - INFO - Using LLM to recognize captcha
+2025-02-26 21:37:05,214 - INFO - HTTP Request: POST https://tsrvision2155864922.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview "HTTP/1.1 200 OK"
+2025-02-26 21:37:05,253 - INFO - LLM recognized captcha: 104055
+2025-02-26 21:37:05,254 - INFO - HTTP Request: POST https://tsrvision2155864922.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview "HTTP/1.1 200 OK"
+2025-02-26 21:37:05,260 - INFO - LLM recognized captcha: 841141
+2025-02-26 21:37:05,413 - INFO - Entered captcha value: 104055
+2025-02-26 21:37:05,446 - INFO - Entered captcha value: 841141
+2025-02-26 21:37:05,625 - INFO - HTTP Request: POST https://tsrvision2155864922.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview "HTTP/1.1 200 OK"
+2025-02-26 21:37:05,628 - INFO - LLM recognized captcha: 599744
+2025-02-26 21:37:05,893 - INFO - Entered captcha value: 599744
+2025-02-26 21:37:06,032 - INFO - HTTP Request: POST https://tsrvision2155864922.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview "HTTP/1.1 200 OK"
+2025-02-26 21:37:06,035 - INFO - LLM recognized captcha: 840201
+2025-02-26 21:37:06,265 - INFO - Entered captcha value: 840201
+2025-02-26 21:37:06,414 - INFO - Submitting the form
+2025-02-26 21:37:06,447 - INFO - Submitting the form
+2025-02-26 21:37:06,894 - INFO - Submitting the form
+2025-02-26 21:37:07,279 - INFO - Submitting the form
+2025-02-26 21:37:09,569 - INFO - Form submitted successfully
+2025-02-26 21:37:09,570 - INFO - Form submitted successfully
+2025-02-26 21:37:09,570 - INFO - Attempting to generate PDF
+2025-02-26 21:37:09,571 - INFO - Attempting to generate PDF
+2025-02-26 21:37:10,296 - INFO - Form submitted successfully
+2025-02-26 21:37:10,297 - INFO - Attempting to generate PDF
+2025-02-26 21:37:10,518 - INFO - Script execution completed
+2025-02-26 21:37:10,538 - INFO - Fetching land record for row 9
+2025-02-26 21:37:10,541 - INFO - Starting AnyRoR automation script as API function
+2025-02-26 21:37:10,548 - INFO - ====== WebDriver manager ======
+2025-02-26 21:37:11,028 - INFO - PDF saved successfully to: output\pdfs\land_record_row8_survey154_2.pdf
+2025-02-26 21:37:11,042 - INFO - PDF saved successfully to: output\pdfs\land_record_row6_survey152.pdf
+2025-02-26 21:37:11,707 - INFO - PDF saved successfully to: output\pdfs\land_record_row5_survey151.pdf
+2025-02-26 21:37:14,785 - INFO - Script execution completed
+2025-02-26 21:37:15,090 - INFO - Script execution completed
+2025-02-26 21:37:15,131 - INFO - Get LATEST chromedriver version for google-chrome
+2025-02-26 21:37:15,285 - INFO - Get LATEST chromedriver version for google-chrome
+2025-02-26 21:37:15,406 - INFO - Driver [C:\Users\yoris\.wdm\drivers\chromedriver\win64\133.0.6943.141\chromedriver-win32/chromedriver.exe] found in cache
+2025-02-26 21:37:15,972 - INFO - Script execution completed
+2025-02-26 21:37:16,868 - INFO - Navigating to AnyRoR website
+2025-02-26 21:37:17,567 - INFO - Selecting Land Record Type
+2025-02-26 21:37:18,105 - INFO - Selected Land Record Type: INTEGRATED SURVEY NO DETAILS
+2025-02-26 21:37:20,688 - INFO - District selected successfully
+2025-02-26 21:37:23,917 - INFO - Taluka selected successfully
+2025-02-26 21:37:27,096 - INFO - Village selected successfully
+2025-02-26 21:37:29,097 - INFO - Selecting Survey/Block Number: 157
+2025-02-26 21:37:33,542 - INFO - Survey/Block Number selected successfully
+2025-02-26 21:37:35,543 - INFO - Starting captcha recognition process
+2025-02-26 21:37:35,642 - INFO - Using LLM to recognize captcha
+2025-02-26 21:37:39,414 - INFO - HTTP Request: POST https://tsrvision2155864922.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview "HTTP/1.1 200 OK"
+2025-02-26 21:37:39,418 - INFO - LLM recognized captcha: 669934
+2025-02-26 21:37:39,647 - INFO - Entered captcha value: 669934
+2025-02-26 21:37:40,647 - INFO - Submitting the form
+2025-02-26 21:37:43,474 - INFO - Script execution completed

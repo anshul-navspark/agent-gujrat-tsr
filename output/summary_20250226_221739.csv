@@ -1,0 +1,2 @@
+row,district,taluka,village,survey,converted_survey,pdf_success,pdf_path,tsr_success,tsr_path,error,processing_time
+5,Kachchh,Abdasa,Trambo,151,151,True,output\pdfs\land_record_row5_survey151.pdf,True,output\tsr\tsr_row5_survey151.docx,,62.71654677391052

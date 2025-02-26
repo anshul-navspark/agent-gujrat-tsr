@@ -796,7 +796,7 @@ def generate_document(output_path):
         tel_run.underline = True
         tel_run.font.size = Pt(12)  # Header text size
         
-        number_para = header_para.add_run(": - +91-141-3559110, Mobile: - +91-9413333747)")
+        number_para = header_para.add_run(": - +91-141-3559110, Mobile: - +91-9413333747) \n")
         number_para.underline = True
         number_para.font.size = Pt(12)  # Header text size
         return document
@@ -875,8 +875,11 @@ def create_tsr_document(entries, land_details, findings, output_path):
         row[0].text = "1"
         
         nature = sanitize_text(land_details.get('nature_of_land'))
-        if 'agricultural' in nature.lower() or 'agriculture' in nature.lower():
+       
+        if 'old tenure' in nature.lower() and 'ju. sh.' in nature.lower():
             row[1].text = "Old Tenure\nAgricultural"
+        elif 'new tenure' in nature.lower():
+            row[1].text = "New Tenure\nAgricultural"
         else:
             row[1].text = nature
         
@@ -890,7 +893,7 @@ def create_tsr_document(entries, land_details, findings, output_path):
                 hectares, acres, guntha = map(int, area_match.groups())
                 # Calculate square meters (approximate conversion)
                 sq_meters = int((hectares * 10000) + (acres * 100) + guntha)
-                area = f"{area} i.e.\n({sq_meters} Sq. Mts)"
+                area = f"{area} Hectares i.e.\n({sq_meters} Sq. Mts)"
         row[2].text = area
         
         survey = sanitize_text(land_details.get('survey_number'))
@@ -914,12 +917,11 @@ def create_tsr_document(entries, land_details, findings, output_path):
                 owner_text += f"{i}. {name}\n"
             row[4].text = owner_text.strip()
         else:
-            row[4].text = f"1. {owner}"
+            row[4].text = f"{owner}"
         
         # Apply cell formatting
         for i, cell in enumerate(row):
-            if i == 0:
-                cell.paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
+            cell.paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
             cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
         
         # Also set widths for cells in the new row

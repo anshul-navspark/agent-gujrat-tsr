@@ -34,8 +34,9 @@ from tqdm import tqdm
 import re
 
 # Import your existing modules
-import anyror_new
+# import anyror_new
 import anyrortoTSR
+import anyror_refactored
 
 # Add these dictionaries for English to Gujarati translation
 DISTRICT_TRANSLATIONS = {
@@ -303,7 +304,7 @@ def process_single_row(row, args, logger):
     try:
         # Step 1: Fetch land record PDF using Gujarati names and converted survey number
         logger.info(f"Fetching land record for row {row.name}")
-        pdf_result = anyror_new.fetch_land_record(
+        pdf_result = anyror_refactored.fetch_land_record(
             district_name=district,  # Gujarati name
             taluka_name=taluka,      # Gujarati name
             village_name=village,    # Gujarati name
@@ -322,7 +323,7 @@ def process_single_row(row, args, logger):
             # Try each alternative format
             for alt_format in alternative_formats:
                 logger.info(f"Trying alternative format: {alt_format}")
-                alt_pdf_result = anyror_new.fetch_land_record(
+                alt_pdf_result = anyror_refactored.fetch_land_record(
                     district_name=district,
                     taluka_name=taluka,
                     village_name=village,

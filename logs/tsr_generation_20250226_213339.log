@@ -1,0 +1,39 @@
+2025-02-26 21:33:39,322 - INFO - Starting TSR generation for C:\Users\yoris\Documents\GitHub\gujrat_tsr_agent\output\pdfs\land_record_row1_survey149.pdf
+2025-02-26 21:33:39,323 - INFO - Extracting text from PDF: C:\Users\yoris\Documents\GitHub\gujrat_tsr_agent\output\pdfs\land_record_row1_survey149.pdf
+2025-02-26 21:33:39,772 - INFO - Extracting entry details from PDF
+2025-02-26 21:33:39,773 - INFO - Extracting entry details using Azure OpenAI
+2025-02-26 21:33:45,744 - INFO - HTTP Request: POST https://tsrvision2155864922.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview "HTTP/1.1 200 OK"
+2025-02-26 21:33:45,776 - INFO - Received response from Azure OpenAI
+2025-02-26 21:33:45,777 - WARNING - JSON not found in response, attempting to parse structured data
+2025-02-26 21:33:45,777 - WARNING - No entries found with first prompt, trying alternative approach
+2025-02-26 21:33:51,400 - INFO - HTTP Request: POST https://tsrvision2155864922.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview "HTTP/1.1 200 OK"
+2025-02-26 21:33:51,403 - INFO - Extracted 3 entries using Azure OpenAI
+2025-02-26 21:33:51,404 - INFO - Translating Gujarati content to English
+2025-02-26 21:33:51,405 - INFO - Translated 3 entries
+2025-02-26 21:33:51,405 - INFO - Extracting land details
+2025-02-26 21:33:51,406 - INFO - Extracting land details using Azure OpenAI
+2025-02-26 21:33:56,589 - INFO - HTTP Request: POST https://tsrvision2155864922.cognitiveservices.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-02-15-preview "HTTP/1.1 200 OK"
+2025-02-26 21:33:56,591 - INFO - Received response from Azure OpenAI for land details
+2025-02-26 21:33:56,593 - INFO - Land details extracted: {
+  "village_name": "Trambo",
+  "taluka_name": "Abdasa",
+  "district_name": "Kutch",
+  "survey_number": "149",
+  "old_survey_number": "Not Available",
+  "total_area": "4-32-00 Hectares",
+  "nature_of_land": "Old Tenure (Ju. Sh)",
+  "owner": "Bhimji Peraj Bhanushali, Jeram Peraj Bhanushali, Mukesh Peraj Bhanushali, Dipak Peraj Bhanushali"
+}
+2025-02-26 21:33:56,594 - INFO - Generating findings
+2025-02-26 21:33:56,595 - INFO - Generating standard findings
+2025-02-26 21:33:56,596 - INFO - Generated 22 standard findings
+2025-02-26 21:33:56,596 - INFO - Creating DOCX report: tsr_test_output.docx
+2025-02-26 21:33:56,597 - INFO - Creating TSR document
+2025-02-26 21:33:56,666 - INFO - Adding Chain of Title section
+2025-02-26 21:33:56,678 - INFO - Adding 3 chain of title entries
+2025-02-26 21:33:56,693 - INFO - Chain of title section completed
+2025-02-26 21:33:56,693 - INFO - Adding Findings section
+2025-02-26 21:33:56,760 - INFO - Findings section completed
+2025-02-26 21:33:56,809 - INFO - Document saved successfully as tsr_test_output.docx
+2025-02-26 21:33:56,810 - INFO - Report generated successfully: tsr_test_output.docx
+2025-02-26 21:33:56,811 - INFO - TSR generated successfully: tsr_test_output.docx
