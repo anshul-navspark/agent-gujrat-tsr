@@ -16,6 +16,7 @@ from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import HumanMessage
 from pydantic import SecretStr
 import tempfile
+from webdriver_manager.chrome import ChromeDriverManager
 
 def setup_logging():
     """Setup logging configuration"""
@@ -112,8 +113,8 @@ def fetch_land_record(district_name, taluka_name, village_name, survey_block_num
         options.add_argument("--start-maximized")
         options.add_argument("--headless")  # Run in headless mode for API usage
         
-        # Initialize the driver
-        service = Service('/opt/homebrew/bin/chromedriver')
+        # Initialize the driver with webdriver-manager
+        service = Service(ChromeDriverManager().install())
         driver = webdriver.Chrome(service=service, options=options)
         wait = WebDriverWait(driver, 30)
 
