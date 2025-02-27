@@ -21,12 +21,12 @@ def generate_findings_table(pdf_text):
             'observation': "YES"
         },
         {
-            'sn': '1',
+            'sn': '',
             'particular': "b) If such online/computer records are available, whether any verification or cross checking are made and the comments/ findings in this regard.",
             'observation': "The records were verified and were found to be consistent with the online records."
         },
         {
-            'sn': '1',
+            'sn': '',
             'particular': "c) Whether the genuineness of the stamp paper is possible to be got verified from any online portal and if so whether such verification was made?",
             'observation': "No.\nOnline verification can be done only for E-Stamp Papers.\n\nThe records of registrar can only be accessed online if the registration number of a deed is available."
         },
@@ -36,12 +36,12 @@ def generate_findings_table(pdf_text):
             'observation': "Nakhtarana and Naliya"
         },
         {
-            'sn': '2',
+            'sn': '',
             'particular': "b) Whether it is possible to have registration of documents in respect of the property in question, at more than one office of sub-registrar/ district registrar/ registrar-general. If so, please name all such offices?",
             'observation': "No"
         },
         {
-            'sn': '2',
+            'sn': '',
             'particular': "c)Whether search has been made at all the offices named at (b) above?",
             'observation': "No.\n\nSearch is to be made at jurisdictional Sub Registrar's offices, as all entries and conveyance are recorded there relating to the property(s)."
         },

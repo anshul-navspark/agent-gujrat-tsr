@@ -42,7 +42,7 @@ def extract_land_records_ai(pdf_text):
         3. district_name - Name of the district 
         4. survey_number - Survey/Block Number
         5. total_area - Total area in the format like "2-79-23" (hectares-ares-square meters)
-        6. nature_of_land - Nature/use of the land (like agricultural, old tenure, etc.)
+        6. nature_of_land - Nature/use of the land (like agricultural, old tenure,new tenure etc.)
         7. owner - Name of the land owner or khatedar
         
         Be precise and extract only what's clearly stated in the document. Look for sections labeled "Land Details" or similar.

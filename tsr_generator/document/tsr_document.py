@@ -103,17 +103,18 @@ def create_tsr_document(entries, land_details, findings, output_path):
         number_para.font.size = Pt(12)  # Header text size
         
         # Add the reference number and date
+        current_date = datetime.now().strftime('%d %b %Y')
         survey_number = sanitize_text(land_details.get('survey_number', '13'))
         ref_para = doc.add_paragraph()
         village_prefix = land_details.get('village_name', 'ABD')[:3].upper()
-        ref_text = ref_para.add_run(f"Ref. No. ABREL/GUJ/KUT/ABD/{village_prefix}/{survey_number}")
+        ref_text = ref_para.add_run(f"Ref. No. ABREL/GUJ/KUT/ABD/{village_prefix}/{survey_number}                    Dated: {current_date}")
         ref_text.bold = True
         
-        # Add date with right alignment
-        current_date = datetime.now().strftime('%d %b %Y')
-        date_para = doc.add_paragraph()
-        date_para.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
-        date_para.add_run(f"Dated: {current_date}")
+        # # Add date with right alignment
+        
+        # date_para = doc.add_paragraph()
+        # date_para.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
+        # date_para.add_run(f"")
         
         # Add the title
         title_para = doc.add_paragraph()
@@ -126,12 +127,11 @@ def create_tsr_document(entries, land_details, findings, output_path):
         doc.add_paragraph("To")
         address_para = doc.add_paragraph()
         address_para.paragraph_format.left_indent = Inches(0.5)
-        address_para.add_run("Aditya Birla Renewable Energy Ltd.\nA-2, Aditya Birla Centre, S.K. Ahire Marg,\nWorli, Mumbai-400030.\n\nKind Attn.: Mr. Rahul Patil")
+        address_para.add_run("Aditya Birla Renewable Energy Ltd.\nA-2, Aditya Birla Centre, S.K. Ahire Marg,\nWorli, Mumbai-400030.\n\nKind Attn.: Mr. Rahul Patil\n")
         
         # Add introduction
         doc.add_paragraph("Dear Sir,")
-        
-        intro_text = f"We have been engaged for the Title Investigation of land situated at Village- {sanitize_text(land_details.get('village_name'))}, Taluka-{sanitize_text(land_details.get('taluka_name', 'Abdasa'))}, District- {sanitize_text(land_details.get('district_name', 'Kachchh (Gujarat)'))}. Our detailed report and findings are as under:"
+        intro_text = f"     We have been engaged for the Title Investigation of land situated at Village- {sanitize_text(land_details.get('village_name'))}, Taluka-{sanitize_text(land_details.get('taluka_name', 'Abdasa'))}, District- {sanitize_text(land_details.get('district_name', 'Kachchh (Gujarat)'))}. Our detailed report and findings are as under:"
         
         doc.add_paragraph(intro_text)
         
@@ -187,7 +187,7 @@ def create_tsr_document(entries, land_details, findings, output_path):
                 hectares, acres, guntha = map(int, area_match.groups())
                 # Calculate square meters (approximate conversion)
                 sq_meters = int((hectares * 10000) + (acres * 100) + guntha)
-                area = f"{area} Hectares i.e.\n({sq_meters} Sq. Mts)"
+                area = f"{area} i.e.({sq_meters} Sq. Mts)"
         row[2].text = area
         
         survey = sanitize_text(land_details.get('survey_number'))
@@ -204,14 +204,22 @@ def create_tsr_document(entries, land_details, findings, output_path):
         # Clean up the owner string to remove brackets and quotes
         owner = owner.replace('[', '').replace(']', '').replace("'", "")
         
+        # Format as a numbered list for multiple owners, plain text for single owner
         if ',' in owner:  # Multiple owners separated by commas
             owners = [name.strip() for name in owner.split(',')]
+            
             owner_text = ""
             for i, name in enumerate(owners, 1):
-                owner_text += f"{i}. {name}\n"
-            row[4].text = owner_text.strip()
+                if name and name.strip():  # Only add non-empty names
+                    owner_text += f"{i}. {name}\n"
         else:
-            row[4].text = f"{owner}"
+            # Single owner - no numbering
+            if owner and owner.strip():  # Only add non-empty names
+                owner_text = f"{owner}\n"
+            else:
+                owner_text = ""
+        
+        row[4].text = owner_text.strip()
         
         # Apply cell formatting with 12.5pt font
         for i, cell in enumerate(row):
@@ -251,6 +259,7 @@ def create_tsr_document(entries, land_details, findings, output_path):
         for i, header in enumerate(doc_headers):
             docs_table.rows[0].cells[i].text = header
             docs_table.rows[0].cells[i].paragraphs[0].runs[0].bold = True
+            docs_table.rows[0].cells[i].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
             
             # Set font size to 12.5pt
             for run in docs_table.rows[0].cells[i].paragraphs[0].runs:
@@ -268,12 +277,15 @@ def create_tsr_document(entries, land_details, findings, output_path):
         for doc_type, perusal, office in standard_docs:
             row = docs_table.add_row().cells
             row[0].text = doc_type
+            row[0].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
             
             # Make "Online" bold
             row[1].text = ""  # Clear default text
             row[1].paragraphs[0].add_run(perusal).bold = True
+            row[1].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
             
             row[2].text = office
+            row[2].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
             
             # Set font size to 12.5pt for all cells
             for cell in row:
@@ -299,7 +311,7 @@ def create_tsr_document(entries, land_details, findings, output_path):
         add_findings_table(doc, findings)
         
         # Add signature block
-        doc.add_paragraph("Thanking you and assuring you of our best co-operation at all times.")
+        doc.add_paragraph("\nThanking you and assuring you of our best co-operation at all times.")
         
         signature_para = doc.add_paragraph()
         signature_para.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
