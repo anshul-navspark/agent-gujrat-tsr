@@ -1,138 +1,108 @@
-# Bhuj Solar Land Survey Batch Processor
+# TSR Generator
 
-This tool automates the processing of the Bhuj Solar Land Survey List by fetching land records from anyROR (Gujarat government website) and generating Title Search Reports (TSRs) for each entry.
+A Python package for generating Title Search Reports (TSR) from PDF land records.
 
 ## Overview
 
-The tool consists of the following components:
+The TSR Generator package provides a modular and maintainable solution for extracting information from PDF land records and generating formatted Title Search Reports in DOCX format. The package uses AI-based extraction techniques to identify key information from the land records, including land details, entry details, and standard findings.
 
-1. **Bhuj Solar Processor (`bhuj_solar_processor.py`)**: Main script that reads the Excel file and processes each land record entry.
-2. **Runner Example (`run_bhuj_processor.py`)**: Example script showing how to use the processor with different options.
-3. **Existing Scripts**:
-   - `anyror_new.py`: Handles fetching land records from the AnyRoR website.
-   - `anyrortoTSR.py`: Converts PDF land records to formatted TSR documents.
+## Features
 
-## Prerequisites
+- Extract text from PDF land records
+- AI-based extraction of land details (village, taluka, district, survey number, etc.)
+- AI-based extraction of entry details (entry number, date, type, description)
+- Translation of Gujarati text to English
+- Generation of standard findings for TSR reports
+- Creation of formatted DOCX reports with proper styling and layout
 
-- Python 3.7+
-- Required Python packages (install using `pip install -r requirements.txt`):
-  - pandas
-  - openpyxl
-  - selenium
-  - flask
-  - easyocr
-  - tqdm
-  - python-dotenv
-  - langchain_openai
-  - python-docx
-  - PyPDF2
-  - Pillow
+## Installation
 
-## Setup
+```bash
+# Clone the repository
+git clone <repository-url>
 
-1. Make sure ChromeDriver is installed and available in your PATH.
-2. Set up your Azure OpenAI credentials in the `.env` file.
-3. Ensure the Excel file `Bhuj Solar Land Survey List Feb 24 2025.xlsx` is in the same directory.
+# Navigate to the project directory
+cd <project-directory>
+
+# Install the package
+pip install -e .
+```
 
 ## Usage
 
-### Basic Usage
-
-To process the entire Excel file:
+### Command Line Interface
 
 ```bash
-python bhuj_solar_processor.py
+# Generate a TSR from a PDF file
+python -m tsr_generator /path/to/land_record.pdf --output /path/to/output.docx
+
+# Show help
+python -m tsr_generator --help
 ```
 
-This will read the Excel file, fetch each land record from the AnyRoR website, and generate corresponding TSR documents.
+### Python API
 
-### Advanced Options
+```python
+from tsr_generator import generate_tsr_from_pdf
 
-The processor supports various command-line options:
+# Generate a TSR from a PDF file
+result = generate_tsr_from_pdf(
+    pdf_path='/path/to/land_record.pdf',
+    output_path='/path/to/output.docx'
+)
 
-```bash
-python bhuj_solar_processor.py --excel-file "your_file.xlsx" --output-dir "custom_output" --sequential --verbose
+if result['success']:
+    print(f"TSR generated successfully: {result['tsr_path']}")
+else:
+    print(f"Failed to generate TSR: {result['error']}")
 ```
 
-| Option | Description |
-|--------|-------------|
-| `--excel-file` | Path to the Excel file (default: "Bhuj Solar Land Survey List Feb 24 2025.xlsx") |
-| `--output-dir` | Base directory for output files (default: "output") |
-| `--sequential` | Process records sequentially instead of in parallel |
-| `--max-workers` | Maximum number of parallel workers (default: 4) |
-| `--start-row` | Start processing from this row number (default: 0, first data row) |
-| `--end-row` | Stop processing at this row number (default: process all) |
-| `--pdf-only` | Only fetch PDFs, skip TSR generation |
-| `--verbose` | Enable verbose logging |
-| `--test-conversion` | Test survey number conversion without fetching records |
-| `--survey-numbers` | List of survey numbers to test conversion (used with --test-conversion) |
+## Package Structure
 
-### Example: Processing a Subset of Records
+The package is organized into the following modules:
 
-To process only rows 5-10 from the Excel file:
+- `tsr_generator/`: Main package directory
+  - `__init__.py`: Package initialization and exports
+  - `__main__.py`: Command-line entry point
+  - `api/`: API modules
+    - `tsr_generator.py`: Main API for TSR generation
+  - `utils/`: Utility modules
+    - `logging_utils.py`: Logging utilities
+    - `pdf_utils.py`: PDF processing utilities
+    - `text_utils.py`: Text processing utilities
+  - `extractors/`: Data extraction modules
+    - `land_details.py`: Land details extraction
+    - `entry_details.py`: Entry details extraction
+    - `findings.py`: Findings generation
+  - `document/`: Document generation modules
+    - `docx_generator.py`: DOCX generation utilities
+    - `tsr_document.py`: TSR document creation
 
-```bash
-python bhuj_solar_processor.py --start-row 5 --end-row 10
-```
+## Dependencies
 
-### Example: Testing Survey Number Conversion
+- `python-docx`: For creating DOCX documents
+- `PyPDF2`: For extracting text from PDF files
+- `langchain_openai`: For AI-based extraction
+- `python-dotenv`: For loading environment variables
+- `pydantic`: For data validation
 
-To test how survey numbers are converted to match the website's format:
+## Environment Variables
 
-```bash
-python bhuj_solar_processor.py --test-conversion
-```
+The package requires the following environment variables to be set:
 
-To test specific survey numbers:
+- `AZURE_OPENAI_ENDPOINT`: Azure OpenAI API endpoint
+- `AZURE_OPENAI_KEY`: Azure OpenAI API key
 
-```bash
-python bhuj_solar_processor.py --test-conversion --survey-numbers "144/pa" "153/pe" "161/q" "150/p1" "151/p2"
-```
+These can be set in a `.env` file in the project directory.
 
-### Example: Run with the Example Script
+## License
 
-For quick demonstration of different processing options:
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-```bash
-python run_bhuj_processor.py
-```
+## Contributing
 
-This will run several example scenarios showing different ways to use the processor.
+Contributions are welcome! Please feel free to submit a Pull Request.
 
-## Survey Number Conversion
+## Authors
 
-The tool automatically converts survey numbers from the Excel file to the format expected by the AnyRoR website. This includes:
-
-- Simple numbers (e.g., "142", "143") remain unchanged
-- Numbers with paiki (પૈકી) are formatted as "number/પૈ" (e.g., "145/પૈ")
-- Numbers with paiki paiki (પૈકી પૈકી) are formatted as "number/પૈ/પૈ" (e.g., "144/પૈ/પૈ")
-- Numbers with 'q' or 'ર' are formatted as "number/ર" (e.g., "154/ર")
-- Numbers with 'e' or 'ૈ' are formatted as "number/ૈ" (e.g., "161/ૈ")
-- Numbers with 'p1' are formatted as "number/p૧" (with Gujarati numeral ૧) (e.g., "150/p૧")
-- Numbers with 'p2' are formatted as "number/p૨" (with Gujarati numeral ૨) (e.g., "151/p૨")
-- Numbers with 'p3' are formatted as "number/પ૩" (with Gujarati numeral ૩) (e.g., "153/પ૩")
-
-If the initial conversion fails to find a match on the website, the system will automatically try alternative formats to increase the success rate.
-
-## Output Files
-
-The processor creates the following outputs:
-
-1. **PDF Land Records**: Stored in `output/pdfs/` directory
-2. **TSR Documents**: Stored in `output/tsr/` directory
-3. **Summary CSV**: Contains details of processed records
-4. **Logs**: Detailed logs stored in the `logs/` directory
-
-## Troubleshooting
-
-- Check the log files in the `logs/` directory for detailed error information.
-- Ensure your Chrome browser and ChromeDriver are compatible versions.
-- Verify your internet connection is stable.
-- Ensure the format of the Excel file matches what the processor expects.
-- If survey numbers are not being found, use the `--test-conversion` option to see how they're being converted.
-
-## Notes
-
-- The AnyRoR website may require CAPTCHA solving. The script attempts to automate this, but may occasionally require manual input.
-- Processing a large number of records can take significant time.
-- The script adds a delay between requests to avoid overwhelming the server.
+- Your Name - Initial work 

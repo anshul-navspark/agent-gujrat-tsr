@@ -1,2 +1,0 @@
-row,district,taluka,village,survey,converted_survey,pdf_success,pdf_path,tsr_success,tsr_path,error,processing_time
-5,Kachchh,Abdasa,Trambo,151,151,False,,False,,Error processing row 5: name 'anyror_new' is not defined,0.0038843154907226562

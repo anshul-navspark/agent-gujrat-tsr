@@ -35,8 +35,9 @@ import re
 
 # Import your existing modules
 # import anyror_new
-import anyrortoTSR
+# import anyrortoTSR  # Replaced with tsr_generator
 import anyror_refactored
+from tsr_generator import generate_tsr_from_pdf  # Import from the new package
 
 # Add these dictionaries for English to Gujarati translation
 DISTRICT_TRANSLATIONS = {
@@ -165,23 +166,23 @@ def convert_survey_number(survey_number):
     suffix = re.sub(r'/(\d)', lambda m: f"/{digit_map[m.group(1)]}", suffix)
     
     # Check for paiki paiki notation (abbreviated as "pa/pa" in English)
-    if re.search(r'/pa/pa', suffix.lower()) or re.search(r'/પૈ/પૈ', suffix):
+    if re.search(r'/pa/pa', suffix_lower) or re.search(r'/પૈ/પૈ', suffix):
         return f"{base_number}/પૈ/પૈ"
     
     # Check for paiki notation (abbreviated as "pa" in English)
-    if re.search(r'/pa\b', suffix.lower()) or re.search(r'/પૈ\b', suffix):
+    if re.search(r'/pa\b', suffix_lower) or re.search(r'/પૈ\b', suffix):
         return f"{base_number}/પૈ"
     
     # Check for pe notation (alternative spelling of paiki)
-    if re.search(r'/pe\b', suffix.lower()) or re.search(r'/પૈ\b', suffix):
+    if re.search(r'/pe\b', suffix_lower) or re.search(r'/પૈ\b', suffix):
         return f"{base_number}/પૈ"
     
     # Check for 'q' or 'ર' notation (Gujarati letter 'ra')
-    if re.search(r'/q\b', suffix.lower()) or re.search(r'/ર\b', suffix):
+    if re.search(r'/q\b', suffix_lower) or re.search(r'/ર\b', suffix):
         return f"{base_number}/ર"
     
     # Check for 'e' or 'ૈ' notation (Gujarati vowel sign)
-    if re.search(r'/e\b', suffix.lower()) or re.search(r'/ૈ\b', suffix):
+    if re.search(r'/e\b', suffix_lower) or re.search(r'/ૈ\b', suffix):
         return f"{base_number}/ૈ"
     
     # If we've modified the suffix but none of the specific patterns matched
@@ -347,7 +348,8 @@ def process_single_row(row, args, logger):
                 # Step 2: Generate TSR if PDF was successful and not in pdf-only mode
                 if not args.pdf_only:
                     logger.info(f"Generating TSR for row {row.name}")
-                    tsr_result = anyrortoTSR.generate_tsr_from_pdf(
+                    # Use the new tsr_generator package instead of anyrortoTSR
+                    tsr_result = generate_tsr_from_pdf(
                         pdf_path=pdf_path,
                         output_path=tsr_path,
                         logger=logger
