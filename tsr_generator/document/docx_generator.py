@@ -119,7 +119,6 @@ def add_chain_of_title_section(document, entries):
     logger.info("Adding Chain of Title section with two-column format")
     
     # Add section heading
-    document.add_paragraph()
     add_section_heading(document, "3.  Chain of Title", numbered=True)
     
     if not entries:

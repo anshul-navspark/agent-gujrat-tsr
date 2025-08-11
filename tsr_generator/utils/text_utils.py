@@ -91,7 +91,11 @@ def translate_gujarati_text(text):
         'વહેંચણી': 'Partition',
         'વિભાજન': 'Partition',
         'જીવનકાળ વિતરણ': 'Lifetime Distribution',
-        'ભાગલા': 'Partition'
+        'ભાગલા': 'Partition',
+        # Adding new translations
+        'ભાવનગર': 'Bhavnagar',
+        'તળાજા': 'Talaja',
+        'દાઠા': 'Datha'
     }
     
     # Apply translations

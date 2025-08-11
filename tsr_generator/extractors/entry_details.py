@@ -13,6 +13,8 @@ from tsr_generator.extractors.entry_schema import (
     SaleEntry, MortgageEntry, ReleaseEntry, InheritanceEntry, 
     PartitionEntry, RelinquishmentEntry, OrderEntry, CorrectionEntry, GenericEntry
 )
+model_name = os.getenv('AI_MODEL_NAME', 'gpt-4o')
+api_version = os.getenv('AZURE_OPENAI_API_VERSION', '2024-02-15-preview')
 
 def extract_entry_details_ai(pdf_text):
     """
@@ -20,7 +22,7 @@ def extract_entry_details_ai(pdf_text):
     the Gujrat Mutation Entry examples
     
     Args:
-        pdf_text (str): The full text of the PDF document
+        pdf_text (str): The text of the entry details section
         
     Returns:
         list: A list of dictionaries with entry details
@@ -29,24 +31,18 @@ def extract_entry_details_ai(pdf_text):
     logger.info("Extracting entry details to match Gujrat Mutation Entry format")
     
     try:
-        # Find the section with entry details
+        # The entry section is already extracted in the main function and passed in
         entry_section = pdf_text
-        # Try to focus on just the entry section to reduce noise
-        if len(pdf_text) > 5000:
-            # Look for entry details section
-            m = re.search(r'(?:Entry Details|[\u0A95-\u0AC5]\s*[\u0A95-\u0AC5].*?Details)', pdf_text, re.IGNORECASE)
-            if m:
-                start = max(0, m.start() - 200)
-                entry_section = pdf_text[start:start + 5000]
-            else:
-                # Use the first part of the document
-                entry_section = pdf_text[:5000]
         
-        # Initialize Azure OpenAI client
+        # First identify entry numbers to ensure all are captured
+        all_entry_numbers = identify_all_entry_numbers(entry_section)
+        logger.info(f"Identified {len(all_entry_numbers)} entry numbers for AI processing")
+        
+        # Initialize Azure OpenAI client with the specified model
         load_dotenv()
         llm = AzureChatOpenAI(
-            model="gpt-4o",
-            api_version='2024-02-15-preview',
+            model=model_name,
+            api_version=api_version,
             azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT', ''),
             api_key=SecretStr(os.getenv('AZURE_OPENAI_KEY', '')),
             temperature=0.0
@@ -56,12 +52,21 @@ def extract_entry_details_ai(pdf_text):
         prompt = f"""
         Extract all mutation entries from this land record document, exactly matching the format shown in the examples below.
         
+        IMPORTANT: The document contains the following entry numbers that MUST be included in your extraction, even if they only appear as numbers in a table without details: {', '.join(all_entry_numbers)}
+        
         For each entry, extract:
         1. entry_number - The entry number
         2. date - The date (DD/MM/YYYY)
         3. type - Category of entry (LOAN, DEATH, RELEASE, LOAN CLOSE, SALE, PARTITION, PERSONS ADD, TO TRANSFER, etc.)
         4. description - Detailed description following the exact format from examples
         5. certification - Line about certification if available (starts with "The Entry is certified...")
+        
+        Many entries will only have an entry number listed in a table format without any other details, under the table heading "Entry Details". For these entries:
+        - entry_number: Use the number from the table
+        - date: ""
+        - type: ""
+        - description: ""
+        - certification: ""
         
         The descriptions MUST follow these exact patterns as shown in the examples:
         
@@ -72,15 +77,35 @@ def extract_entry_details_ai(pdf_text):
         "That upon the demise of Jawanabhai Manabhai, his land bearing old Survey No. 59 P, 68 P, 54/2p, 60/3, 66/3 P & 66/2 P came to be mutated in his legal heirs which are as follows:-
         • Sujabhai Jawanabhai 
         • Hariyaben Jawanabhai
-        • Keliben Jawanabhai
-        • Ajyotiben Jawanabhai
-        • Panchuben Jawanabhai
-        • Champaben Jawanabhai"
+        
+        RELEASE Example:
+        "That Hariyaben Jawanabhai, Keliben Jawanabhai, Ajyotiben Jawanabhai, Panchuben Jawanabhai and Champaben Jawanabhai relinquished their respective share in favour of Rabari Sujabhai Jawanabhai."
+        
+        LOAN CLOSE Example:
+        "That upon receiving an application from said Rabari Amarabhai Chamnabhai for removing the charge of Dena Gujrat Gramin Bank, Dhanera Branch. Entry No. 1341. The said exemption of burden has been recorded."
         
         SALE Example:
         "That the said Choudhary Harkhabhai Chhotybhai and Choudhary Shivabhai Harkhabhai they sold their respective share in land bearing Survey No. 241/1 measuring 1-96-27 Hectare to Choudhary Shaileshbhai Devanbhai through the document no. 324/2022 dated 17.05.2022 for a consideration of Rs. 3,00,000/-."
         
-        Always start with "That" in the descriptions. For entries involving lists of people, use the format "which are as follows:-" followed by a bulleted list with each person on a separate line.
+        PARTITION Example:
+        "That the said Vadher Sankarbhai Ramabhai distributed his land as follows:-
+        • Vadher Hamirbhai Shankarbhai - Survey No. 122 - 3-12 Acre/Guntha
+        • Vadher Nanubhai Shankarbhai - Survey No. 213 - 4-28 Acre/Guntha
+        • Adher Vajjubhai Shankarbhai - Survey No. 38/1 - 11-06 Acre/Guntha, Survey No. 379 - 6-13 Acre/Guntha
+        
+        The distribution/Partition of the shares as mentioned above was recorded based on their application and their consent as per their respective rights and physical possession."
+        
+        PERSONS ADD Example:
+        "That the said Choudhary Virambhai Bhemabhai made an application of life time distribution in his land bearing Survey No. 46(205), 65/2p1(205), 551/2(205) to add his legal heirs which are as follows:-
+        • Choudhary Hiraben Virambhai
+        • Choudhary Jayantibhai Virambhai
+        
+        TO TRANSFER Example:
+        "That the said Choudhary Virambhai Bhemabhai made an application of life time distribution in his land bearing Survey No. 46(205), 65/2p1(205), 551/2(205) to transfer to his legal heirs which are as follows:-
+        • Choudhary Hiraben Virambhai
+        • Choudhary Jayantibhai Virambhai"
+        
+        Always start description with "That" in all descriptions. For entries involving lists of people, use the format "which are as follows:-" followed by a bulleted list with each person on a separate line.
         
         Also extract certification information if available:
         "The Entry is certified by C.O. Jadiya on 24/12/2007."
@@ -101,11 +126,36 @@ def extract_entry_details_ai(pdf_text):
             json_str = json_match.group(0)
             entries = json.loads(json_str)
             logger.info(f"Successfully extracted {len(entries)} entries with Gujrat Mutation Entry format")
+            
+            # Check if all identified entry numbers are in the extracted entries
+            extracted_numbers = [entry.get('entry_number') for entry in entries]
+            missing_entries = [num for num in all_entry_numbers if num not in extracted_numbers]
+            
+            # Add placeholder entries for missing entry numbers
+            for entry_num in missing_entries:
+                logger.info(f"Adding placeholder for missing entry in AI response: {entry_num}")
+                entries.append({
+                    'entry_number': entry_num,
+                    'date': "Not available",
+                    'type': "UNKNOWN",
+                    'description': "Entry mentioned in the document but details not available.",
+                    'certification': "The Entry is certified but details are not available."
+                })
+            
             return entries
         else:
             logger.warning("Failed to parse JSON from AI response for entry details")
-            # If no entries found, try the fallback approach
-            return extract_entry_details_fallback(entry_section)
+            # If no entries found, create entries for all identified entry numbers
+            entries = []
+            for entry_num in all_entry_numbers:
+                entries.append({
+                    'entry_number': entry_num,
+                    'date': "Not available",
+                    'type': "UNKNOWN",
+                    'description': "Entry mentioned in the document but details not available.",
+                    'certification': "The Entry is certified but details are not available."
+                })
+            return entries if entries else extract_entry_details_fallback(entry_section)
     
     except Exception as e:
         logger.error(f"Error in AI-based entry details extraction: {str(e)}")
@@ -130,13 +180,17 @@ def extract_entry_details_fallback(entry_section):
     """
     logger = logging.getLogger(__name__)
     logger.info("Using fallback method for Gujrat Mutation Entry format extraction")
-    
+
+    # First identify entry numbers to ensure all are captured
+    all_entry_numbers = identify_all_entry_numbers(entry_section)
+    logger.info(f"Identified {len(all_entry_numbers)} entry numbers for fallback processing")
+
     try:
         # Initialize Azure OpenAI client
         load_dotenv()
         llm = AzureChatOpenAI(
-            model="gpt-4o",
-            api_version='2024-02-15-preview',
+            model=model_name,
+            api_version=api_version,
             azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT', ''),
             api_key=SecretStr(os.getenv('AZURE_OPENAI_KEY', '')),
             temperature=0.0
@@ -144,7 +198,9 @@ def extract_entry_details_fallback(entry_section):
         
         # Simplified prompt focusing on the exact format
         prompt = f"""
-        Extract entries from this land record document using EXACTLY this format:
+        Extract entries from this land record document using EXACTLY this format.
+        
+        IMPORTANT: The document contains the following entry numbers that MUST be included in your extraction, even if you can't find detailed descriptions for them: {', '.join(all_entry_numbers)}
         
         Entry format:
         - entry_number: The numeric entry number
@@ -152,6 +208,8 @@ def extract_entry_details_fallback(entry_section):
         - type: One word category (LOAN, DEATH, RELEASE, SALE, PARTITION, etc.)
         - description: Start with "That" and provide complete details
         - certification: Information about who certified the entry and when
+        
+        For entries where you can identify the entry number but not the description or other details, use "Not available" for date, "UNKNOWN" for type, and "Entry mentioned in the document but details not available." for description.
         
         Description examples:
         - "That Rabari Sujabhai Jawanabhai and others took a loan of Rs. 1,00,000/- on the land bearing Survey No. 54/2p2(143)..."
@@ -176,27 +234,72 @@ def extract_entry_details_fallback(entry_section):
             json_str = json_match.group(0)
             entries = json.loads(json_str)
             logger.info(f"Successfully extracted {len(entries)} entries using fallback method")
+            
+            # Check if all identified entry numbers are in the extracted entries
+            extracted_numbers = [entry.get('entry_number') for entry in entries]
+            missing_entries = [num for num in all_entry_numbers if num not in extracted_numbers]
+            
+            # Add placeholder entries for missing entry numbers
+            for entry_num in missing_entries:
+                logger.info(f"Adding placeholder for missing entry in fallback response: {entry_num}")
+                entries.append({
+                    'entry_number': entry_num,
+                    'date': "",
+                    'type': "",
+                    'description': "",
+                    'certification': ""
+                })
+                
             return entries
         else:
             logger.warning("Failed to parse JSON from fallback approach")
-            return [{
-                'entry_number': "1",
-                'date': datetime.now().strftime('%d/%m/%Y'),
-                'type': "Summary",
-                'description': "This document contains information about the property.",
-                'certification': "The Entry is certified but date is not legible."
-            }]
+            # Create entries for all identified entry numbers
+            entries = []
+            if all_entry_numbers:
+                for entry_num in all_entry_numbers:
+                    entries.append({
+                        'entry_number': entry_num,
+                        'date': "",
+                        'type': "",
+                        'description': "",
+                        'certification': ""
+                    })
+                return entries
+            else:
+                # If no entry numbers were found, create a single default entry
+                return [{
+                    'entry_number': "1",
+                    'date': datetime.now().strftime('%d/%m/%Y'),
+                    'type': "Summary",
+                    'description': "This document contains information about the property.",
+                    'certification': "The Entry is certified but details are not available."
+                }]
             
     except Exception as e:
         logger.error(f"Error in fallback entry extraction: {str(e)}")
         logger.error(traceback.format_exc())
-        return [{
-            'entry_number': "1",
-            'date': datetime.now().strftime('%d/%m/%Y'),
-            'type': "Summary",
-            'description': "This document contains information about the property.",
-            'certification': "The Entry is certified but date is not legible."
-        }]
+        
+        # Create entries for all identified entry numbers
+        entries = []
+        if all_entry_numbers:
+            for entry_num in all_entry_numbers:
+                entries.append({
+                    'entry_number': entry_num,
+                    'date': "",
+                    'type': "",
+                    'description': "",
+                    'certification': ""
+                })
+            return entries
+        else:
+            # If no entry numbers were found, create a single default entry
+            return [{
+                'entry_number': "1",
+                'date': datetime.now().strftime('%d/%m/%Y'),
+                'type': "Summary", 
+                'description': "This document contains information about the property.",
+                'certification': "The Entry is certified but date is not legible."
+            }]
 
 def process_entry_details(raw_entries):
     """
@@ -219,7 +322,11 @@ def process_entry_details(raw_entries):
             entry = create_entry_from_dict(raw_entry)
             
             # Process the description to create a formatted version
-            format_entry_description(entry, raw_entry)
+            # Check if this is a placeholder entry
+            if raw_entry.get('description') == "Entry mentioned in the document but details not available.":
+                entry.formatted_description = raw_entry.get('description')
+            else:
+                format_entry_description(entry, raw_entry)
             
             # Extract additional details based on entry type
             extract_entry_specific_details(entry, raw_entry)
@@ -590,6 +697,101 @@ def extract_generic_details(entry, raw_entry):
     if additional_details:
         entry.additional_details = additional_details
 
+def identify_all_entry_numbers(pdf_text):
+    """
+    Extract all entry numbers mentioned in the PDF, even those without detailed descriptions
+    
+    Args:
+        pdf_text (str): The full text of the PDF document
+        
+    Returns:
+        list: A list of all entry numbers found
+    """
+    logger = logging.getLogger(__name__)
+    
+    # Set to store unique entry numbers
+    entry_numbers = set()
+    
+    # Extract the section between "Entry Details" and "Jantri Detail"
+    entry_start_match = re.search(r'(?:Entry Details|[\u0A95-\u0AC5]\s*[\u0A95-\u0AC5].*?Details)', pdf_text, re.IGNORECASE)
+    entry_end_match = re.search(r'(?:Jantri Detail|Jantri Details|જાન્ત્રી\s*વિગત)', pdf_text, re.IGNORECASE)
+    
+    if entry_start_match:
+        start_position = entry_start_match.start()
+        
+        # If both start and end markers are found, extract the section between them
+        if entry_end_match and entry_end_match.start() > start_position:
+            entry_section = pdf_text[start_position:entry_end_match.start()]
+            logger.info(f"Analyzing entry details section between 'Entry Details' and 'Jantri Detail' for entry numbers ({len(entry_section)} characters)")
+        else:
+            # If only start marker is found, take all text from that point to the end
+            entry_section = pdf_text[start_position:]
+            logger.info(f"Analyzing entry details section from 'Entry Details' to end of document for entry numbers ({len(entry_section)} characters)")
+    else:
+        logger.warning("Entry Details section not found for entry number extraction. Using full document text.")
+        entry_section = pdf_text
+    
+    # Pattern 0: Look for standalone numbers in table cells under Entry Details
+    # This matches numbers that appear as the only content in a line or cell
+    for match in re.finditer(r'(?:^|\n|\r|\|)[\s\t]*(\d{1,4})[\s\t]*(?:$|\n|\r|\|)', entry_section):
+        num = match.group(1).strip()
+        if num and len(num) > 0 and num.isdigit():
+            entry_numbers.add(num)
+    
+    # Pattern 1: Look for entry numbers in a list format (comma-separated)
+    for entries_list in re.finditer(r'(?:Entry(?:\s+No\.?|\s+Number)?s?|نوئدہ)\s*(?::|\s)\s*(\d+(?:[\s,]+\d+)*)', entry_section, re.IGNORECASE):
+        entries_text = entries_list.group(1)
+        for num in re.findall(r'\d+', entries_text):
+            entry_numbers.add(num)
+    
+    # Pattern 2: Look for individual entry numbers followed by dates
+    for match in re.finditer(r'(?:Entry\s+(?:No\.?|Number))?\s*(\d+)\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', entry_section, re.IGNORECASE):
+        entry_numbers.add(match.group(1))
+        
+    # Pattern 3: Look for specific entry references like "Entry No. 175" or "Entry Number 175"
+    for match in re.finditer(r'Entry\s+(?:No\.?|Number)\s*[:#]?\s*(\d+)', entry_section, re.IGNORECASE):
+        entry_numbers.add(match.group(1))
+    
+    # Pattern 4: Look for entry numbers in Gujarati context
+    for match in re.finditer(r'(?:નોંધ|નૂધ|નોન્ધ)\s*(?:નંબર|નં\.?)\s*[:#]?\s*(\d+)', entry_section):
+        entry_numbers.add(match.group(1))
+    
+    # Pattern 5: Look for entry numbers in a tabular format with dates
+    for match in re.finditer(r'(?:^|\n|\r)\s*(\d+)\s+\d{1,2}[/-]\d{1,2}[/-]\d{2,4}', entry_section):
+        entry_numbers.add(match.group(1))
+    
+    # Pattern 6: Look for Hindi entry references
+    for match in re.finditer(r'प्रविष्टि\s*(?:संख्या|सं\.?)\s*[:#]?\s*(\d+)', entry_section):
+        entry_numbers.add(match.group(1))
+    
+    # Pattern 7: Look for bold or emphasized numbers in the Entry Details section that could be entry numbers
+    # This is useful for PDFs where entry numbers are highlighted or in a different format
+    for match in re.finditer(r'(?:<b>|<strong>|\*\*|\[|\()(\d{1,4})(?:</b>|</strong>|\*\*|\]|\))', entry_section):
+        entry_numbers.add(match.group(1))
+    
+    # If no entry numbers found in the entry section, search the entire document
+    if not entry_numbers:
+        logger.info("No entry numbers found in Entry Details section, searching entire document")
+        
+        # Look for entry references throughout the document
+        for match in re.finditer(r'Entry\s+(?:No\.?|Number)\s*[:#]?\s*(\d+)', pdf_text, re.IGNORECASE):
+            entry_numbers.add(match.group(1))
+        
+        # Look for Gujarati entry references throughout the document
+        for match in re.finditer(r'(?:નોંધ|નૂધ|નોન્ધ)\s*(?:નંબર|નં\.?)\s*[:#]?\s*(\d+)', pdf_text):
+            entry_numbers.add(match.group(1))
+        
+        # Look for Hindi entry references throughout the document
+        for match in re.finditer(r'प्रविष्टि\s*(?:संख्या|सं\.?)\s*[:#]?\s*(\d+)', pdf_text):
+            entry_numbers.add(match.group(1))
+    
+    if entry_numbers:
+        logger.info(f"Identified {len(entry_numbers)} entry numbers: {sorted(list(entry_numbers))}")
+        return sorted(list(entry_numbers), key=lambda x: int(x) if x.isdigit() else float('inf'))
+    
+    logger.warning("No entry numbers found in the document")
+    return []
+
 def extract_entry_details(pdf_text):
     """
     Main function for extracting entry details using the AI-based approach.
@@ -603,19 +805,74 @@ def extract_entry_details(pdf_text):
     logger = logging.getLogger(__name__)
     logger.info("Extracting entry details using enhanced AI-based approach")
     
+    # Extract the section between "Entry Details" and "Jantri Detail"
+    entry_section = pdf_text  # Default to full text
+    
+    # Look for the "Entry Details" section heading
+    entry_start_match = re.search(r'(?:Entry Details|[\u0A95-\u0AC5]\s*[\u0A95-\u0AC5].*?Details)', pdf_text, re.IGNORECASE)
+    
+    # Look for "Jantri Detail" as end marker
+    entry_end_match = re.search(r'(?:Jantri Detail|Jantri Details|જાન્ત્રી\s*વિગત)', pdf_text, re.IGNORECASE)
+    
+    if entry_start_match:
+        start_position = entry_start_match.start()
+        
+        # If both start and end markers are found, extract the section between them
+        if entry_end_match and entry_end_match.start() > start_position:
+            entry_section = pdf_text[start_position:entry_end_match.start()]
+            logger.info(f"Extracted section between 'Entry Details' and 'Jantri Detail' for processing ({len(entry_section)} characters)")
+        else:
+            # If only start marker is found, take all text from that point to the end
+            entry_section = pdf_text[start_position:]
+            logger.info(f"Extracted section from 'Entry Details' to end of document for processing ({len(entry_section)} characters)")
+    else:
+        logger.warning("Entry Details section not found. Using full document text for processing.")
+    
+    # First identify all entry numbers in the document, regardless of extraction success
+    all_entry_numbers = identify_all_entry_numbers(entry_section)
+    logger.info(f"Found {len(all_entry_numbers)} entry numbers in the document")
+    
     try:
-        # Use the dedicated AI function to extract entries
-        raw_entries = extract_entry_details_ai(pdf_text)
+        # Use the dedicated AI function to extract detailed entries
+        raw_entries = extract_entry_details_ai(entry_section)
         
         if not raw_entries:
-            logger.warning("No entries extracted, using fallback method")
-            raw_entries = [{
-                'entry_number': "1",
-                'date': datetime.now().strftime('%d/%m/%Y'),
-                'type': "Summary",
-                'description': "This land record document contains information about land ownership and historical records.",
-                'certification': "The Entry is certified but date is not legible."
-            }]
+            logger.warning("No entries extracted, using all identified entry numbers")
+            raw_entries = []
+            # If no entries were extracted but we have entry numbers, create placeholders for all of them
+            if all_entry_numbers:
+                for entry_num in all_entry_numbers:
+                    raw_entries.append({
+                        'entry_number': entry_num,
+                        'date': "",
+                        'type': "",
+                        'description': "",
+                        'certification': ""
+                    })
+            else:
+                # If no entry numbers were found, create a single default entry
+                raw_entries = [{
+                    'entry_number': "1",
+                    'date': datetime.now().strftime('%d/%m/%Y'),
+                    'type': "Summary",
+                    'description': "This land record document contains information about land ownership and historical records.",
+                    'certification': "The Entry is certified but date is not legible."
+                }]
+        
+        # Check if all identified entry numbers are in the extracted entries
+        extracted_numbers = [entry.get('entry_number') for entry in raw_entries]
+        missing_entries = [num for num in all_entry_numbers if num not in extracted_numbers]
+        
+        # Add placeholder entries for missing entry numbers
+        for entry_num in missing_entries:
+            logger.info(f"Adding placeholder for missing entry: {entry_num}")
+            raw_entries.append({
+                'entry_number': entry_num,
+                'date': "Not available",
+                'type': "UNKNOWN",
+                'description': "Entry mentioned in the document but details not available.",
+                'certification': "The Entry is certified but details are not available."
+            })
         
         # Process the raw entries into structured entry objects
         processed_entries = process_entry_details(raw_entries)
@@ -627,17 +884,34 @@ def extract_entry_details(pdf_text):
         logger.error(f"Error in entry extraction process: {str(e)}")
         logger.error(traceback.format_exc())
         
-        # Create a default entry
-        default_entry = BaseEntry(
-            entry_number="1",
-            date=datetime.now().strftime('%d/%m/%Y'),
-            type=EntryType.UNKNOWN,
-            raw_description="This land record document contains information about land ownership and historical records.",
-            formatted_description="This land record document contains information about land ownership and historical records.",
-            certification="The Entry is certified but date is not legible."
-        )
+        # Create placeholder entries for all identified entry numbers instead of just one default entry
+        processed_entries = []
         
-        return [default_entry]
+        if all_entry_numbers:
+            logger.info(f"Creating placeholder entries for {len(all_entry_numbers)} identified entry numbers despite extraction error")
+            for entry_num in all_entry_numbers:
+                entry = BaseEntry(
+                    entry_number=entry_num,
+                    date="Not available",
+                    type=EntryType.UNKNOWN,
+                    raw_description="Entry mentioned in the document but details not available due to processing error.",
+                    formatted_description="Entry mentioned in the document but details not available due to processing error.",
+                    certification="The Entry is certified but details are not available."
+                )
+                processed_entries.append(entry)
+        else:
+            # If no entry numbers were found, create a single default entry
+            default_entry = BaseEntry(
+                entry_number="1",
+                date=datetime.now().strftime('%d/%m/%Y'),
+                type=EntryType.UNKNOWN,
+                raw_description="This land record document contains information about land ownership and historical records.",
+                formatted_description="This land record document contains information about land ownership and historical records.",
+                certification="The Entry is certified but date is not legible."
+            )
+            processed_entries.append(default_entry)
+        
+        return processed_entries
 
 def translate_entry_content(entries):
     """
