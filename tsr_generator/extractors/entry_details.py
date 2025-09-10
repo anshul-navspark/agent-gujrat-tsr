@@ -13,7 +13,7 @@ from tsr_generator.extractors.entry_schema import (
     SaleEntry, MortgageEntry, ReleaseEntry, InheritanceEntry, 
     PartitionEntry, RelinquishmentEntry, OrderEntry, CorrectionEntry, GenericEntry
 )
-model_name = os.getenv('AI_MODEL_NAME', 'gpt-4o')
+model_name = os.getenv('AI_MODEL_NAME', 'gpt-5')
 api_version = os.getenv('AZURE_OPENAI_API_VERSION', '2024-02-15-preview')
 
 def extract_entry_details_ai(pdf_text):
@@ -52,7 +52,8 @@ def extract_entry_details_ai(pdf_text):
         prompt = f"""
         Extract all mutation entries from this land record document, exactly matching the format shown in the examples below.
         
-        IMPORTANT: The document contains the following entry numbers that MUST be included in your extraction, even if they only appear as numbers in a table without details: {', '.join(all_entry_numbers)}
+        Candidate entry numbers detected from the Entry Details section: {', '.join(all_entry_numbers)}
+        Use them only if they are confirmed as actual mutation entries (e.g., appear as "Entry No." or in the Entry Details table). Do NOT treat Khata/Survey/Form numbers as entries. Do NOT fabricate entries that are not present.
         
         For each entry, extract:
         1. entry_number - The entry number
@@ -120,53 +121,30 @@ def extract_entry_details_ai(pdf_text):
         
         response = llm.invoke(prompt)
         
-        # Parse JSON from the response
-        json_match = re.search(r'\[\s*\{.*\}\s*\]', response.content, re.DOTALL)
+        # Parse JSON from the response with robust cleaning of control characters
+        content = response.content if hasattr(response, 'content') else str(response)
+        # Remove NULL and other control chars that break JSON
+        content = ''.join(ch for ch in content if ch == '\t' or ch == '\n' or ch == '\r' or ord(ch) >= 32)
+        json_match = re.search(r'\[\s*\{[\s\S]*?\}\s*\]', content)
         if json_match:
             json_str = json_match.group(0)
+            # Second pass: strip stray trailing commas
+            json_str = re.sub(r',\s*([\]\}])', r'\1', json_str)
             entries = json.loads(json_str)
             logger.info(f"Successfully extracted {len(entries)} entries with Gujrat Mutation Entry format")
             
-            # Check if all identified entry numbers are in the extracted entries
-            extracted_numbers = [entry.get('entry_number') for entry in entries]
-            missing_entries = [num for num in all_entry_numbers if num not in extracted_numbers]
-            
-            # Add placeholder entries for missing entry numbers
-            for entry_num in missing_entries:
-                logger.info(f"Adding placeholder for missing entry in AI response: {entry_num}")
-                entries.append({
-                    'entry_number': entry_num,
-                    'date': "Not available",
-                    'type': "UNKNOWN",
-                    'description': "Entry mentioned in the document but details not available.",
-                    'certification': "The Entry is certified but details are not available."
-                })
-            
+            # Do not auto-add placeholders here; trust the parsed list
             return entries
         else:
             logger.warning("Failed to parse JSON from AI response for entry details")
-            # If no entries found, create entries for all identified entry numbers
-            entries = []
-            for entry_num in all_entry_numbers:
-                entries.append({
-                    'entry_number': entry_num,
-                    'date': "Not available",
-                    'type': "UNKNOWN",
-                    'description': "Entry mentioned in the document but details not available.",
-                    'certification': "The Entry is certified but details are not available."
-                })
-            return entries if entries else extract_entry_details_fallback(entry_section)
+            # If no entries found, fall back to heuristic extractor rather than fabricating placeholders
+            return extract_entry_details_fallback(entry_section)
     
     except Exception as e:
         logger.error(f"Error in AI-based entry details extraction: {str(e)}")
         logger.error(traceback.format_exc())
-        return [{
-            'entry_number': "1",
-            'date': datetime.now().strftime('%d/%m/%Y'),
-            'type': "Summary",
-            'description': "This document contains information about the property.",
-            'certification': "The Entry is certified but date is not legible."
-        }]
+        # Defer to fallback rather than fabricate a summary entry
+        return extract_entry_details_fallback(entry_section)
 
 def extract_entry_details_fallback(entry_section):
     """
@@ -209,7 +187,7 @@ def extract_entry_details_fallback(entry_section):
         - description: Start with "That" and provide complete details
         - certification: Information about who certified the entry and when
         
-        For entries where you can identify the entry number but not the description or other details, use "Not available" for date, "UNKNOWN" for type, and "Entry mentioned in the document but details not available." for description.
+        For entries where you can identify the entry number but not the description or other details, you may include them with empty fields. Only do this if the number clearly appears under the "Entry Details" heading or next to "Entry No.". Do not create entries from Khata/Survey numbers.
         
         Description examples:
         - "That Rabari Sujabhai Jawanabhai and others took a loan of Rs. 1,00,000/- on the land bearing Survey No. 54/2p2(143)..."
@@ -229,9 +207,12 @@ def extract_entry_details_fallback(entry_section):
         response = llm.invoke(prompt)
         
         # Parse JSON from the response
-        json_match = re.search(r'\[\s*\{.*\}\s*\]', response.content, re.DOTALL)
+        content = response.content if hasattr(response, 'content') else str(response)
+        content = ''.join(ch for ch in content if ch == '\t' or ch == '\n' or ch == '\r' or ord(ch) >= 32)
+        json_match = re.search(r'\[\s*\{[\s\S]*?\}\s*\]', content)
         if json_match:
             json_str = json_match.group(0)
+            json_str = re.sub(r',\s*([\]\}])', r'\1', json_str)
             entries = json.loads(json_str)
             logger.info(f"Successfully extracted {len(entries)} entries using fallback method")
             
@@ -253,19 +234,8 @@ def extract_entry_details_fallback(entry_section):
             return entries
         else:
             logger.warning("Failed to parse JSON from fallback approach")
-            # Create entries for all identified entry numbers
-            entries = []
-            if all_entry_numbers:
-                for entry_num in all_entry_numbers:
-                    entries.append({
-                        'entry_number': entry_num,
-                        'date': "",
-                        'type': "",
-                        'description': "",
-                        'certification': ""
-                    })
-                return entries
-            else:
+            # If still nothing parsable, as a last resort return a single note entry
+            if not all_entry_numbers:
                 # If no entry numbers were found, create a single default entry
                 return [{
                     'entry_number': "1",
@@ -274,24 +244,14 @@ def extract_entry_details_fallback(entry_section):
                     'description': "This document contains information about the property.",
                     'certification': "The Entry is certified but details are not available."
                 }]
+            return []
             
     except Exception as e:
         logger.error(f"Error in fallback entry extraction: {str(e)}")
         logger.error(traceback.format_exc())
         
-        # Create entries for all identified entry numbers
-        entries = []
-        if all_entry_numbers:
-            for entry_num in all_entry_numbers:
-                entries.append({
-                    'entry_number': entry_num,
-                    'date': "",
-                    'type': "",
-                    'description': "",
-                    'certification': ""
-                })
-            return entries
-        else:
+        # On error, avoid fabricating entries
+        if not all_entry_numbers:
             # If no entry numbers were found, create a single default entry
             return [{
                 'entry_number': "1",
@@ -300,6 +260,7 @@ def extract_entry_details_fallback(entry_section):
                 'description': "This document contains information about the property.",
                 'certification': "The Entry is certified but date is not legible."
             }]
+        return []
 
 def process_entry_details(raw_entries):
     """
@@ -731,11 +692,28 @@ def identify_all_entry_numbers(pdf_text):
         logger.warning("Entry Details section not found for entry number extraction. Using full document text.")
         entry_section = pdf_text
     
-    # Pattern 0: Look for standalone numbers in table cells under Entry Details
-    # This matches numbers that appear as the only content in a line or cell
-    for match in re.finditer(r'(?:^|\n|\r|\|)[\s\t]*(\d{1,4})[\s\t]*(?:$|\n|\r|\|)', entry_section):
+    # Helper: filter out obvious false positives (Khata/Survey/Form numbers etc.)
+    def is_valid_entry_mention(text: str, span: tuple, number: str) -> bool:
+        window = 40
+        start, end = span
+        context = text[max(0, start - window): min(len(text), end + window)]
+        context_lower = context.lower()
+        noise_keywords = [
+            'khata', 'khatta', 'survey', 'old survey', 'form no', 'vf no', 'vf-7', 'vf-6',
+            'village form', 'page', 'sr no', 'sr.', 'plot', 'area', 'hectare', 'guntha',
+            'sq. mts', 'sq mts', 'schedule', 'section', 'article'
+        ]
+        # If nearby context contains these words, it's likely not an entry number
+        if any(kw in context_lower for kw in noise_keywords):
+            return False
+        return True
+
+    # Pattern 0: standalone numbers under Entry Details table.
+    # Be conservative: require 3-4 digits and pass context filter.
+    for match in re.finditer(r'(?:^|\n|\r|\|)[\s\t]*(\d{3,4})\*?[\s\t]*(?:$|\n|\r|\|)', entry_section):
         num = match.group(1).strip()
-        if num and len(num) > 0 and num.isdigit():
+        # Exclude obviously invalid large numbers like concatenated '923923'
+        if num.isdigit() and 1 <= len(num) <= 4 and is_valid_entry_mention(entry_section, match.span(1), num):
             entry_numbers.add(num)
     
     # Pattern 1: Look for entry numbers in a list format (comma-separated)
@@ -744,30 +722,37 @@ def identify_all_entry_numbers(pdf_text):
         for num in re.findall(r'\d+', entries_text):
             entry_numbers.add(num)
     
-    # Pattern 2: Look for individual entry numbers followed by dates
-    for match in re.finditer(r'(?:Entry\s+(?:No\.?|Number))?\s*(\d+)\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', entry_section, re.IGNORECASE):
-        entry_numbers.add(match.group(1))
+    # Pattern 2: numbers followed by a date, likely an "Entry No X Dated Y" line
+    for match in re.finditer(r'(?:Entry\s+(?:No\.?|Number))?\s*(\d{1,4})\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})', entry_section, re.IGNORECASE):
+        num = match.group(1)
+        if is_valid_entry_mention(entry_section, match.span(1), num):
+            entry_numbers.add(num)
         
-    # Pattern 3: Look for specific entry references like "Entry No. 175" or "Entry Number 175"
-    for match in re.finditer(r'Entry\s+(?:No\.?|Number)\s*[:#]?\s*(\d+)', entry_section, re.IGNORECASE):
-        entry_numbers.add(match.group(1))
+    # Pattern 3: Specific entry references like "Entry No. 175" or "Entry Number 175"
+    for match in re.finditer(r'Entry\s+(?:No\.?|Number)\s*[:#]?\s*(\d{1,4})', entry_section, re.IGNORECASE):
+        num = match.group(1)
+        if is_valid_entry_mention(entry_section, match.span(1), num):
+            entry_numbers.add(num)
     
     # Pattern 4: Look for entry numbers in Gujarati context
     for match in re.finditer(r'(?:નોંધ|નૂધ|નોન્ધ)\s*(?:નંબર|નં\.?)\s*[:#]?\s*(\d+)', entry_section):
         entry_numbers.add(match.group(1))
     
-    # Pattern 5: Look for entry numbers in a tabular format with dates
-    for match in re.finditer(r'(?:^|\n|\r)\s*(\d+)\s+\d{1,2}[/-]\d{1,2}[/-]\d{2,4}', entry_section):
-        entry_numbers.add(match.group(1))
+    # Pattern 5: numbers in a tabular format with dates (first col is number)
+    for match in re.finditer(r'(?:^|\n|\r)\s*(\d{3,4})\s+\d{1,2}[/-]\d{1,2}[/-]\d{2,4}', entry_section):
+        num = match.group(1)
+        if is_valid_entry_mention(entry_section, match.span(1), num):
+            entry_numbers.add(num)
     
     # Pattern 6: Look for Hindi entry references
     for match in re.finditer(r'प्रविष्टि\s*(?:संख्या|सं\.?)\s*[:#]?\s*(\d+)', entry_section):
         entry_numbers.add(match.group(1))
     
-    # Pattern 7: Look for bold or emphasized numbers in the Entry Details section that could be entry numbers
-    # This is useful for PDFs where entry numbers are highlighted or in a different format
-    for match in re.finditer(r'(?:<b>|<strong>|\*\*|\[|\()(\d{1,4})(?:</b>|</strong>|\*\*|\]|\))', entry_section):
-        entry_numbers.add(match.group(1))
+    # Pattern 7: Emphasized numbers (bold/asterisk). Require 3-4 digits and filter context
+    for match in re.finditer(r'(?:<b>|<strong>|\*\*|\[|\()(\d{3,4})(?:</b>|</strong>|\*\*|\]|\))', entry_section):
+        num = match.group(1)
+        if is_valid_entry_mention(entry_section, match.span(1), num):
+            entry_numbers.add(num)
     
     # If no entry numbers found in the entry section, search the entire document
     if not entry_numbers:
@@ -775,18 +760,24 @@ def identify_all_entry_numbers(pdf_text):
         
         # Look for entry references throughout the document
         for match in re.finditer(r'Entry\s+(?:No\.?|Number)\s*[:#]?\s*(\d+)', pdf_text, re.IGNORECASE):
-            entry_numbers.add(match.group(1))
+            num = match.group(1)
+            if is_valid_entry_mention(pdf_text, match.span(1), num):
+                entry_numbers.add(num)
         
         # Look for Gujarati entry references throughout the document
         for match in re.finditer(r'(?:નોંધ|નૂધ|નોન્ધ)\s*(?:નંબર|નં\.?)\s*[:#]?\s*(\d+)', pdf_text):
-            entry_numbers.add(match.group(1))
+            num = match.group(1)
+            if is_valid_entry_mention(pdf_text, match.span(1), num):
+                entry_numbers.add(num)
         
         # Look for Hindi entry references throughout the document
         for match in re.finditer(r'प्रविष्टि\s*(?:संख्या|सं\.?)\s*[:#]?\s*(\d+)', pdf_text):
-            entry_numbers.add(match.group(1))
+            num = match.group(1)
+            if is_valid_entry_mention(pdf_text, match.span(1), num):
+                entry_numbers.add(num)
     
     if entry_numbers:
-        logger.info(f"Identified {len(entry_numbers)} entry numbers: {sorted(list(entry_numbers))}")
+        logger.info(f"Identified {len(entry_numbers)} probable entry numbers: {sorted(list(entry_numbers))}")
         return sorted(list(entry_numbers), key=lambda x: int(x) if x.isdigit() else float('inf'))
     
     logger.warning("No entry numbers found in the document")
@@ -859,26 +850,13 @@ def extract_entry_details(pdf_text):
                     'certification': "The Entry is certified but date is not legible."
                 }]
         
-        # Check if all identified entry numbers are in the extracted entries
-        extracted_numbers = [entry.get('entry_number') for entry in raw_entries]
-        missing_entries = [num for num in all_entry_numbers if num not in extracted_numbers]
-        
-        # Add placeholder entries for missing entry numbers
-        for entry_num in missing_entries:
-            logger.info(f"Adding placeholder for missing entry: {entry_num}")
-            raw_entries.append({
-                'entry_number': entry_num,
-                'date': "Not available",
-                'type': "UNKNOWN",
-                'description': "Entry mentioned in the document but details not available.",
-                'certification': "The Entry is certified but details are not available."
-            })
-        
         # Process the raw entries into structured entry objects
         processed_entries = process_entry_details(raw_entries)
         
-        logger.info(f"Successfully extracted and processed {len(processed_entries)} entries")
-        return processed_entries
+        # Drop placeholder/empty entries to avoid phantom rows in report
+        filtered_entries = [e for e in processed_entries if getattr(e, 'formatted_description', '').strip()]
+        logger.info(f"Successfully extracted and processed {len(filtered_entries)} entries (filtered from {len(processed_entries)})")
+        return filtered_entries
         
     except Exception as e:
         logger.error(f"Error in entry extraction process: {str(e)}")

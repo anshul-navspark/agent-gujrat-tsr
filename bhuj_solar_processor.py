@@ -54,6 +54,7 @@ DISTRICT_TRANSLATIONS = {
     "Kachchh": "કચ્છ",
     "Banaskantha": "બનાસકાંઠા",
     "Bhavnagar": "ભાવનગર",  # Added for Datha
+    "Jamnagar": "જામનગર",
     # Add more districts as needed
 }
 
@@ -64,12 +65,15 @@ TALUKA_TRANSLATIONS = {
     "Abdasa": "અબડાસા",
     "Dhanera": "ધાનેરા",
     "Talaja": "તળાજા",  # Added for Datha
+    "Jamjodhpur": "જામજોધપુર",
+    "Jamkhadaba": "જામજોધપુર",  # Alternative for Jamjodhpur
     # Add more talukas as needed
 }
 
 VILLAGE_TRANSLATIONS = {
     "Anavada": "અનાવાડા - 091",
     "Trambo": "ત્રંબો - 033",
+    "Trambau": "ત્રંબો - 033",
 
     "Edal": "એડાલ - 031",
     "Jadi": "જાડી - 029",
@@ -78,6 +82,15 @@ VILLAGE_TRANSLATIONS = {
     "Shiya": "શિયા - 030",
     "Malotra": "માલોત્રા - 050",
     "Datha": "દાઠા",  # Added for Datha
+    
+    # Hothiji Khadaba variations - the exact Gujarati text provided
+    "Hothiji Khadba": "હોથીજી ખડબા - 034",
+    "Hothiji Khadaba": "હોથીજી ખડબા - 034", 
+    "Hothiji Khadba Abdasa": "હોથીજી ખડબા - 034",
+    "Hothiji Khadaba Abdasa": "હોથીજી ખડબા - 034",
+    "હોથીજી ખડબા": "હોથીજી ખડબા - 034",  # Direct Gujarati mapping
+    "Hothiji": "હોથીજી ખડબા - 034",  # Shortened version
+    "Khadaba": "હોથીજી ખડબા - 034",  # Alternative search
         
     # Add more villages as needed
 }

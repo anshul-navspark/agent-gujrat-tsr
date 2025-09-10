@@ -1,3 +1,11 @@
+## Agentic Mode (beta)
+
+A new Agentic workflow can generate TSRs via an AI agent that orchestrates extraction tools.
+
+- In the Streamlit sidebar, toggle "Agentic Mode (beta)" to enable.
+- Preference is persisted locally and used across sessions.
+- On failures, it falls back to the legacy generator automatically.
+
 # Bhuj Solar Land Survey Processor
 
 A comprehensive Python tool for processing land records from Gujarat government website, generating PDFs and Title Search Reports (TSR) for solar land surveys.

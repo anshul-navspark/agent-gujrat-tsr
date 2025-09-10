@@ -16,7 +16,16 @@ from typing import Dict, Any, Optional, List
 import pandas as pd
 
 from anyror_refactored import AnyRoRScraper
+from selenium.common.exceptions import InvalidSessionIdException, TimeoutException, WebDriverException
 from tsr_generator import generate_tsr_from_pdf
+import importlib
+
+def _get_translation_module():
+    try:
+        mod = importlib.import_module("bhuj_solar_processor")
+        return mod
+    except Exception:
+        return None
 
 
 def ensure_dir(path: str) -> None:
@@ -42,7 +51,7 @@ class LandRecordProcessor:
         ensure_dir(self.pdf_dir)
         ensure_dir(self.tsr_dir)
         self.logger = logger or logging.getLogger(__name__)
-        self.scraper = AnyRoRScraper(headless=headless, logger=self.logger)
+        self.headless = headless
 
     def _build_paths(self, survey_number: str) -> Dict[str, str]:
         # Sanitize filename
@@ -61,33 +70,63 @@ class LandRecordProcessor:
         survey_number_guj: str,
         regenerate_pdf: bool = False,
         generate_tsr: bool = True,
+        use_agent: bool = False,
     ) -> ProcessResult:
         """Fetch PDF from AnyRoR and optionally generate TSR.
 
         Assumes Gujarati strings for location and survey inputs.
         """
         paths = self._build_paths(survey_number_guj)
+        scraper: Optional[AnyRoRScraper] = None
         try:
-            # Fetch PDF
+            # Function to create a fresh scraper instance
+            def _new_scraper() -> AnyRoRScraper:
+                return AnyRoRScraper(headless=self.headless, logger=self.logger)
+
+            # Fetch PDF with at most one retry on InvalidSessionIdException
             if regenerate_pdf or not os.path.exists(paths["pdf"]):
-                self.logger.info(
-                    f"Fetching land record for {district_guj}, {taluka_guj}, {village_guj}, {survey_number_guj}"
-                )
-                result = self.scraper.fetch_land_record(
-                    district_name=district_guj,
-                    taluka_name=taluka_guj,
-                    village_name=village_guj,
-                    survey_block_number=survey_number_guj,
-                    output_path=paths["pdf"],
-                )
-                if not result.get("success"):
-                    return ProcessResult(success=False, error=result.get("error") or "Unknown scrape error")
+                attempts = 0
+                while attempts < 2:
+                    try:
+                        if scraper is None:
+                            scraper = _new_scraper()
+                        self.logger.info(
+                            f"Fetching land record for {district_guj}, {taluka_guj}, {village_guj}, {survey_number_guj}"
+                        )
+                        result = scraper.fetch_land_record(
+                            district_name=district_guj,
+                            taluka_name=taluka_guj,
+                            village_name=village_guj,
+                            survey_block_number=survey_number_guj,
+                            output_path=paths["pdf"],
+                        )
+                        if not result.get("success"):
+                            return ProcessResult(success=False, error=result.get("error") or "Unknown scrape error")
+                        break
+                    except (InvalidSessionIdException, TimeoutException, WebDriverException) as e:
+                        # Recreate session once on WebDriver issues
+                        self.logger.warning(f"WebDriver issue ({type(e).__name__}); recreating browser and retrying once: {e}")
+                        if scraper:
+                            try:
+                                scraper.cleanup()
+                            except Exception:
+                                pass
+                        scraper = None
+                        attempts += 1
+                    except Exception as exc:
+                        # Clean up scraper on any other exception
+                        if scraper:
+                            try:
+                                scraper.cleanup()
+                            except Exception:
+                                pass
+                        raise exc
 
             # Generate TSR
             tsr_path = None
             if generate_tsr:
                 self.logger.info(f"Generating TSR from {paths['pdf']}")
-                generate_tsr_from_pdf(paths["pdf"], paths["tsr"])
+                generate_tsr_from_pdf(paths["pdf"], paths["tsr"], use_agent=use_agent)
                 tsr_path = paths["tsr"]
 
             return ProcessResult(success=True, pdf_path=paths["pdf"], tsr_path=tsr_path)
@@ -96,6 +135,13 @@ class LandRecordProcessor:
             self.logger.error(f"Processing error: {exc}")
             self.logger.debug(traceback.format_exc())
             return ProcessResult(success=False, error=str(exc))
+        finally:
+            # Ensure browser is closed after each fetch to avoid stale sessions
+            try:
+                if scraper and getattr(scraper, "driver", None):
+                    scraper.driver.quit()
+            except Exception:
+                pass
 
     def process_dataframe(
         self,
@@ -140,6 +186,19 @@ class LandRecordProcessor:
             village_guj = str(v_raw).strip()
             survey_guj = str(s_raw).strip()
 
+            # Auto-translate common English names to Gujarati for batch inputs
+            # Use live dictionaries from bhuj_solar_processor to avoid stale copies
+            _mod = _get_translation_module()
+            if _mod is not None:
+                try:
+                    district_guj = _mod.translate_to_gujarati(district_guj, _mod.DISTRICT_TRANSLATIONS, default=district_guj)
+                    taluka_guj = _mod.translate_to_gujarati(taluka_guj, _mod.TALUKA_TRANSLATIONS, default=taluka_guj)
+                    village_guj = _mod.translate_to_gujarati(village_guj, _mod.VILLAGE_TRANSLATIONS, default=village_guj)
+                    survey_guj = _mod.convert_survey_number(survey_guj)
+                except Exception:
+                    # Soft-fallback: leave values as-is on any error
+                    pass
+
             # Skip placeholder rows like 'New' survey
             if survey_guj.lower() == "new":
                 results.append(ProcessResult(success=False, error=f"Row {idx}: Skipped placeholder 'New'"))
@@ -155,5 +214,6 @@ class LandRecordProcessor:
             )
             results.append(res)
         return results
+
 
 

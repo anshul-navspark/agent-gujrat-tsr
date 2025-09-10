@@ -78,6 +78,9 @@ def translate_gujarati_text(text):
         'અબડાસા': 'Abdasa',
         'વલસરા': 'Valsara',
         'કચ્છ': 'Kachchh',
+        'જામનગર': 'Jamnagar',
+        'જામજોધપુર': 'Jamjodhpur',
+        'હોથીજી ખડબા': 'Hothiji Khadba',
         # Enhanced translation dictionary with additional terms
         'વેચાણ': 'Sale',
         'દાન': 'Gift',

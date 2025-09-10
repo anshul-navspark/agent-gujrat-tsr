@@ -198,7 +198,8 @@ def add_chain_of_title_section(document, entries):
             # Second column: Entry details
             # Add Entry No. and Date
             entry_para = row_cells[1].paragraphs[0]
-            header_text = f"Entry No. {entry.entry_number} Dated {entry.date}: "
+            safe_date = entry.date if getattr(entry, 'date', '') else ""
+            header_text = f"Entry No. {entry.entry_number} Dated {safe_date}: "
             header_run = entry_para.add_run(header_text)
             header_run.bold = True
             header_run.font.name = 'Times New Roman'

@@ -153,7 +153,7 @@ def create_entry_from_dict(entry_dict):
         BaseEntry: A structured entry object
     """
     logger = logging.getLogger(__name__)
-    entry_type_str = entry_dict.get('type', 'UNKNOWN').upper().strip()
+    entry_type_str = str(entry_dict.get('type', 'UNKNOWN')).upper().strip()
     
     # Map certain entry types to their standard form
     type_mapping = {
@@ -163,7 +163,47 @@ def create_entry_from_dict(entry_dict):
         'CHARGE REMOVED': 'RELEASE',
         'DEATH': 'INHERITANCE',
         'PERSONS ADD': 'PERSONS_ADD',
-        'TO TRANSFER': 'TRANSFER'
+        'TO TRANSFER': 'TRANSFER',
+        
+        # Gujarati/translated variants normalization
+        'હુકમથી': 'ORDER',
+        'ORDER': 'ORDER',
+        'મૃત્યુ': 'INHERITANCE',
+        'વારસાઈ': 'INHERITANCE',
+        'વેચાણ': 'SALE',
+        'મુક્તિ': 'RELEASE',
+        'લોન': 'LOAN',
+        'ચાર્જ': 'MORTGAGE',
+        
+        # Additional Gujarati entry types from logs
+        'હયાતીમા વહચણી': 'PARTITION',
+        'HAYATIMA VAHCHANI': 'PARTITION',
+        'હયાતીમા હક દાખલ': 'INHERITANCE',
+        'HAYATIMA HAK DAKHIL': 'INHERITANCE',
+        'હયાતીમા વહચણી નામંજૂર': 'PARTITION',
+        'HAYATIMA VAHCHANI NAMANJUR': 'PARTITION',
+        'વારસા': 'INHERITANCE',
+        'VARSA': 'INHERITANCE',
+        'વહચણી': 'PARTITION',
+        'VAHCHANI': 'PARTITION',
+        'હક દાખલ': 'INHERITANCE',
+        'HAK DAKHIL': 'INHERITANCE',
+        'નામંજૂર': 'CORRECTION',
+        'NAMANJUR': 'CORRECTION',
+        'વતી': 'INHERITANCE',
+        'VATI': 'INHERITANCE',
+        'રદ': 'CORRECTION',
+        'RAD': 'CORRECTION',
+        'સુધારો': 'CORRECTION',
+        'SUDHARO': 'CORRECTION',
+        
+        # Common variations
+        'PARTITION AMONG HEIRS': 'PARTITION',
+        'INHERITANCE CLAIM': 'INHERITANCE',
+        'ENTRY CORRECTION': 'CORRECTION',
+        'CLAIM REJECTED': 'CORRECTION',
+        'DIVISION': 'PARTITION',
+        'SUBDIVISION': 'PARTITION'
     }
     
     # Normalize the entry type

@@ -8,7 +8,9 @@ from pydantic import SecretStr
 from dotenv import load_dotenv
 
 from tsr_generator.utils.text_utils import convert_gujarati_to_english_numerals, translate_gujarati_text
+from tsr_generator.utils.retry_utils import retry_with_backoff, safe_execute, RetryableError
 
+@retry_with_backoff(max_attempts=3, delay=2.0, exceptions=(RetryableError, ConnectionError, TimeoutError))
 def extract_land_records_ai(pdf_text):
     """
     Extract land record information using dedicated AI call - for the first table.
@@ -26,8 +28,8 @@ def extract_land_records_ai(pdf_text):
         # Initialize Azure OpenAI client
         load_dotenv()
         llm = AzureChatOpenAI(
-            model="gpt-4o",
-            api_version='2024-02-15-preview',
+            model=os.getenv('AI_MODEL_NAME', 'gpt-5'),
+            api_version=os.getenv('AZURE_OPENAI_API_VERSION', '2024-02-15-preview'),
             azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT', ''),
             api_key=SecretStr(os.getenv('AZURE_OPENAI_KEY', '')),
             temperature=0.0
@@ -46,22 +48,94 @@ def extract_land_records_ai(pdf_text):
         7. owner - Name of the land owner or khatedar
         
         Be precise and extract only what's clearly stated in the document. Look for sections labeled "Land Details" or similar.
-        Format your response as a JSON object with these exact keys.
+        
+        IMPORTANT: Return ONLY a valid JSON object with these exact keys. Do not include any explanatory text before or after the JSON.
+        
+        Example format:
+        {{
+            "village_name": "Example Village",
+            "taluka_name": "Example Taluka",
+            "district_name": "Example District",
+            "survey_number": "123",
+            "total_area": "2-79-23",
+            "nature_of_land": "Agricultural",
+            "owner": "Example Owner"
+        }}
         
         Here's the document text:
         {pdf_text[:3000]}
         """
         
-        response = llm.invoke(prompt)
+        try:
+            response = llm.invoke(prompt)
+        except Exception as e:
+            # Check if this is a retryable error
+            if any(term in str(e).lower() for term in ['timeout', 'connection', 'rate limit', 'server error']):
+                logger.warning(f"Retryable error in AI call: {e}")
+                raise RetryableError(f"AI service error: {e}")
+            else:
+                raise e
         
-        # Parse JSON from the response
-        json_match = re.search(r'({.*})', response.content, re.DOTALL)
-        if json_match:
-            land_details = json.loads(json_match.group(1))
+        # Parse JSON from the response robustly
+        content = response.content if hasattr(response, 'content') else str(response)
+        logger.debug(f"AI response content: {content}")
+        
+        # Clean the content
+        content = ''.join(ch for ch in content if ch == '\t' or ch == '\n' or ch == '\r' or ord(ch) >= 32)
+        
+        # Try multiple JSON extraction strategies
+        land_details = None
+        
+        # Strategy 1: Look for JSON block wrapped in ```json
+        json_code_match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', content, re.IGNORECASE)
+        if json_code_match:
+            try:
+                json_blob = json_code_match.group(1)
+                json_blob = re.sub(r',\s*([\]\}])', r'\1', json_blob)  # Remove trailing commas
+                land_details = json.loads(json_blob)
+                logger.info("Successfully parsed JSON from code block")
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse JSON from code block: {e}")
+        
+        # Strategy 2: Look for plain JSON object
+        if not land_details:
+            json_match = re.search(r'(\{[\s\S]*?\})', content)
+            if json_match:
+                try:
+                    json_blob = json_match.group(1)
+                    # Clean common JSON issues
+                    json_blob = re.sub(r',\s*([\]\}])', r'\1', json_blob)  # Remove trailing commas
+                    json_blob = re.sub(r'(["\w]+):\s*(["\w\s\-\(\)\.]+)(?=\s*[,\}])', 
+                                     lambda m: f'{m.group(1)}: "{m.group(2).strip()}"' if not m.group(2).strip().startswith('"') else m.group(0), 
+                                     json_blob)  # Quote unquoted values
+                    land_details = json.loads(json_blob)
+                    logger.info("Successfully parsed JSON from plain text")
+                except json.JSONDecodeError as e:
+                    logger.warning(f"Failed to parse JSON from plain text: {e}")
+        
+        # Strategy 3: Try to extract fields manually using regex if JSON parsing fails
+        if not land_details:
+            logger.warning("JSON parsing failed, attempting manual field extraction")
+            land_details = {}
+            field_patterns = {
+                'village_name': r'(?:village_name|Village)["\s]*[:=]\s*["\']?([^"\'،\n,]+)',
+                'taluka_name': r'(?:taluka_name|Taluka)["\s]*[:=]\s*["\']?([^"\'،\n,]+)',
+                'district_name': r'(?:district_name|District)["\s]*[:=]\s*["\']?([^"\'،\n,]+)',
+                'survey_number': r'(?:survey_number|Survey)["\s]*[:=]\s*["\']?([^"\'،\n,]+)',
+                'total_area': r'(?:total_area|Area)["\s]*[:=]\s*["\']?([^"\'،\n,]+)',
+                'nature_of_land': r'(?:nature_of_land|Nature)["\s]*[:=]\s*["\']?([^"\'،\n,]+)',
+                'owner': r'(?:owner|Owner)["\s]*[:=]\s*["\']?([^"\'،\n,]+)'
+            }
+            
+            for field, pattern in field_patterns.items():
+                match = re.search(pattern, content, re.IGNORECASE)
+                land_details[field] = match.group(1).strip() if match else 'Not Available'
+        
+        if land_details:
             logger.info(f"Successfully extracted land details: {land_details}")
             return land_details
         else:
-            logger.warning("Failed to parse JSON from AI response for land details")
+            logger.warning("All JSON parsing strategies failed")
             return {
                 'village_name': 'Not Available',
                 'taluka_name': 'Not Available',

@@ -10,7 +10,7 @@ from tsr_generator.extractors.entry_details import extract_entry_details, transl
 from tsr_generator.extractors.findings import generate_findings_table
 from tsr_generator.document.tsr_document import create_tsr_document
 
-def generate_tsr_from_pdf(pdf_path, output_path, logger=None):
+def generate_tsr_from_pdf(pdf_path, output_path, logger=None, use_agent: bool = False):
     """
     Generate a TSR document from a PDF land record with enhanced entry processing
     
@@ -35,7 +35,24 @@ def generate_tsr_from_pdf(pdf_path, output_path, logger=None):
             logger.addHandler(handler)
     
     try:
-        # Extract text from PDF
+        if use_agent:
+            # Route to agentic workflow
+            try:
+                logger.info("Using Agentic workflow for TSR generation")
+                from agent_system.backend.services.agent_service import generate_tsr_agentic
+                agent_result = generate_tsr_agentic(pdf_path, output_path)
+                if agent_result.get('success'):
+                    return {
+                        'success': True,
+                        'tsr_path': agent_result.get('output_path', output_path),
+                        'mode': 'agentic'
+                    }
+                else:
+                    logger.warning(f"Agent failed, falling back to legacy: {agent_result.get('error')}")
+            except Exception as agent_exc:
+                logger.warning(f"Agent path error, falling back to legacy: {agent_exc}")
+
+        # Extract text from PDF (legacy path)
         logger.info(f"Extracting text from PDF: {pdf_path}")
         pdf_text = extract_text_from_pdf(pdf_path)
         

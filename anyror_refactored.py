@@ -32,6 +32,10 @@ from langchain_openai import AzureChatOpenAI
 from langchain_core.messages import HumanMessage
 from pydantic import SecretStr
 from dotenv import load_dotenv
+from anyror_village_matcher import VillageNameMatcher
+
+# Global flag to avoid repeated webdriver cache cleaning per process
+WDM_CACHE_CLEANED = False
 
 # Load environment variables from .env file
 load_dotenv()
@@ -222,6 +226,8 @@ class WebDriverManager:
     def __init__(self):
         self.driver = None
         self.headless = True  # Default to headless
+        # Track whether webdriver-manager cache was cleaned in this process
+        self._wdm_cache_cleaned = False
     
     def _kill_zombie_chromedrivers(self):
         """Kill any zombie chromedriver processes."""
@@ -394,8 +400,10 @@ class WebDriverManager:
         logger = logging.getLogger(__name__)
         logger.info(f"Trying approach: Clean cache and ChromeDriverManager auto-detect (headless={self.headless})")
         
-        # Clean the ChromeDriver cache
-        self._clean_chromedriver_cache()
+        # Clean the ChromeDriver cache only once per process to avoid repeated downloads
+        if not self._wdm_cache_cleaned:
+            self._clean_chromedriver_cache()
+            self._wdm_cache_cleaned = True
         
         try:
             # First try with the latest ChromeDriverManager API
@@ -563,19 +571,41 @@ class WebDriverManager:
     
     def close(self):
         """Close the WebDriver and clean up resources."""
+        import time
+        logger = logging.getLogger(__name__)
+        
         if self.driver:
             try:
+                # Close all windows first
+                for window_handle in self.driver.window_handles:
+                    self.driver.switch_to.window(window_handle)
+                    self.driver.close()
+                
+                # Quit the driver
                 self.driver.quit()
-            except Exception:
-                pass
+                logger.info("WebDriver closed successfully")
+            except Exception as e:
+                logger.warning(f"Error closing WebDriver gracefully: {e}")
+                try:
+                    # Force quit if graceful close fails
+                    self.driver.quit()
+                except:
+                    pass
             finally:
                 self.driver = None
+        
+        # Small delay to allow processes to cleanup
+        time.sleep(1)
         
         # Kill any zombie chromedriver processes
         self._kill_zombie_chromedrivers()
         
-        # Clean the cache
-        self._clean_chromedriver_cache()
+        # Optionally clean the cache at close if explicitly requested
+        try:
+            if os.getenv("WDM_CLEAN_ON_CLOSE", "0") in ("1", "true", "True"):
+                self._clean_chromedriver_cache()
+        except Exception:
+            pass
 
 
 class FormFiller:
@@ -916,11 +946,44 @@ class FormFiller:
             True if the village was found and selected, False otherwise.
         """
         self.logger.info(f"Selecting Village: {village_name}")
+        
+        # First try exact/partial match
         result = self.select_dropdown_option(CONFIG['VILLAGE_DROPDOWN_ID'], village_name, partial_match=True)
+        
+        if not result:
+            # If failed, try some common village name variations and debug
+            self.logger.warning(f"Initial village selection failed for: {village_name}")
+            
+            # Enhanced village matching using the VillageNameMatcher
+            try:
+                dropdown = self.wait.until(EC.element_to_be_clickable((By.ID, CONFIG['VILLAGE_DROPDOWN_ID'])))
+                select = Select(dropdown)
+                available_options = [opt.text.strip() for opt in select.options if opt.text.strip()]
+                
+                self.logger.debug(f"Available village options (first 10): {available_options[:10]}")
+                
+                # Use enhanced village matcher
+                matcher = VillageNameMatcher(self.logger)
+                best_match = matcher.find_best_match(village_name, available_options)
+                
+                if best_match:
+                    self.logger.info(f"VillageNameMatcher found best match: '{best_match}' for '{village_name}'")
+                    result = self.select_dropdown_option(CONFIG['VILLAGE_DROPDOWN_ID'], best_match, partial_match=False)
+                    if result:
+                        self.logger.info(f"Successfully selected matched village: {best_match}")
+                else:
+                    # Generate detailed matching report for debugging
+                    report = matcher.get_match_strategies_report(village_name, available_options)
+                    self.logger.warning(f"VillageNameMatcher could not find suitable match:\n{report}")
+                
+            except Exception as e:
+                self.logger.warning(f"Error during enhanced village matching: {e}")
+        
         if result:
             self.logger.info("Village selected successfully")
         else:
             self.logger.error(f"Village '{village_name}' not found in dropdown")
+        
         return result
     
     def select_survey(self, survey_block_number):
@@ -1272,13 +1335,35 @@ class AnyRoRScraper:
         self.headless = headless  # Store headless setting
         self.driver = None
     
+    def __enter__(self):
+        """Context manager entry."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Context manager exit with cleanup."""
+        self.cleanup()
+        return False
+    
     def __del__(self):
         """Cleanup when the scraper is destroyed."""
+        self.cleanup()
+    
+    def cleanup(self):
+        """Centralized cleanup method."""
         if self.driver:
             try:
                 self.driver.quit()
-            except:
-                pass
+                self.logger.info("AnyRoRScraper: WebDriver cleaned up")
+            except Exception as e:
+                self.logger.warning(f"AnyRoRScraper: Error during cleanup: {e}")
+            finally:
+                self.driver = None
+        
+        if self.web_driver_manager:
+            try:
+                self.web_driver_manager.close()
+            except Exception as e:
+                self.logger.warning(f"AnyRoRScraper: Error closing WebDriverManager: {e}")
     
     def fetch_land_record(self, district_name, taluka_name, village_name, survey_block_number, output_path):
         """Fetch a land record from the AnyRoR portal."""
