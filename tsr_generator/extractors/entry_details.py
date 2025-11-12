@@ -88,70 +88,111 @@ def extract_entry_details_ai(pdf_text):
         # Create a focused prompt for extracting entries with the specific format
         prompt = f"""
         Extract all mutation entries from this land record document, exactly matching the format shown in the examples below.
-        
+
         Candidate entry numbers detected from the Entry Details section: {', '.join(all_entry_numbers)}
         Use them only if they are confirmed as actual mutation entries (e.g., appear as "Entry No." or in the Entry Details table). Do NOT treat Khata/Survey/Form numbers as entries. Do NOT fabricate entries that are not present.
-        
+
         For each entry, extract:
         1. entry_number - The entry number
         2. date - The date (DD/MM/YYYY)
-        3. type - Category of entry (LOAN, DEATH, RELEASE, LOAN CLOSE, SALE, PARTITION, PERSONS ADD, TO TRANSFER, etc.)
+        3. type - Category of entry (LOAN, DEATH, RELEASE, LOAN CLOSE, SALE, PARTITION, PERSONS ADD, TO TRANSFER, EXCHANGE, LIFETIME DISTRIBUTION, NOT RELATED, ORDER, RELINQUISHMENT, etc.)
         4. description - Detailed description following the exact format from examples
-        5. certification - Line about certification if available (starts with "The Entry is certified...")
-        
+        5. certification - Line about certification if available (starts with "The Entry is certified..." or "The Entry is rejected")
+
         Many entries will only have an entry number listed in a table format without any other details, under the table heading "Entry Details". For these entries:
         - entry_number: Use the number from the table
         - date: ""
         - type: ""
         - description: ""
         - certification: ""
-        
+
+        CRITICAL Formatting Rules:
+        1. ALL substantive descriptions MUST start with "That" (except for NOT RELATED and PROMULGATION types)
+        2. Use proper name formatting with full titles (Thakor, Patel, Kanbi, Choudhary, Rabari, Vadher, Solanki, etc.)
+        3. Preserve measurement units exactly: "Acre/Guntha" or "Hectare"
+        4. Format amounts as "Rs. X/-" or "Rs. X,XXX/-"
+        5. For lists of heirs/parties, use "which are as follows:-" followed by bullet points
+        6. Document references: "document no. X dated DD/MM/YYYY" or "document no. X dated DD.MM.YYYY"
+        7. Survey numbers: Preserve exact format including "old Survey No." vs "Survey No."
+        8. For entries with tables (PARTITION, EXCHANGE), preserve table structure with bullet points
+
+        Entry Type Classification Rules:
+        - LOAN: Contains "took a loan" or "loan of Rs."
+        - RELEASE/LOAN CLOSE: Contains "removing the charge" or "exemption of burden"
+        - SALE: Contains "sold" and "consideration of Rs."
+        - INHERITANCE/DEATH: Contains "upon the demise" or "came to be mutated in his legal heirs"
+        - PARTITION: Contains "distribution took place" or "distributed his land" or "Family distribution"
+        - EXCHANGE: Contains "exchanged their respective lands"
+        - RELINQUISHMENT: Contains "relinquished their respective share"
+        - ORDER: Contains "Taluka Circular" or "was allotted" or "given in old tenure"
+        - LIFETIME DISTRIBUTION: Contains "life time distribution"
+        - NOT RELATED: Contains "not related to present survey" or "not completely Scanned"
+        - PROMULGATION: Contains "re-survey" or "promulgation"
+
         The descriptions MUST follow these exact patterns as shown in the examples:
-        
+
         LOAN Example:
         "That Rabari Sujabhai Jawanabhai and others took a loan of Rs. 1,00,000/- on the land bearing Survey No. 54/2p2(143), 59p3(143), 60/3p2(143), 66/1/2p2(143), 66/2p2(143), 68p5(143) from Voda Group Gopalak Vikas Kariyakari Sahakari Mandli."
-        
-        DEATH Example:
+
+        DEATH/INHERITANCE Example:
         "That upon the demise of Jawanabhai Manabhai, his land bearing old Survey No. 59 P, 68 P, 54/2p, 60/3, 66/3 P & 66/2 P came to be mutated in his legal heirs which are as follows:-
-        • Sujabhai Jawanabhai 
-        • Hariyaben Jawanabhai
-        
-        RELEASE Example:
-        "That Hariyaben Jawanabhai, Keliben Jawanabhai, Ajyotiben Jawanabhai, Panchuben Jawanabhai and Champaben Jawanabhai relinquished their respective share in favour of Rabari Sujabhai Jawanabhai."
-        
-        LOAN CLOSE Example:
+        • Sujabhai Jawanabhai
+        • Hariyaben Jawanabhai"
+
+        RELINQUISHMENT Example:
+        "That Sonbai Jetji and Heenabai Jetji relinquished their respective share in favour of Madansingh Jetji and Ishwarsingh Jetji."
+
+        RELEASE/LOAN CLOSE Example:
         "That upon receiving an application from said Rabari Amarabhai Chamnabhai for removing the charge of Dena Gujrat Gramin Bank, Dhanera Branch. Entry No. 1341. The said exemption of burden has been recorded."
-        
+
         SALE Example:
         "That the said Choudhary Harkhabhai Chhotybhai and Choudhary Shivabhai Harkhabhai they sold their respective share in land bearing Survey No. 241/1 measuring 1-96-27 Hectare to Choudhary Shaileshbhai Devanbhai through the document no. 324/2022 dated 17.05.2022 for a consideration of Rs. 3,00,000/-."
-        
+
         PARTITION Example:
         "That the said Vadher Sankarbhai Ramabhai distributed his land as follows:-
         • Vadher Hamirbhai Shankarbhai - Survey No. 122 - 3-12 Acre/Guntha
         • Vadher Nanubhai Shankarbhai - Survey No. 213 - 4-28 Acre/Guntha
-        • Adher Vajjubhai Shankarbhai - Survey No. 38/1 - 11-06 Acre/Guntha, Survey No. 379 - 6-13 Acre/Guntha
-        
+        • Vadher Vajjubhai Shankarbhai - Survey No. 38/1 - 11-06 Acre/Guntha, Survey No. 379 - 6-13 Acre/Guntha
+
         The distribution/Partition of the shares as mentioned above was recorded based on their application and their consent as per their respective rights and physical possession."
-        
+
+        EXCHANGE Example:
+        "That Thakor Mulji Gagji and Gagji Maldevji and Thakor Chaganbhai Khushalsinghji exchanged their respective lands through a registered document no. 2472 dated 26/06/2000 and got land as follows:-
+        • Thakor Mulji Gagji got Survey No. 104/1 - 13-31 Acre/Guntha
+        • Thakor Chaganbhai Khushalsinghji got Survey No. 98/3 - 6-30 Acre/Guntha"
+
+        ORDER/ALLOTMENT Example:
+        "That as per the Taluka Circular No. Vatan/10 dated 18/07/1955 old Survey no. 83/4, 104/6, 119/6, 134/2 & 5/2 was allotted to Thakor Dhukhji Chamnaji in old tenure."
+
+        LIFETIME DISTRIBUTION Example:
+        "That the said Kanbi Rama Nanji made an application of life time distribution in his land bearing old Survey No. 117/4p measuring 0-37 Acre/Guntha, old Survey No. 117/6p measuring 4-30 Acre/Guntha and old Survey No. 104p measuring 2-00 Acre/Guntha to transfer to his son i.e. Kanbi Narshi Rama."
+
         PERSONS ADD Example:
         "That the said Choudhary Virambhai Bhemabhai made an application of life time distribution in his land bearing Survey No. 46(205), 65/2p1(205), 551/2(205) to add his legal heirs which are as follows:-
         • Choudhary Hiraben Virambhai
-        • Choudhary Jayantibhai Virambhai
-        
+        • Choudhary Jayantibhai Virambhai"
+
         TO TRANSFER Example:
         "That the said Choudhary Virambhai Bhemabhai made an application of life time distribution in his land bearing Survey No. 46(205), 65/2p1(205), 551/2(205) to transfer to his legal heirs which are as follows:-
         • Choudhary Hiraben Virambhai
         • Choudhary Jayantibhai Virambhai"
-        
-        Always start description with "That" in all descriptions. For entries involving lists of people, use the format "which are as follows:-" followed by a bulleted list with each person on a separate line.
-        
-        Also extract certification information if available:
-        "The Entry is certified by C.O. Jadiya on 24/12/2007."
-        "The Entry is certified but date is not legible."
-        
+
+        NOT RELATED Example:
+        "This entry is not related to present survey no."
+        OR
+        "This entry is regarding area measurement but it is not completely Scanned."
+
+        Also extract certification information if available. Certification examples:
+        - "The Entry is certified."
+        - "The Entry is certified by C.O. Jadiya on DD/MM/YYYY."
+        - "The Entry is certified on DD/MM/YYYY."
+        - "The Entry is rejected."
+        - "The entry is Rejected."
+        - "The Entry is certified but date is not legible."
+
         Format your response as a JSON array with objects containing these keys:
         "entry_number", "date", "type", "description", "certification"
-        
+
         Here's the document section to analyze:
         {entry_section}
         """
@@ -214,29 +255,40 @@ def extract_entry_details_fallback(entry_section):
         # Simplified prompt focusing on the exact format
         prompt = f"""
         Extract entries from this land record document using EXACTLY this format.
-        
+
         IMPORTANT: The document contains the following entry numbers that MUST be included in your extraction, even if you can't find detailed descriptions for them: {', '.join(all_entry_numbers)}
-        
+
         Entry format:
         - entry_number: The numeric entry number
         - date: In DD/MM/YYYY format if available
-        - type: One word category (LOAN, DEATH, RELEASE, SALE, PARTITION, etc.)
-        - description: Start with "That" and provide complete details
+        - type: Category (LOAN, DEATH, RELEASE, SALE, PARTITION, EXCHANGE, LIFETIME DISTRIBUTION, NOT RELATED, ORDER, RELINQUISHMENT, etc.)
+        - description: Start with "That" and provide complete details (except for NOT RELATED and PROMULGATION types)
         - certification: Information about who certified the entry and when
-        
+
         For entries where you can identify the entry number but not the description or other details, you may include them with empty fields. Only do this if the number clearly appears under the "Entry Details" heading or next to "Entry No.". Do not create entries from Khata/Survey numbers.
-        
+
+        CRITICAL Formatting Rules:
+        1. Start descriptions with "That" (except NOT RELATED and PROMULGATION)
+        2. Use proper titles: Thakor, Patel, Kanbi, Choudhary, Rabari, Vadher, Solanki
+        3. Preserve measurement units: "Acre/Guntha" or "Hectare"
+        4. Format amounts: "Rs. X/-" or "Rs. X,XXX/-"
+        5. Lists: "which are as follows:-" followed by bullet points
+
         Description examples:
-        - "That Rabari Sujabhai Jawanabhai and others took a loan of Rs. 1,00,000/- on the land bearing Survey No. 54/2p2(143)..."
-        - "That upon the demise of Jawanabhai Manabhai, his land bearing old Survey No. 59 P, 68 P, 54/2p, 60/3, 66/3 P & 66/2 P came to be mutated in his legal heirs which are as follows:-"
-        
+        - LOAN: "That Rabari Sujabhai Jawanabhai and others took a loan of Rs. 1,00,000/- on the land bearing Survey No. 54/2p2(143) from Voda Group Gopalak Vikas Kariyakari Sahakari Mandli."
+        - DEATH: "That upon the demise of Jawanabhai Manabhai, his land bearing old Survey No. 59 P came to be mutated in his legal heirs which are as follows:-"
+        - EXCHANGE: "That Thakor Mulji Gagji and Thakor Chaganbhai Khushalsinghji exchanged their respective lands through a registered document no. 2472 dated 26/06/2000 and got land as follows:-"
+        - NOT RELATED: "This entry is not related to present survey no."
+
         Certification examples:
-        - "The Entry is certified by C.O. Jadiya on 24/12/2007."
+        - "The Entry is certified."
+        - "The Entry is certified by C.O. Jadiya on DD/MM/YYYY."
+        - "The Entry is rejected."
         - "The Entry is certified but date is not legible."
-        
+
         Format your response as a JSON array with objects containing these keys:
         "entry_number", "date", "type", "description", "certification"
-        
+
         Here's the text:
         {entry_section}
         """
