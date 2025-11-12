@@ -6,7 +6,7 @@ from pathlib import Path
 from tsr_generator.utils.pdf_utils import extract_text_from_pdf
 from tsr_generator.utils.logging_utils import setup_logging
 from tsr_generator.extractors.land_details import extract_land_details
-from tsr_generator.extractors.entry_details import extract_entry_details, translate_entry_content
+from tsr_generator.extractors.entry_details import extract_entry_details, translate_entry_content, extract_entry_table
 from tsr_generator.extractors.findings import generate_findings_table
 from tsr_generator.document.tsr_document import create_tsr_document
 
@@ -55,7 +55,6 @@ def generate_tsr_from_pdf(pdf_path, output_path, logger=None, use_agent: bool = 
         # Extract text from PDF (legacy path)
         logger.info(f"Extracting text from PDF: {pdf_path}")
         pdf_text = extract_text_from_pdf(pdf_path)
-        
         if pdf_text is None:
             logger.error("Failed to extract text from PDF")
             return {
@@ -67,6 +66,9 @@ def generate_tsr_from_pdf(pdf_path, output_path, logger=None, use_agent: bool = 
         logger.info("Extracting land details using dedicated AI approach")
         land_details = extract_land_details(pdf_text)
         
+        logger.info("Entry Details extraction (consisting old entries)")
+        entry_table = extract_entry_table(pdf_text)
+
         # Extract entry details using enhanced structured approach
         logger.info("Extracting entry details using enhanced structured approach")
         entries = extract_entry_details(pdf_text)
@@ -86,7 +88,7 @@ def generate_tsr_from_pdf(pdf_path, output_path, logger=None, use_agent: bool = 
         
         # Create DOCX report with structured entries
         logger.info(f"Creating DOCX report with enhanced entry formatting: {output_path}")
-        output_file = create_tsr_document(entries, land_details, findings, output_path)
+        output_file = create_tsr_document(entry_table,entries, land_details, findings, output_path)
         logger.info(f"Report generated successfully: {output_file}")
         
         # Include entry type statistics in the result

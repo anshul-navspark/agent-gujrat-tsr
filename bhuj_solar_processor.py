@@ -623,6 +623,7 @@ def process_bhuj_solar_data(args):
             
             # Save intermediate results
             summary_df.to_csv(summary_path, index=False)
+            # input("Okay?")
     
     # Final save of summary file
     summary_df.to_csv(summary_path, index=False)
@@ -873,7 +874,6 @@ def main():
     
     # Setup logging
     logger = setup_logging(args.verbose)
-    
     if args.test_conversion:
         if not args.survey_numbers:
             logger.error("Please provide survey numbers to test with --survey-numbers")
