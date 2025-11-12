@@ -105,7 +105,7 @@ def add_section_heading(doc, text, level=1, numbered=True):
     
     return heading
 
-def add_chain_of_title_section(document, entries):
+def add_chain_of_title_section(document, entries, entry_table):
     """
     Add Chain of Title section with a two-column table format where:
     - First column (0.42 inches): Auto-numbered entries (1., 2., etc.)
@@ -169,8 +169,53 @@ def add_chain_of_title_section(document, entries):
     header_para.paragraph_format.line_spacing = 1.15
     # header_para.paragraph_format.space_after = Pt(12)  # Add some space after the header
     
+    # After the loop, add any missing entry numbers from `entry_table` as empty rows
+    # These will appear as: "Entry No. <num> Dated : " with no description
+    if entry_table:
+        try:
+            # Collect entry numbers already present in entries
+            existing_nums = set()
+            for e in entries:
+                num = getattr(e, 'entry_number', None)
+                if num is not None:
+                    existing_nums.add(str(num))
+
+            # Normalize entry_table items and find missing ones
+            table_nums = [str(x).strip() for x in entry_table if str(x).strip()]
+            missing_nums = [n for n in table_nums if n not in existing_nums]
+
+            if missing_nums:
+                logger.info(f"Adding {len(missing_nums)} placeholder rows for old entry numbers from entry_table")
+                i=0
+                for num in missing_nums:
+                    i += 1
+                    row_cells = table.add_row().cells
+                    # Set widths for the new row
+                    for j, width in enumerate(col_widths):
+                        table.rows[-1].cells[j].width = Inches(width)
+
+                    # Numbering cell
+                    num_para = row_cells[0].paragraphs[0]
+                    num_run = num_para.add_run(f"{i}.")
+                    num_run.bold = True
+                    num_run.font.name = 'Times New Roman'
+                    num_run.font.size = Pt(12.5)
+                    row_cells[0].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+
+                    # Second column: only the header text (no description)
+                    entry_para = row_cells[1].paragraphs[0]
+                    header_text = f"Entry No. {num} Dated : "
+                    header_run = entry_para.add_run(header_text)
+                    header_run.bold = True
+                    header_run.font.name = 'Times New Roman'
+                    header_run.font.size = Pt(12.5)
+                    # leave description empty
+                    entry_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+                    entry_para.paragraph_format.line_spacing = 1.15
+        except Exception as e:
+            logger.error(f"Error adding placeholder rows for entry_table numbers: {str(e)}")
     # Add each entry to the table as a numbered row
-    for i, entry in enumerate(entries, 1):
+    for x, entry in enumerate(entries, i+1):
         try:
             # Add a new row for each entry
             row_cells = table.add_row().cells
@@ -181,7 +226,7 @@ def add_chain_of_title_section(document, entries):
             
             # First column: Auto-numbered entry
             num_para = row_cells[0].paragraphs[0]
-            num_run = num_para.add_run(f"{i}.")
+            num_run = num_para.add_run(f"{x}.")
             num_run.bold = True
             num_run.font.name = 'Times New Roman'
             num_run.font.size = Pt(12.5)
@@ -255,7 +300,7 @@ def add_chain_of_title_section(document, entries):
         except Exception as e:
             logger.error(f"Error adding entry {entry.entry_number} to table: {str(e)}")
             continue
-    
+
     # After the loop, add the note entry
     note_row_cells = table.add_row().cells
     note_para = note_row_cells[0].paragraphs[0]

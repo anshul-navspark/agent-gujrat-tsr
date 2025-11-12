@@ -16,6 +16,43 @@ from tsr_generator.extractors.entry_schema import (
 model_name = os.getenv('AI_MODEL_NAME', 'gpt-5')
 api_version = os.getenv('AZURE_OPENAI_API_VERSION', '2024-02-15-preview')
 
+def extract_entry_table(pdf_text):
+    llm = AzureChatOpenAI(
+            model=model_name,
+            api_version=api_version,
+            azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT', ''),
+            api_key=SecretStr(os.getenv('AZURE_OPENAI_KEY', '')),
+            temperature=0.0
+        )
+    prompt = f"""Extract the "Entry Details" table from the following land record document text.
+
+        Requirements (MANDATORY):
+
+        Locate the header "Entry Details" (case-insensitive). Extract the numeric entries that belong to that table in the same order.
+        For each extracted entry, remove any asterisk (*) and remove any trailing non-digit characters (including Gujarati text). Keep only digits.
+        Output must be a single line of plain text containing only digits separated by single spaces, e.g.:
+        176 506 748 797 1013 1046
+        Do NOT output JSON, lists, punctuation, code fences, explanation, or any other text. Only one line with numbers and single spaces. If no entries found, output an empty line.
+        Example input:
+        ...some lines...
+        Entry Details
+        176
+        506
+        748*
+        797
+        1013
+        1046નાધ નંબર
+        ...more...
+
+        Desired output (exact):
+        176 506 748 797 1013 1046
+        """
+    response = llm.invoke(prompt + "\n" + pdf_text)
+    # print(response.content)
+    entry_table = list(map(int,response.content.split()))
+    entry_table = sorted(entry_table)
+    return entry_table
+
 def extract_entry_details_ai(pdf_text):
     """
     Extract entry details from PDF using AI with formatting exactly matching

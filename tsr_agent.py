@@ -220,7 +220,6 @@ Human: {input}
             Dictionary with generation results
         """
         self.logger.info("Starting TSR generation with agent")
-        
         try:
             # Prepare the request
             request = f"""

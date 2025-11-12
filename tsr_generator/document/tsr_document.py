@@ -16,7 +16,7 @@ from tsr_generator.document.docx_generator import (
     add_findings_table
 )
 
-def create_tsr_document(entries, land_details, findings, output_path):
+def create_tsr_document(entry_table, entries, land_details, findings, output_path):
     """
     Create a TSR document with the extracted information
     
@@ -305,7 +305,7 @@ def create_tsr_document(entries, land_details, findings, output_path):
         
         # Add Chain of Title section
         doc.add_paragraph()
-        add_chain_of_title_section(doc, entries)
+        add_chain_of_title_section(doc, entries, entry_table)
         
         # Add Findings table
         add_findings_table(doc, findings)
