@@ -30,6 +30,9 @@ class EntryType(enum.Enum):
     CORRECTION = "Correction"
     PERSONS_ADD = "Persons Add"
     TRANSFER = "To transfer"
+    EXCHANGE = "Exchange"
+    LIFETIME_DISTRIBUTION = "Lifetime Distribution"
+    NOT_RELATED = "Not Related"
     UNKNOWN = "Unknown"
 
 
@@ -164,7 +167,16 @@ def create_entry_from_dict(entry_dict):
         'DEATH': 'INHERITANCE',
         'PERSONS ADD': 'PERSONS_ADD',
         'TO TRANSFER': 'TRANSFER',
-        
+
+        # New entry type variations
+        'EXCHANGE': 'EXCHANGE',
+        'LAND EXCHANGE': 'EXCHANGE',
+        'LIFETIME DISTRIBUTION': 'LIFETIME_DISTRIBUTION',
+        'LIFE TIME DISTRIBUTION': 'LIFETIME_DISTRIBUTION',
+        'NOT RELATED': 'NOT_RELATED',
+        'NOT RELATED TO SURVEY': 'NOT_RELATED',
+        'NOT RELATED TO PRESENT SURVEY': 'NOT_RELATED',
+
         # Gujarati/translated variants normalization
         'હુકમથી': 'ORDER',
         'ORDER': 'ORDER',
@@ -174,7 +186,7 @@ def create_entry_from_dict(entry_dict):
         'મુક્તિ': 'RELEASE',
         'લોન': 'LOAN',
         'ચાર્જ': 'MORTGAGE',
-        
+
         # Additional Gujarati entry types from logs
         'હયાતીમા વહચણી': 'PARTITION',
         'HAYATIMA VAHCHANI': 'PARTITION',
@@ -196,7 +208,7 @@ def create_entry_from_dict(entry_dict):
         'RAD': 'CORRECTION',
         'સુધારો': 'CORRECTION',
         'SUDHARO': 'CORRECTION',
-        
+
         # Common variations
         'PARTITION AMONG HEIRS': 'PARTITION',
         'INHERITANCE CLAIM': 'INHERITANCE',
