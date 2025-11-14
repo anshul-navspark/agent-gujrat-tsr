@@ -67,6 +67,36 @@ streamlit run app/streamlit_app.py
 
 ## Usage
 
+### AnyRoR Dropdown Hierarchy Export
+
+Use `anyror_hierarchy_scraper.py` to crawl the AnyRoR dropdowns and persist a nested dictionary of districts → talukas → villages (Gujarati + transliterated English variants):
+
+```bash
+python anyror_hierarchy_scraper.py --headless --output anyror_hierarchy.json
+```
+
+Flags:
+- `--district-limit` / `--taluka-limit`: Optional caps for test runs.
+- Omit `--headless` to watch the browser while debugging.
+
+The generated JSON uses Gujarati names as keys:
+
+```
+{
+  "પાટણ": {
+    "english_names": ["Patan"],
+    "talukas": {
+      "પાટણ": {
+        "english_names": ["Patan"],
+        "villages": {
+          "અનાવાડા - 091": ["Anavada", "Anawada"]
+        }
+      }
+    }
+  }
+}
+```
+
 ### Basic Usage
 
 ```bash
