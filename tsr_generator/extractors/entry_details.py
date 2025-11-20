@@ -4,8 +4,7 @@ import re
 import logging
 import traceback
 from datetime import datetime
-from langchain_openai import AzureChatOpenAI
-from pydantic import SecretStr
+from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
 
 from tsr_generator.extractors.entry_schema import (
@@ -13,17 +12,15 @@ from tsr_generator.extractors.entry_schema import (
     SaleEntry, MortgageEntry, ReleaseEntry, InheritanceEntry, 
     PartitionEntry, RelinquishmentEntry, OrderEntry, CorrectionEntry, GenericEntry
 )
-model_name = os.getenv('AI_MODEL_NAME', 'gpt-5')
-api_version = os.getenv('AZURE_OPENAI_API_VERSION', '2024-02-15-preview')
+model_name = os.getenv('GEMINI_MODEL_NAME', 'gemini-2.5-flash')
 
 def extract_entry_table(pdf_text):
-    llm = AzureChatOpenAI(
-            model=model_name,
-            api_version=api_version,
-            azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT', ''),
-            api_key=SecretStr(os.getenv('AZURE_OPENAI_KEY', '')),
-            temperature=0.0
-        )
+    llm = ChatGoogleGenerativeAI(
+        model=model_name,
+        google_api_key=os.getenv('GEMINI_API_KEY', ''),
+        temperature=0.0,
+        convert_system_message_to_human=True,
+    )
     prompt = f"""Extract the "Entry Details" table from the following land record document text.
 
         Requirements (MANDATORY):
@@ -48,9 +45,22 @@ def extract_entry_table(pdf_text):
         176 506 748 797 1013 1046
         """
     response = llm.invoke(prompt + "\n" + pdf_text)
-    # print(response.content)
-    entry_table = list(map(int,response.content.split()))
-    entry_table = sorted(entry_table)
+    print(response.content)
+    
+    # Extract only numeric tokens from the response, filtering out non-digit characters
+    # Handle various LLM output formats including code blocks, markdown, etc.
+    content = response.content
+    
+    # Extract all sequences of digits (1-4 digits long, typical for entry numbers)
+    # This handles both space-separated and newline-separated numbers
+    entry_numbers = re.findall(r'\b(\d{1,4})\b', content)
+    
+    # Convert to integers and remove duplicates
+    entry_table = sorted(list(set(int(num) for num in entry_numbers)))
+    
+    # If no numbers found, return empty list
+    if not entry_table:
+        print("Warning: No entry numbers found in LLM response")
     return entry_table
 
 def extract_entry_details_ai(pdf_text):
@@ -75,14 +85,13 @@ def extract_entry_details_ai(pdf_text):
         all_entry_numbers = identify_all_entry_numbers(entry_section)
         logger.info(f"Identified {len(all_entry_numbers)} entry numbers for AI processing")
         
-        # Initialize Azure OpenAI client with the specified model
+        # Initialize Gemini client with the specified model
         load_dotenv()
-        llm = AzureChatOpenAI(
+        llm = ChatGoogleGenerativeAI(
             model=model_name,
-            api_version=api_version,
-            azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT', ''),
-            api_key=SecretStr(os.getenv('AZURE_OPENAI_KEY', '')),
-            temperature=0.0
+            google_api_key=os.getenv('GEMINI_API_KEY', ''),
+            temperature=0.0,
+            convert_system_message_to_human=True,
         )
         
         # Create a focused prompt for extracting entries with the specific format
@@ -242,14 +251,13 @@ def extract_entry_details_fallback(entry_section):
     logger.info(f"Identified {len(all_entry_numbers)} entry numbers for fallback processing")
 
     try:
-        # Initialize Azure OpenAI client
+        # Initialize Gemini client
         load_dotenv()
-        llm = AzureChatOpenAI(
+        llm = ChatGoogleGenerativeAI(
             model=model_name,
-            api_version=api_version,
-            azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT', ''),
-            api_key=SecretStr(os.getenv('AZURE_OPENAI_KEY', '')),
-            temperature=0.0
+            google_api_key=os.getenv('GEMINI_API_KEY', ''),
+            temperature=0.0,
+            convert_system_message_to_human=True,
         )
         
         # Simplified prompt focusing on the exact format

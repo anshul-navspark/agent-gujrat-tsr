@@ -126,12 +126,6 @@ def add_chain_of_title_section(document, entries, entry_table):
         paragraph.add_run("No entries found in the document.").italic = True
         return
     
-    # Sort entries by entry number if possible
-    try:
-        entries.sort(key=lambda x: int(x.entry_number) if x.entry_number and x.entry_number.isdigit() else float('inf'))
-    except Exception as e:
-        logger.warning(f"Could not sort entries by number: {str(e)}")
-    
     # Create a table for Chain of Title - two columns
     table = document.add_table(rows=0, cols=2)
     table.style = 'Table Grid'
@@ -167,57 +161,35 @@ def add_chain_of_title_section(document, entries, entry_table):
     # Format the header paragraph
     header_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
     header_para.paragraph_format.line_spacing = 1.15
-    # header_para.paragraph_format.space_after = Pt(12)  # Add some space after the header
     
-    # After the loop, add any missing entry numbers from `entry_table` as empty rows
-    # These will appear as: "Entry No. <num> Dated : " with no description
+    # Create a map of entries for quick lookup
+    entry_map = {}
+    if entries:
+        for entry in entries:
+            if getattr(entry, 'entry_number', None):
+                entry_map[str(entry.entry_number).strip()] = entry
+                
+    # Collect all unique entry numbers from entry_table and entries
+    all_entry_numbers = set()
     if entry_table:
+        for num in entry_table:
+            if str(num).strip():
+                all_entry_numbers.add(str(num).strip())
+    
+    # Also include numbers from entries to be safe
+    for num in entry_map.keys():
+        all_entry_numbers.add(num)
+        
+    # Sort the numbers
+    sorted_numbers = sorted(list(all_entry_numbers), key=lambda x: int(x) if x.isdigit() else float('inf'))
+    
+    # Iterate through all numbers and add rows
+    row_index = 0
+    for row_index, num in enumerate(sorted_numbers, 1):
         try:
-            # Collect entry numbers already present in entries
-            existing_nums = set()
-            for e in entries:
-                num = getattr(e, 'entry_number', None)
-                if num is not None:
-                    existing_nums.add(str(num))
-
-            # Normalize entry_table items and find missing ones
-            table_nums = [str(x).strip() for x in entry_table if str(x).strip()]
-            missing_nums = [n for n in table_nums if n not in existing_nums]
-
-            if missing_nums:
-                logger.info(f"Adding {len(missing_nums)} placeholder rows for old entry numbers from entry_table")
-                i=0
-                for num in missing_nums:
-                    i += 1
-                    row_cells = table.add_row().cells
-                    # Set widths for the new row
-                    for j, width in enumerate(col_widths):
-                        table.rows[-1].cells[j].width = Inches(width)
-
-                    # Numbering cell
-                    num_para = row_cells[0].paragraphs[0]
-                    num_run = num_para.add_run(f"{i}.")
-                    num_run.bold = True
-                    num_run.font.name = 'Times New Roman'
-                    num_run.font.size = Pt(12.5)
-                    row_cells[0].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
-
-                    # Second column: only the header text (no description)
-                    entry_para = row_cells[1].paragraphs[0]
-                    header_text = f"Entry No. {num} Dated : "
-                    header_run = entry_para.add_run(header_text)
-                    header_run.bold = True
-                    header_run.font.name = 'Times New Roman'
-                    header_run.font.size = Pt(12.5)
-                    # leave description empty
-                    entry_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
-                    entry_para.paragraph_format.line_spacing = 1.15
-        except Exception as e:
-            logger.error(f"Error adding placeholder rows for entry_table numbers: {str(e)}")
-    # Add each entry to the table as a numbered row
-    for x, entry in enumerate(entries, i+1):
-        try:
-            # Add a new row for each entry
+            entry = entry_map.get(num)
+            
+            # Add a new row
             row_cells = table.add_row().cells
             
             # Set cell widths for newly added row
@@ -226,85 +198,87 @@ def add_chain_of_title_section(document, entries, entry_table):
             
             # First column: Auto-numbered entry
             num_para = row_cells[0].paragraphs[0]
-            num_run = num_para.add_run(f"{x}.")
+            num_run = num_para.add_run(f"{row_index}.")
             num_run.bold = True
             num_run.font.name = 'Times New Roman'
             num_run.font.size = Pt(12.5)
-            
-            # Format the numbering paragraph
-            # num_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER
-            # num_para.paragraph_format.line_spacing = 1.15
-            # num_para.paragraph_format.space_before = Pt(6)
-            # num_para.paragraph_format.space_after = Pt(6)
-            
-            # Set vertical alignment for the first column
             row_cells[0].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
             
             # Second column: Entry details
-            # Add Entry No. and Date
             entry_para = row_cells[1].paragraphs[0]
-            safe_date = entry.date if getattr(entry, 'date', '') else ""
-            header_text = f"Entry No. {entry.entry_number} Dated {safe_date}: "
-            header_run = entry_para.add_run(header_text)
-            header_run.bold = True
-            header_run.font.name = 'Times New Roman'
-            header_run.font.size = Pt(12.5)
             
-            # Add a line break and then the description
-            description = entry.formatted_description
-            # entry_para.add_run("\n")
-            desc_run = entry_para.add_run(description)
-            desc_run.font.name = 'Times New Roman'
-            desc_run.font.size = Pt(12.5)
-            
-            # Format the entry paragraph
-            entry_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
-            entry_para.paragraph_format.line_spacing = 1.15
-            
-            # Add certification if present in standardized format
-            if hasattr(entry, 'certification') and entry.certification:
-                cert_para = row_cells[1].add_paragraph()
+            if entry:
+                # Existing entry logic
+                safe_date = entry.date if getattr(entry, 'date', '') else ""
+                header_text = f"Entry No. {entry.entry_number} Dated {safe_date}: "
+                header_run = entry_para.add_run(header_text)
+                header_run.bold = True
+                header_run.font.name = 'Times New Roman'
+                header_run.font.size = Pt(12.5)
                 
-                # Standardize certification text
-                certification_text = entry.certification
+                # Add description
+                description = entry.formatted_description
+                desc_run = entry_para.add_run(description)
+                desc_run.font.name = 'Times New Roman'
+                desc_run.font.size = Pt(12.5)
                 
-                # If doesn't start with "The Entry is certified", reformat it
-                if not certification_text.strip().startswith("The Entry is certified"):
-                    # Extract official name and date if possible
-                    import re
-                    official_match = re.search(r'by\s+([^.]+)', certification_text)
-                    date_match = re.search(r'on\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4})', certification_text)
+                # Format the entry paragraph
+                entry_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+                entry_para.paragraph_format.line_spacing = 1.15
+                
+                # Add certification if present
+                if hasattr(entry, 'certification') and entry.certification:
+                    cert_para = row_cells[1].add_paragraph()
                     
-                    official_name = official_match.group(1).strip() if official_match else "the relevant authority"
+                    # Standardize certification text
+                    certification_text = entry.certification
                     
-                    if date_match:
-                        certification_text = f"The Entry is certified by {official_name} on {date_match.group(1)}"
-                    else:
-                        # Check if "not legible" or similar phrase exists
-                        if "not legible" in certification_text.lower() or "illegible" in certification_text.lower():
-                            certification_text = f"The Entry is certified by {official_name} but date is not legible"
-                        elif "not mentioned" in certification_text.lower() or "not specified" in certification_text.lower():
-                            certification_text = f"The Entry is certified by {official_name} but date is not mentioned"
+                    # If doesn't start with "The Entry is certified", reformat it
+                    if not certification_text.strip().startswith("The Entry is certified"):
+                        # Extract official name and date if possible
+                        import re
+                        official_match = re.search(r'by\s+([^.]+)', certification_text)
+                        date_match = re.search(r'on\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4})', certification_text)
+                        
+                        official_name = official_match.group(1).strip() if official_match else "the relevant authority"
+                        
+                        if date_match:
+                            certification_text = f"The Entry is certified by {official_name} on {date_match.group(1)}"
                         else:
-                            certification_text = f"The Entry is certified by {official_name}"
+                            # Check if "not legible" or similar phrase exists
+                            if "not legible" in certification_text.lower() or "illegible" in certification_text.lower():
+                                certification_text = f"The Entry is certified by {official_name} but date is not legible"
+                            elif "not mentioned" in certification_text.lower() or "not specified" in certification_text.lower():
+                                certification_text = f"The Entry is certified by {official_name} but date is not mentioned"
+                            else:
+                                certification_text = f"The Entry is certified by {official_name}"
+                    
+                    cert_run = cert_para.add_run(certification_text)
+                    cert_run.font.name = 'Times New Roman'
+                    cert_run.font.size = Pt(12.5)
+                    
+                    # Format certification paragraph
+                    cert_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+                    cert_para.paragraph_format.line_spacing = 1.15
+            else:
+                # Placeholder logic
+                header_text = f"Entry No. {num} Dated : "
+                header_run = entry_para.add_run(header_text)
+                header_run.bold = True
+                header_run.font.name = 'Times New Roman'
+                header_run.font.size = Pt(12.5)
                 
-                cert_run = cert_para.add_run(certification_text)
-                cert_run.font.name = 'Times New Roman'
-                cert_run.font.size = Pt(12.5)
+                entry_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+                entry_para.paragraph_format.line_spacing = 1.15
                 
-                # Format certification paragraph
-                cert_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
-                cert_para.paragraph_format.line_spacing = 1.15
-            # Set vertical alignment for the second column
-            # row_cells[1].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
         except Exception as e:
-            logger.error(f"Error adding entry {entry.entry_number} to table: {str(e)}")
+            logger.error(f"Error adding entry {num} to table: {str(e)}")
             continue
 
     # After the loop, add the note entry
     note_row_cells = table.add_row().cells
     note_para = note_row_cells[0].paragraphs[0]
-    note_run = note_para.add_run(f"{i+1}.")
+    note_run = note_para.add_run(f"{row_index + 1}.")
     note_run.bold = True
     note_run.font.name = 'Times New Roman'
     note_run.font.size = Pt(12.5)

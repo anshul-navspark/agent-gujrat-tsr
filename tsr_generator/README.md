@@ -82,7 +82,7 @@ The package is organized into the following modules:
 
 - `python-docx`: For creating DOCX documents
 - `PyPDF2`: For extracting text from PDF files
-- `langchain_openai`: For AI-based extraction
+- `langchain-google-genai`: For AI-based extraction via Gemini
 - `python-dotenv`: For loading environment variables
 - `pydantic`: For data validation
 
@@ -90,8 +90,8 @@ The package is organized into the following modules:
 
 The package requires the following environment variables to be set:
 
-- `AZURE_OPENAI_ENDPOINT`: Azure OpenAI API endpoint
-- `AZURE_OPENAI_KEY`: Azure OpenAI API key
+- `GEMINI_API_KEY`: Google Gemini API key
+- `GEMINI_MODEL_NAME`: (Optional) Gemini model name, defaults to `gemini-2.5-flash`
 
 These can be set in a `.env` file in the project directory.
 

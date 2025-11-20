@@ -6,7 +6,7 @@ This tool automates the process of retrieving land records from the Gujarat gove
 ## Features
 - Automated navigation through the AnyRoR website
 - Selection of district, taluka, village, and survey/block number
-- AI-powered CAPTCHA recognition using Azure OpenAI
+- AI-powered CAPTCHA recognition using Google Gemini
 - PDF generation of land records
 - Comprehensive logging system
 - Can be used as a standalone script or as an API function
@@ -14,7 +14,7 @@ This tool automates the process of retrieving land records from the Gujarat gove
 ## Prerequisites
 - Python 3.7+
 - Chrome browser installed
-- Azure OpenAI API access (for CAPTCHA recognition)
+- Google Gemini API access (for CAPTCHA recognition)
 
 ## Installation
 
@@ -29,10 +29,10 @@ cd gujrat_tsr_agent
 pip install -r requirements.txt
 ```
 
-3. Set up environment variables for Azure OpenAI:
+3. Set up environment variables for Google Gemini:
 ```bash
-export AZURE_OPENAI_ENDPOINT="your-azure-openai-endpoint"
-export AZURE_OPENAI_KEY="your-azure-openai-key"
+export GEMINI_API_KEY="your-gemini-api-key"
+export GEMINI_MODEL_NAME="gemini-2.5-flash"
 ```
 
 ## Usage
@@ -105,7 +105,7 @@ The latest version includes several performance improvements:
 4. **Reduced External Library Logging**
    - Suppressed verbose logging from Selenium
    - Disabled WebDriver Manager logs
-   - Reduced LangChain/OpenAI logging level
+   - Reduced LangChain/Gemini logging level
 
 5. **Configurable Settings**
    - Added configuration constants for all timeouts and wait periods
@@ -141,8 +141,8 @@ The latest version includes fixes for the following issues:
    - Fixed ChromeDriverManager initialization by removing invalid log_level parameter
    - Used environment variables to control WebDriver Manager logging
 
-7. **AzureChatOpenAI Configuration**
-   - Removed problematic logging_level parameter from AzureChatOpenAI initialization
+7. **Gemini Client Configuration**
+   - Removed problematic logging_level parameter from prior Azure client initialization
    - Simplified LLM client configuration
 
 ## Key Improvements in Refactored Version

@@ -5,7 +5,7 @@ from typing import Dict, List, Any, Optional
 import json
 import logging
 from datetime import datetime
-from langchain_openai import AzureChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.agents import AgentExecutor, create_structured_chat_agent
 from langchain.memory import ConversationBufferMemory
 from langchain.prompts import ChatPromptTemplate
@@ -19,7 +19,7 @@ from agent_system.core.tools.tsr_agent_tools import AVAILABLE_TOOLS
 class TSRAgent:
     """Intelligent agent for TSR generation with tool calling capabilities"""
     
-    def __init__(self, llm: Optional[AzureChatOpenAI] = None, verbose: bool = True):
+    def __init__(self, llm: Optional[ChatGoogleGenerativeAI] = None, verbose: bool = True):
         self.logger = logging.getLogger(__name__)
         load_dotenv()
         
@@ -39,13 +39,12 @@ class TSRAgent:
             early_stopping_method="generate"
         )
         
-    def _create_default_llm(self) -> AzureChatOpenAI:
-        return AzureChatOpenAI(
-            model=os.getenv('AI_MODEL_NAME', 'gpt-4o'),
-            api_version=os.getenv('AZURE_OPENAI_API_VERSION', '2024-05-01-preview'),
-            azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT', ''),
-            api_key=os.getenv('AZURE_OPENAI_KEY', ''),
-            temperature=0.1
+    def _create_default_llm(self) -> ChatGoogleGenerativeAI:
+        return ChatGoogleGenerativeAI(
+            model=os.getenv('GEMINI_MODEL_NAME', 'gemini-2.5-flash'),
+            google_api_key=os.getenv('GEMINI_API_KEY', ''),
+            temperature=0.1,
+            convert_system_message_to_human=True,
         )
     
     def _create_tools(self) -> List[StructuredTool]:

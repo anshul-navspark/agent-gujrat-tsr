@@ -3,8 +3,7 @@ import json
 import re
 import logging
 import traceback
-from langchain_openai import AzureChatOpenAI
-from pydantic import SecretStr
+from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
 
 from tsr_generator.utils.text_utils import convert_gujarati_to_english_numerals, translate_gujarati_text
@@ -25,14 +24,13 @@ def extract_land_records_ai(pdf_text):
     logger.info("Extracting land record details using dedicated AI call")
     
     try:
-        # Initialize Azure OpenAI client
+        # Initialize Gemini client
         load_dotenv()
-        llm = AzureChatOpenAI(
-            model=os.getenv('AI_MODEL_NAME', 'gpt-5'),
-            api_version=os.getenv('AZURE_OPENAI_API_VERSION', '2024-02-15-preview'),
-            azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT', ''),
-            api_key=SecretStr(os.getenv('AZURE_OPENAI_KEY', '')),
-            temperature=0.0
+        llm = ChatGoogleGenerativeAI(
+            model=os.getenv('GEMINI_MODEL_NAME', 'gemini-2.5-flash'),
+            google_api_key=os.getenv('GEMINI_API_KEY', ''),
+            temperature=0.0,
+            convert_system_message_to_human=True,
         )
         
         # Create a focused prompt for extracting land details

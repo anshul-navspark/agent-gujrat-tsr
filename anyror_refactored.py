@@ -28,7 +28,7 @@ from selenium.webdriver.chrome.service import Service
 from selenium.common.exceptions import TimeoutException, NoSuchElementException, StaleElementReferenceException
 from webdriver_manager.chrome import ChromeDriverManager
 from PIL import Image
-from langchain_openai import AzureChatOpenAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 from pydantic import SecretStr
 from dotenv import load_dotenv
@@ -119,7 +119,7 @@ class Logger:
 
 
 class CaptchaSolver:
-    """Handles CAPTCHA recognition using Azure OpenAI."""
+    """Handles CAPTCHA recognition using Google Gemini."""
     
     def __init__(self, logger=None):
         """Initialize the CAPTCHA solver.
@@ -136,12 +136,12 @@ class CaptchaSolver:
         Returns:
             An initialized LLM client.
         """
-        return AzureChatOpenAI(
-            model="gpt-4o",
-            api_version='2024-02-15-preview',
-            azure_endpoint=os.getenv('AZURE_OPENAI_ENDPOINT', ''),
-            api_key=SecretStr(os.getenv('AZURE_OPENAI_KEY', '')),
-            temperature=0.0
+        api_key = SecretStr(os.getenv('GEMINI_API_KEY', ''))
+        return ChatGoogleGenerativeAI(
+            model=os.getenv('GEMINI_MODEL_NAME', 'gemini-2.5-flash'),
+            google_api_key=api_key.get_secret_value(),
+            temperature=0.0,
+            convert_system_message_to_human=True,
         )
     
     def solve(self, image_data):

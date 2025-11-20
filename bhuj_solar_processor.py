@@ -91,7 +91,7 @@ VILLAGE_TRANSLATIONS = {
     "હોથીજી ખડબા": "હોથીજી ખડબા - 034",  # Direct Gujarati mapping
     "Hothiji": "હોથીજી ખડબા - 034",  # Shortened version
     "Khadaba": "હોથીજી ખડબા - 034",  # Alternative search
-        
+    "Nagiya": "નાંગીયા - 031",
     # Add more villages as needed
 }
 
