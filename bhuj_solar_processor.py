@@ -92,6 +92,11 @@ VILLAGE_TRANSLATIONS = {
     "Hothiji": "હોથીજી ખડબા - 034",  # Shortened version
     "Khadaba": "હોથીજી ખડબા - 034",  # Alternative search
     "Nagiya": "નાંગીયા - 031",
+    "RAMPAR ABDA": "રામપર(અબડા) - 034",
+    "Rampar Abda": "રામપર(અબડા) - 034",
+    "Rampr(Abda)": "રામપર(અબડા) - 034",
+    "RamprAbda": "રામપર(અબડા) - 034",
+    "Rampar (Abda)": "રામપર(અબડા) - 034",
     # Add more villages as needed
 }
 

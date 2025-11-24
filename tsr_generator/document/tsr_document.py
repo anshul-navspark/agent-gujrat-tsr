@@ -127,7 +127,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         doc.add_paragraph("To")
         address_para = doc.add_paragraph()
         address_para.paragraph_format.left_indent = Inches(0.5)
-        address_para.add_run("Aditya Birla Renewable Energy Ltd.\nA-2, Aditya Birla Centre, S.K. Ahire Marg,\nWorli, Mumbai-400030.\n\nKind Attn.: Mr. Rahul Patil\n")
+        address_para.add_run("Aditya Birla Renewable Energy Ltd.\nA-2, Aditya Birla Centre, S.K. Ahire Marg,\nWorli, Mumbai-400030.\n")
         
         # Add introduction
         doc.add_paragraph("Dear Sir,")
