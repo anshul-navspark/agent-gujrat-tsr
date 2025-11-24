@@ -124,6 +124,7 @@ def extract_entry_details_ai(pdf_text):
         6. Document references: "document no. X dated DD/MM/YYYY" or "document no. X dated DD.MM.YYYY"
         7. Survey numbers: Preserve exact format including "old Survey No." vs "Survey No."
         8. For entries with tables (PARTITION, EXCHANGE), preserve table structure with bullet points
+        9. ALWAYS use "Survey No." instead of "Khata No." or "Account No." even if the text says Khata/Account.
 
         Entry Type Classification Rules:
         - LOAN: Contains "took a loan" or "loan of Rs."
@@ -281,6 +282,7 @@ def extract_entry_details_fallback(entry_section):
         3. Preserve measurement units: "Acre/Guntha" or "Hectare"
         4. Format amounts: "Rs. X/-" or "Rs. X,XXX/-"
         5. Lists: "which are as follows:-" followed by bullet points
+        6. ALWAYS use "Survey No." instead of "Khata No." or "Account No."
 
         Description examples:
         - LOAN: "That Rabari Sujabhai Jawanabhai and others took a loan of Rs. 1,00,000/- on the land bearing Survey No. 54/2p2(143) from Voda Group Gopalak Vikas Kariyakari Sahakari Mandli."
