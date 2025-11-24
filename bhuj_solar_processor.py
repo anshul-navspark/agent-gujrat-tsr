@@ -40,8 +40,7 @@ from selenium import webdriver
 from webdriver_manager.chrome import ChromeDriverManager
 
 # Import your existing modules
-# import anyror_new
-# import anyrortoTSR  # Replaced with tsr_generator
+
 import anyror_refactored
 from anyror_refactored import AnyRoRScraper  # Add this import
 from tsr_generator import generate_tsr_from_pdf  # Import from the new package
@@ -628,7 +627,7 @@ def process_bhuj_solar_data(args):
             
             # Save intermediate results
             summary_df.to_csv(summary_path, index=False)
-            # input("Okay?")
+
     
     # Final save of summary file
     summary_df.to_csv(summary_path, index=False)

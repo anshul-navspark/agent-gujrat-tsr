@@ -110,12 +110,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         ref_text = ref_para.add_run(f"Ref. No. ABREL/GUJ/KUT/ABD/{village_prefix}/{survey_number}                    Dated: {current_date}")
         ref_text.bold = True
         
-        # # Add date with right alignment
-        
-        # date_para = doc.add_paragraph()
-        # date_para.alignment = WD_PARAGRAPH_ALIGNMENT.RIGHT
-        # date_para.add_run(f"")
-        
+
         # Add the title
         title_para = doc.add_paragraph()
         title_para.alignment = WD_PARAGRAPH_ALIGNMENT.CENTER

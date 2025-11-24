@@ -657,7 +657,7 @@ def add_findings_table(doc, findings):
         row_cells[0].text = finding['sn']
         row_cells[0].paragraphs[0].runs[0].bold = True
         
-        # row_cells[0].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+
         
         # Add particular
         row_cells[1].text = finding['particular']
