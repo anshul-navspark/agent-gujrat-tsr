@@ -323,6 +323,18 @@ class WebDriverManager:
         """Set up Chrome options."""
         chrome_options = webdriver.ChromeOptions()
         
+        # For Streamlit Cloud and Linux systems, use chromium if available
+        if platform.system() == "Linux":
+            chromium_paths = [
+                "/usr/bin/chromium",
+                "/usr/bin/chromium-browser",
+                "/usr/bin/google-chrome"
+            ]
+            for chromium_path in chromium_paths:
+                if os.path.exists(chromium_path):
+                    chrome_options.binary_location = chromium_path
+                    break
+        
         if headless:
             chrome_options.add_argument("--headless=new")
         
@@ -358,6 +370,7 @@ class WebDriverManager:
         
         # Try different approaches to initialize WebDriver
         approaches = [
+            self._approach_selenium_manager,  # Try Selenium Manager first (Selenium 4.6+)
             self._approach_clean_cache_and_auto_manager,
             self._approach_specify_major_version,
             self._approach_non_headless_mode,
@@ -388,6 +401,29 @@ class WebDriverManager:
         
         logger.error("All WebDriver initialization approaches failed")
         raise Exception("All WebDriver initialization approaches failed. Please check Chrome and ChromeDriver compatibility.")
+    
+    def _approach_selenium_manager(self, chrome_options):
+        """Initialize WebDriver using Selenium Manager (Selenium 4.6+).
+        
+        Selenium Manager automatically downloads and manages the correct ChromeDriver
+        version for the installed Chrome/Chromium browser. This is ideal for Streamlit Cloud.
+        """
+        import logging
+        from selenium import webdriver
+        
+        logger = logging.getLogger(__name__)
+        logger.info(f"Trying approach: Selenium Manager (headless={self.headless})")
+        
+        try:
+            # Let Selenium Manager handle the driver automatically
+            # No need to specify Service - Selenium will use its built-in manager
+            driver = webdriver.Chrome(options=chrome_options)
+            
+            logger.info("Successfully initialized WebDriver using Selenium Manager")
+            return driver
+        except Exception as e:
+            logger.error(f"Selenium Manager approach failed: {str(e)}")
+            raise
     
     def _approach_clean_cache_and_auto_manager(self, chrome_options):
         """Initialize WebDriver using webdriver_manager with a clean cache."""
