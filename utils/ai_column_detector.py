@@ -162,23 +162,37 @@ class AIColumnDetector:
     def _score_header(self, column_name: str, keywords: List[str]) -> float:
         """Score column header based on keyword matching."""
         col_lower = column_name.lower().strip()
+        max_score = 0.0
         
-        # Exact match gets highest score
         for keyword in keywords:
-            if keyword.lower() == col_lower:
-                return 10.0
+            score = 0.0
+            # Check if keyword is a regex pattern (contains special regex chars)
+            is_regex = any(c in keyword for c in r'.^$*+?{}[]\|()')
+            
+            if is_regex:
+                try:
+                    if re.fullmatch(keyword, col_lower, re.IGNORECASE):
+                        score = 10.0
+                    elif re.search(keyword, col_lower, re.IGNORECASE):
+                        score = 8.0
+                except re.error:
+                    pass
+            else:
+                kw_lower = keyword.lower()
+                if kw_lower == col_lower:
+                    score = 10.0
+                elif kw_lower in col_lower or col_lower in kw_lower:
+                    score = 7.0
+                elif self._fuzzy_match(col_lower, kw_lower):
+                    score = 5.0
+            
+            if score > max_score:
+                max_score = score
+                # Optimization: if we hit max possible score, return immediately
+                if max_score == 10.0:
+                    return 10.0
         
-        # Partial match gets medium score
-        for keyword in keywords:
-            if keyword.lower() in col_lower or col_lower in keyword.lower():
-                return 7.0
-        
-        # Fuzzy matching for common variations
-        for keyword in keywords:
-            if self._fuzzy_match(col_lower, keyword.lower()):
-                return 5.0
-        
-        return 0.0
+        return max_score
     
     def _score_content(self, column_data: pd.Series, patterns: List[str]) -> float:
         """Score column content based on pattern matching."""
