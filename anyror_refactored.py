@@ -547,9 +547,21 @@ class WebDriverManager:
                     logger.error(f"Failed to download or extract ChromeDriver: {str(e)}")
                     raise
         elif platform.system() == "Linux":
-            if os.path.exists("/usr/local/bin/chromedriver"):
-                driver_path = "/usr/local/bin/chromedriver"
-            else:
+            # Common locations for chromedriver on Linux (including Streamlit Cloud)
+            possible_paths = [
+                "/usr/bin/chromedriver",
+                "/usr/lib/chromium-browser/chromedriver",
+                "/usr/local/bin/chromedriver"
+            ]
+            
+            found = False
+            for path in possible_paths:
+                if os.path.exists(path):
+                    driver_path = path
+                    found = True
+                    break
+            
+            if not found:
                 driver_path = os.path.join(home_dir, "chromedriver")
         elif platform.system() == "Windows":
             driver_path = os.path.join(home_dir, "chromedriver.exe")
