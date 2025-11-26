@@ -30,7 +30,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         str: Path to the created document
     """
     logger = logging.getLogger(__name__)
-    logger.info(f"Creating TSR document at {output_path}")
+    logger.debug(f"Creating TSR document at {output_path}")
     
     try:
         # Create a new Document with A4 size and proper formatting
@@ -317,7 +317,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         
         # Save the document
         doc.save(output_path)
-        logger.info(f"Document saved successfully as {output_path}")
+        logger.debug(f"Document saved successfully as {output_path}")
         return output_path
         
     except Exception as e:

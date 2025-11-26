@@ -52,16 +52,43 @@ create_instance() {
 deploy_updates() {
     echo -e "${YELLOW}Deploying updates to existing instance...${NC}"
     
-    # Copy files to instance
-    gcloud compute scp --recurse \
+    # Copy files to instance using rsync (gcloud scp doesn't support --exclude)
+    echo "Syncing files to instance..."
+    
+    # Wait for startup script to complete (check if apt-get is running)
+    echo "Checking if startup script is still running..."
+    while gcloud compute ssh $GCE_INSTANCE_NAME \
         --project=$PROJECT_ID \
         --zone=$GCE_ZONE \
-        . $GCE_INSTANCE_NAME:/opt/gujrat_tsr_agent/ \
-        --exclude=".git/*" \
-        --exclude="venv/*" \
-        --exclude="output/*" \
-        --exclude="logs/*" \
-        --exclude="__pycache__/*"
+        --command="pgrep -f 'apt-get|dpkg' >/dev/null 2>&1"; do
+        echo "Startup script still running (installing packages). Waiting 30 seconds..."
+        sleep 30
+    done
+    echo "Startup script completed!"
+    
+    # Ensure rsync is installed on remote instance
+    echo "Checking for rsync on remote instance..."
+    gcloud compute ssh $GCE_INSTANCE_NAME \
+        --project=$PROJECT_ID \
+        --zone=$GCE_ZONE \
+        --command="command -v rsync >/dev/null 2>&1 || (sudo apt-get update && sudo apt-get install -y rsync)"
+    
+    # Create target directory
+    gcloud compute ssh $GCE_INSTANCE_NAME \
+        --project=$PROJECT_ID \
+        --zone=$GCE_ZONE \
+        --command="mkdir -p /opt/gujrat_tsr_agent"
+    
+    rsync -avz --progress \
+        --exclude=".git/" \
+        --exclude="venv/" \
+        --exclude="output/" \
+        --exclude="logs/" \
+        --exclude="__pycache__/" \
+        --exclude="*.pyc" \
+        --exclude=".DS_Store" \
+        -e "gcloud compute ssh $GCE_INSTANCE_NAME --project=$PROJECT_ID --zone=$GCE_ZONE --" \
+        . :"/opt/gujrat_tsr_agent/"
     
     # Restart the service
     gcloud compute ssh $GCE_INSTANCE_NAME \

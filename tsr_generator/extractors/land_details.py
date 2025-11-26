@@ -21,7 +21,7 @@ def extract_land_records_ai(pdf_text):
         dict: Dictionary containing land record details
     """
     logger = logging.getLogger(__name__)
-    logger.info("Extracting land record details using dedicated AI call")
+    logger.debug("Extracting land record details using dedicated AI call")
     
     try:
         # Initialize Gemini client
@@ -91,7 +91,7 @@ def extract_land_records_ai(pdf_text):
                 json_blob = json_code_match.group(1)
                 json_blob = re.sub(r',\s*([\]\}])', r'\1', json_blob)  # Remove trailing commas
                 land_details = json.loads(json_blob)
-                logger.info("Successfully parsed JSON from code block")
+                logger.debug("Successfully parsed JSON from code block")
             except json.JSONDecodeError as e:
                 logger.warning(f"Failed to parse JSON from code block: {e}")
         
@@ -107,7 +107,7 @@ def extract_land_records_ai(pdf_text):
                                      lambda m: f'{m.group(1)}: "{m.group(2).strip()}"' if not m.group(2).strip().startswith('"') else m.group(0), 
                                      json_blob)  # Quote unquoted values
                     land_details = json.loads(json_blob)
-                    logger.info("Successfully parsed JSON from plain text")
+                    logger.debug("Successfully parsed JSON from plain text")
                 except json.JSONDecodeError as e:
                     logger.warning(f"Failed to parse JSON from plain text: {e}")
         
@@ -130,7 +130,7 @@ def extract_land_records_ai(pdf_text):
                 land_details[field] = match.group(1).strip() if match else 'Not Available'
         
         if land_details:
-            logger.info(f"Successfully extracted land details: {land_details}")
+            logger.debug(f"Successfully extracted land details: {land_details}")
             return land_details
         else:
             logger.warning("All JSON parsing strategies failed")
@@ -167,7 +167,7 @@ def extract_land_details(pdf_text):
         dict: Dictionary containing processed land details
     """
     logger = logging.getLogger(__name__)
-    logger.info("Extracting land details using dedicated AI approach")
+    logger.debug("Extracting land details using dedicated AI approach")
     
     try:
         # Use the dedicated AI function to extract land details
@@ -193,7 +193,7 @@ def extract_land_details(pdf_text):
                 land_details[key] = convert_gujarati_to_english_numerals(value)
                 land_details[key] = translate_gujarati_text(land_details[key])
         
-        logger.info(f"Land details extracted: {json.dumps(land_details, indent=2)}")
+        logger.debug(f"Land details extracted: {json.dumps(land_details, indent=2)}")
         return land_details
         
     except Exception as e:

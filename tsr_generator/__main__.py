@@ -24,9 +24,9 @@ def main():
     
     # Generate TSR
     logger.info(f"Starting TSR generation for {args.pdf_path}")
-    result = generate_tsr_from_pdf(args.pdf_path, args.output, logger)
+    result = generate_tsr_from_pdf(args.pdf_path, args.output_path)
     
-    if result['success']:
+    if result.get('success'):
         logger.info(f"TSR generated successfully: {result['tsr_path']}")
         print(f"TSR generated successfully: {result['tsr_path']}")
         return 0

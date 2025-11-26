@@ -75,7 +75,7 @@ def extract_entry_details_ai(pdf_text):
         list: A list of dictionaries with entry details
     """
     logger = logging.getLogger(__name__)
-    logger.info("Extracting entry details to match Gujrat Mutation Entry format")
+    logger.debug("Extracting entry details to match Gujrat Mutation Entry format")
     
     try:
         # The entry section is already extracted in the main function and passed in
@@ -83,7 +83,7 @@ def extract_entry_details_ai(pdf_text):
         
         # First identify entry numbers to ensure all are captured
         all_entry_numbers = identify_all_entry_numbers(entry_section)
-        logger.info(f"Identified {len(all_entry_numbers)} entry numbers for AI processing")
+        logger.debug(f"Identified {len(all_entry_numbers)} entry numbers for AI processing")
         
         # Initialize Gemini client with the specified model
         load_dotenv()
@@ -220,7 +220,7 @@ def extract_entry_details_ai(pdf_text):
             # Second pass: strip stray trailing commas
             json_str = re.sub(r',\s*([\]\}])', r'\1', json_str)
             entries = json.loads(json_str)
-            logger.info(f"Successfully extracted {len(entries)} entries with Gujrat Mutation Entry format")
+            logger.debug(f"Successfully extracted {len(entries)} entries with Gujrat Mutation Entry format")
             
             # Do not auto-add placeholders here; trust the parsed list
             return entries
@@ -246,11 +246,11 @@ def extract_entry_details_fallback(entry_section):
         list: A list of dictionaries with entry details
     """
     logger = logging.getLogger(__name__)
-    logger.info("Using fallback method for Gujrat Mutation Entry format extraction")
+    logger.debug("Using fallback method for Gujrat Mutation Entry format extraction")
 
     # First identify entry numbers to ensure all are captured
     all_entry_numbers = identify_all_entry_numbers(entry_section)
-    logger.info(f"Identified {len(all_entry_numbers)} entry numbers for fallback processing")
+    logger.debug(f"Identified {len(all_entry_numbers)} entry numbers for fallback processing")
 
     try:
         # Initialize Gemini client
@@ -315,7 +315,7 @@ def extract_entry_details_fallback(entry_section):
             json_str = json_match.group(0)
             json_str = re.sub(r',\s*([\]\}])', r'\1', json_str)
             entries = json.loads(json_str)
-            logger.info(f"Successfully extracted {len(entries)} entries using fallback method")
+            logger.debug(f"Successfully extracted {len(entries)} entries using fallback method")
             
             # Check if all identified entry numbers are in the extracted entries
             extracted_numbers = [entry.get('entry_number') for entry in entries]
@@ -323,7 +323,7 @@ def extract_entry_details_fallback(entry_section):
             
             # Add placeholder entries for missing entry numbers
             for entry_num in missing_entries:
-                logger.info(f"Adding placeholder for missing entry in fallback response: {entry_num}")
+                logger.debug(f"Adding placeholder for missing entry in fallback response: {entry_num}")
                 entries.append({
                     'entry_number': entry_num,
                     'date': "",
@@ -374,7 +374,7 @@ def process_entry_details(raw_entries):
         list: List of processed entry objects
     """
     logger = logging.getLogger(__name__)
-    logger.info(f"Processing {len(raw_entries)} raw entries into structured entries with certification info")
+    logger.debug(f"Processing {len(raw_entries)} raw entries into structured entries with certification info")
     
     processed_entries = []
     
@@ -416,7 +416,7 @@ def process_entry_details(raw_entries):
     except Exception as sort_error:
         logger.warning(f"Error sorting entries: {str(sort_error)}")
     
-    logger.info(f"Successfully processed {len(processed_entries)} entries with certification info")
+    logger.debug(f"Successfully processed {len(processed_entries)} entries with certification info")
     return processed_entries
 
 def format_entry_description(entry, raw_entry):
@@ -784,11 +784,11 @@ def identify_all_entry_numbers(pdf_text):
         # If both start and end markers are found, extract the section between them
         if entry_end_match and entry_end_match.start() > start_position:
             entry_section = pdf_text[start_position:entry_end_match.start()]
-            logger.info(f"Analyzing entry details section between 'Entry Details' and 'Jantri Detail' for entry numbers ({len(entry_section)} characters)")
+            logger.debug(f"Analyzing entry details section between 'Entry Details' and 'Jantri Detail' for entry numbers ({len(entry_section)} characters)")
         else:
             # If only start marker is found, take all text from that point to the end
             entry_section = pdf_text[start_position:]
-            logger.info(f"Analyzing entry details section from 'Entry Details' to end of document for entry numbers ({len(entry_section)} characters)")
+            logger.debug(f"Analyzing entry details section from 'Entry Details' to end of document for entry numbers ({len(entry_section)} characters)")
     else:
         logger.warning("Entry Details section not found for entry number extraction. Using full document text.")
         entry_section = pdf_text
@@ -857,7 +857,7 @@ def identify_all_entry_numbers(pdf_text):
     
     # If no entry numbers found in the entry section, search the entire document
     if not entry_numbers:
-        logger.info("No entry numbers found in Entry Details section, searching entire document")
+        logger.debug("No entry numbers found in Entry Details section, searching entire document")
         
         # Look for entry references throughout the document
         for match in re.finditer(r'Entry\s+(?:No\.?|Number)\s*[:#]?\s*(\d+)', pdf_text, re.IGNORECASE):
@@ -878,7 +878,7 @@ def identify_all_entry_numbers(pdf_text):
                 entry_numbers.add(num)
     
     if entry_numbers:
-        logger.info(f"Identified {len(entry_numbers)} probable entry numbers: {sorted(list(entry_numbers))}")
+        logger.debug(f"Identified {len(entry_numbers)} probable entry numbers: {sorted(list(entry_numbers))}")
         return sorted(list(entry_numbers), key=lambda x: int(x) if x.isdigit() else float('inf'))
     
     logger.warning("No entry numbers found in the document")
@@ -895,7 +895,7 @@ def extract_entry_details(pdf_text):
         list: A list of structured entry objects
     """
     logger = logging.getLogger(__name__)
-    logger.info("Extracting entry details using enhanced AI-based approach")
+    logger.debug("Extracting entry details using enhanced AI-based approach")
     
     # Extract the section between "Entry Details" and "Jantri Detail"
     entry_section = pdf_text  # Default to full text
@@ -912,17 +912,17 @@ def extract_entry_details(pdf_text):
         # If both start and end markers are found, extract the section between them
         if entry_end_match and entry_end_match.start() > start_position:
             entry_section = pdf_text[start_position:entry_end_match.start()]
-            logger.info(f"Extracted section between 'Entry Details' and 'Jantri Detail' for processing ({len(entry_section)} characters)")
+            logger.debug(f"Extracted section between 'Entry Details' and 'Jantri Detail' for processing ({len(entry_section)} characters)")
         else:
             # If only start marker is found, take all text from that point to the end
             entry_section = pdf_text[start_position:]
-            logger.info(f"Extracted section from 'Entry Details' to end of document for processing ({len(entry_section)} characters)")
+            logger.debug(f"Extracted section from 'Entry Details' to end of document for processing ({len(entry_section)} characters)")
     else:
         logger.warning("Entry Details section not found. Using full document text for processing.")
     
     # First identify all entry numbers in the document, regardless of extraction success
     all_entry_numbers = identify_all_entry_numbers(entry_section)
-    logger.info(f"Found {len(all_entry_numbers)} entry numbers in the document")
+    logger.debug(f"Found {len(all_entry_numbers)} entry numbers in the document")
     
     try:
         # Use the dedicated AI function to extract detailed entries
@@ -956,7 +956,7 @@ def extract_entry_details(pdf_text):
         
         # Drop placeholder/empty entries to avoid phantom rows in report
         filtered_entries = [e for e in processed_entries if getattr(e, 'formatted_description', '').strip()]
-        logger.info(f"Successfully extracted and processed {len(filtered_entries)} entries (filtered from {len(processed_entries)})")
+        logger.debug(f"Successfully extracted and processed {len(filtered_entries)} entries (filtered from {len(processed_entries)})")
         return filtered_entries
         
     except Exception as e:
@@ -967,7 +967,7 @@ def extract_entry_details(pdf_text):
         processed_entries = []
         
         if all_entry_numbers:
-            logger.info(f"Creating placeholder entries for {len(all_entry_numbers)} identified entry numbers despite extraction error")
+            logger.debug(f"Creating placeholder entries for {len(all_entry_numbers)} identified entry numbers despite extraction error")
             for entry_num in all_entry_numbers:
                 entry = BaseEntry(
                     entry_number=entry_num,
@@ -1004,5 +1004,5 @@ def translate_entry_content(entries):
         list: Same list of entry objects
     """
     logger = logging.getLogger(__name__)
-    logger.info("Translation already handled within extraction process")
+    logger.debug("Translation already handled within extraction process")
     return entries 

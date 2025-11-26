@@ -153,7 +153,7 @@ class CaptchaSolver:
         Returns:
             The recognized CAPTCHA text or None if recognition failed.
         """
-        self.logger.info("Using LLM to recognize captcha")
+        self.logger.debug("Using LLM to recognize captcha")
         try:
             # Convert image data to base64 for sending to the LLM
             img = Image.open(io.BytesIO(image_data))
@@ -199,7 +199,7 @@ class CaptchaSolver:
                 captcha_text = ''.join(re.findall(r'\d', response.content))
                 
                 if len(captcha_text) == 6:  # Verify we got exactly 6 digits
-                    self.logger.info(f"LLM recognized captcha: {captcha_text}")
+                    self.logger.debug(f"LLM recognized captcha: {captcha_text}")
                     return captcha_text
                 else:
                     self.logger.warning(f"LLM returned invalid captcha format: {response.content}")
@@ -239,17 +239,11 @@ class WebDriverManager:
         
         try:
             if platform.system() == "Darwin":  # macOS
-                logger.info("Checking for zombie chromedriver processes on macOS")
                 subprocess.run(["pkill", "-f", "chromedriver"], check=False)
-                logger.info("Killed any existing chromedriver processes")
             elif platform.system() == "Linux":
-                logger.info("Checking for zombie chromedriver processes on Linux")
                 subprocess.run(["pkill", "-f", "chromedriver"], check=False)
-                logger.info("Killed any existing chromedriver processes")
             elif platform.system() == "Windows":
-                logger.info("Checking for zombie chromedriver processes on Windows")
                 subprocess.run(["taskkill", "/f", "/im", "chromedriver.exe"], check=False)
-                logger.info("Killed any existing chromedriver processes")
         except Exception as e:
             logger.warning(f"Failed to kill zombie processes: {str(e)}")
     
@@ -268,11 +262,7 @@ class WebDriverManager:
             wdm_cache_dir = os.path.join(home_dir, ".wdm", "drivers", "chromedriver")
             
             if os.path.exists(wdm_cache_dir):
-                logger.info(f"Removing chromedriver cache at {wdm_cache_dir}")
                 shutil.rmtree(wdm_cache_dir, ignore_errors=True)
-                logger.info("Chromedriver cache removed")
-            else:
-                logger.info(f"No chromedriver cache found at {wdm_cache_dir}")
         except Exception as e:
             logger.warning(f"Failed to clean chromedriver cache: {str(e)}")
     
@@ -313,11 +303,11 @@ class WebDriverManager:
             logger.warning(f"Failed to get Chrome version: {str(e)}")
             
         if chrome_version:
-            logger.info(f"Detected Chrome version: {chrome_version}")
+            logger.debug(f"Detected Chrome version: {chrome_version}")
         else:
             logger.warning("Could not detect Chrome version")
             
-            return chrome_version
+        return chrome_version
     
     def _setup_chrome_options(self, headless=True):
         """Set up Chrome options."""
@@ -412,14 +402,14 @@ class WebDriverManager:
         from selenium import webdriver
         
         logger = logging.getLogger(__name__)
-        logger.info(f"Trying approach: Selenium Manager (headless={self.headless})")
+        logger.debug(f"Trying approach: Selenium Manager (headless={self.headless})")
         
         try:
             # Let Selenium Manager handle the driver automatically
             # No need to specify Service - Selenium will use its built-in manager
             driver = webdriver.Chrome(options=chrome_options)
             
-            logger.info("Successfully initialized WebDriver using Selenium Manager")
+            logger.debug("Successfully initialized WebDriver using Selenium Manager")
             return driver
         except Exception as e:
             logger.error(f"Selenium Manager approach failed: {str(e)}")
@@ -434,7 +424,7 @@ class WebDriverManager:
         from webdriver_manager.chrome import ChromeDriverManager
         
         logger = logging.getLogger(__name__)
-        logger.info(f"Trying approach: Clean cache and ChromeDriverManager auto-detect (headless={self.headless})")
+        logger.debug(f"Trying approach: Clean cache and ChromeDriverManager auto-detect (headless={self.headless})")
         
         # Clean the ChromeDriver cache only once per process to avoid repeated downloads
         if not self._wdm_cache_cleaned:
@@ -446,19 +436,18 @@ class WebDriverManager:
             service = Service(ChromeDriverManager(cache_valid_range=30).install())
         except TypeError:
             # Fallback to older API if cache_valid_range is not supported
-            logger.info("Fallback to standard ChromeDriverManager without cache_valid_range")
+            logger.debug("Fallback to standard ChromeDriverManager without cache_valid_range")
             service = Service(ChromeDriverManager().install())
         
         # Ensure proper permissions
         driver_path = service.path
         if os.path.exists(driver_path):
             os.chmod(driver_path, 0o755)
-            logger.info(f"Set executable permissions for {driver_path}")
         
         # Create the driver
         driver = webdriver.Chrome(service=service, options=chrome_options)
         
-        logger.info("Successfully initialized WebDriver using Clean cache and ChromeDriverManager auto-detect")
+        logger.debug("Successfully initialized WebDriver using Clean cache and ChromeDriverManager auto-detect")
         return driver
     
     def _approach_specify_major_version(self, chrome_options):
@@ -471,7 +460,7 @@ class WebDriverManager:
         from webdriver_manager.chrome import ChromeDriverManager
         
         logger = logging.getLogger(__name__)
-        logger.info(f"Trying approach: ChromeDriverManager with major version {self.get_chrome_version()}")
+        logger.debug(f"Trying approach: ChromeDriverManager with major version {self.get_chrome_version()}")
         
         # Clean the ChromeDriver cache
         self._clean_chromedriver_cache()
@@ -480,13 +469,12 @@ class WebDriverManager:
         driver_path = ChromeDriverManager().install()
         
         # Ensure the chromedriver has execute permissions
-        logger.info(f"Set executable permissions for {driver_path}")
         os.chmod(driver_path, 0o755)
         
         service = Service(driver_path)
         driver = webdriver.Chrome(service=service, options=chrome_options)
         
-        logger.info(f"Successfully initialized WebDriver using ChromeDriverManager with major version {self.get_chrome_version()}")
+        logger.debug(f"Successfully initialized WebDriver using ChromeDriverManager with major version {self.get_chrome_version()}")
         return driver
     
     def _approach_non_headless_mode(self, chrome_options):
@@ -498,7 +486,7 @@ class WebDriverManager:
         from webdriver_manager.chrome import ChromeDriverManager
         
         logger = logging.getLogger(__name__)
-        logger.info("Trying approach: Non-headless mode")
+        logger.debug("Trying approach: Non-headless mode")
         
         # Modify options to disable headless mode
         non_headless_options = chrome_options
@@ -516,13 +504,12 @@ class WebDriverManager:
         driver_path = ChromeDriverManager().install()
         
         # Ensure the chromedriver has execute permissions
-        logger.info(f"Set executable permissions for {driver_path}")
         os.chmod(driver_path, 0o755)
         
         service = Service(driver_path)
         driver = webdriver.Chrome(service=service, options=non_headless_options)
         
-        logger.info("Successfully initialized WebDriver using Non-headless mode")
+        logger.debug("Successfully initialized WebDriver using Non-headless mode")
         return driver
     
     def _approach_explicit_driver_path(self, chrome_options):
@@ -536,7 +523,7 @@ class WebDriverManager:
         from selenium.webdriver.chrome.service import Service
         
         logger = logging.getLogger(__name__)
-        logger.info("Trying approach: Explicit driver path")
+        logger.debug("Trying approach: Explicit driver path")
         
         # Determine the default location of chromedriver
         home_dir = str(Path.home())
@@ -546,7 +533,7 @@ class WebDriverManager:
                 driver_path = "/usr/local/bin/chromedriver"
             else:
                 # If it doesn't exist, download it using curl
-                logger.info("Downloading chromedriver using curl")
+                logger.debug("Downloading chromedriver using curl")
                 driver_path = os.path.join(home_dir, "chromedriver")
                 
                 # Download latest version using chromedriver.storage.googleapis.com
@@ -563,7 +550,7 @@ class WebDriverManager:
                 # Format matches: https://storage.googleapis.com/chrome-for-testing-public/133.0.6943.141/mac-arm64/chromedriver-mac-arm64.zip
                 download_url = f"https://storage.googleapis.com/chrome-for-testing-public/{major_version}.0.6943.141/{arch}/chromedriver-{arch}.zip"
                 
-                logger.info(f"Downloading ChromeDriver from: {download_url}")
+                logger.debug(f"Downloading ChromeDriver from: {download_url}")
                 
                 try:
                     # Download, unzip and set permissions
@@ -606,13 +593,13 @@ class WebDriverManager:
         
         # Ensure the chromedriver has execute permissions
         if os.path.exists(driver_path):
-            logger.info(f"Using explicit chromedriver path: {driver_path}")
+            logger.debug(f"Using explicit chromedriver path: {driver_path}")
             os.chmod(driver_path, 0o755)
             
             service = Service(executable_path=driver_path)
             driver = webdriver.Chrome(service=service, options=chrome_options)
             
-            logger.info("Successfully initialized WebDriver using explicit driver path")
+            logger.debug("Successfully initialized WebDriver using explicit driver path")
             return driver
         else:
             raise FileNotFoundError(f"ChromeDriver not found at {driver_path}")
@@ -675,7 +662,7 @@ class FormFiller:
     
     def navigate_to_form(self):
         """Navigate to the AnyRoR form page."""
-        self.logger.info(f"Navigating to AnyRoR website: {CONFIG['URL']}")
+        self.logger.debug(f"Navigating to AnyRoR website: {CONFIG['URL']}")
         
         try:
             # First try the direct land record URL
@@ -685,7 +672,7 @@ class FormFiller:
             # Check if we need to navigate to the correct page
             current_url = self.driver.current_url
             if 'LandRecordRural.aspx' not in current_url:
-                self.logger.info("Not on land record page, trying alternative navigation")
+                self.logger.debug("Not on land record page, trying alternative navigation")
                 
                 # Try clicking the land record link if present
                 try:
@@ -703,8 +690,8 @@ class FormFiller:
                 )
                 
                 # Log the current URL and page title for debugging
-                self.logger.info(f"Current URL: {self.driver.current_url}")
-                self.logger.info(f"Page Title: {self.driver.title}")
+                self.logger.debug(f"Current URL: {self.driver.current_url}")
+                self.logger.debug(f"Page Title: {self.driver.title}")
                 
                 # Check if the dropdown is actually visible
                 dropdown = self.driver.find_element(By.ID, CONFIG['LAND_RECORD_TYPE_ID'])
@@ -728,7 +715,7 @@ class FormFiller:
                 
                 raise
             
-            self.logger.info("Successfully navigated to the land record form page")
+            self.logger.debug("Successfully navigated to the land record form page")
             
         except Exception as e:
             self.logger.error(f"Error navigating to form page: {str(e)}")
@@ -737,7 +724,7 @@ class FormFiller:
     
     def select_land_record_type(self):
         """Select the land record type."""
-        self.logger.info("Selecting Land Record Type")
+        self.logger.debug("Selecting Land Record Type")
         
         try:
             # Wait for the dropdown to be present in the DOM
@@ -774,7 +761,7 @@ class FormFiller:
                 """
                 result = self.driver.execute_script(js_script, dropdown_id, CONFIG['LAND_RECORD_TYPE_VALUE'])
                 if result:
-                    self.logger.info("Successfully selected land record type using JavaScript")
+                    self.logger.debug("Successfully selected land record type using JavaScript")
                     success = True
             except Exception as e:
                 self.logger.debug(f"JavaScript selection failed: {str(e)}")
@@ -787,7 +774,7 @@ class FormFiller:
                     )
                     select = Select(dropdown)
                     select.select_by_value(CONFIG['LAND_RECORD_TYPE_VALUE'])
-                    self.logger.info("Successfully selected land record type using Selenium Select")
+                    self.logger.debug("Successfully selected land record type using Selenium Select")
                     success = True
                 except Exception as e:
                     self.logger.debug(f"Selenium Select failed: {str(e)}")
@@ -817,7 +804,7 @@ class FormFiller:
                     """
                     result = self.driver.execute_script(js_click_script, dropdown_id, CONFIG['LAND_RECORD_TYPE_VALUE'])
                     if result:
-                        self.logger.info("Successfully selected land record type using click and JavaScript")
+                        self.logger.debug("Successfully selected land record type using click and JavaScript")
                         success = True
                 except Exception as e:
                     self.logger.debug(f"Click and JavaScript selection failed: {str(e)}")
@@ -843,7 +830,7 @@ class FormFiller:
             if selected_value != CONFIG['LAND_RECORD_TYPE_VALUE']:
                 raise Exception(f"Land record type selection failed. Expected {CONFIG['LAND_RECORD_TYPE_VALUE']} but got {selected_value}")
             
-            self.logger.info("Land record type selection verified successfully")
+            self.logger.debug("Land record type selection verified successfully")
             
         except Exception as e:
             self.logger.error(f"Error selecting land record type: {str(e)}")
@@ -914,7 +901,7 @@ class FormFiller:
         Returns:
             True if the district was found and selected, False otherwise.
         """
-        self.logger.info(f"Selecting District: {district_name}")
+        self.logger.debug(f"Selecting District: {district_name}")
         
         # Wait for the dropdown to be clickable and handle stale elements
         max_attempts = 3
@@ -934,7 +921,7 @@ class FormFiller:
                     if district_name in option.text:
                         select_district.select_by_visible_text(option.text)
                         found_district = True
-                        self.logger.info(f"Successfully selected district: {option.text}")
+                        self.logger.debug(f"Successfully selected district: {option.text}")
                         break
                 
                 if not found_district:
@@ -976,10 +963,10 @@ class FormFiller:
         Returns:
             True if the taluka was found and selected, False otherwise.
         """
-        self.logger.info(f"Selecting Taluka: {taluka_name}")
+        self.logger.debug(f"Selecting Taluka: {taluka_name}")
         result = self.select_dropdown_option(CONFIG['TALUKA_DROPDOWN_ID'], taluka_name, partial_match=True)
         if result:
-            self.logger.info("Taluka selected successfully")
+            self.logger.debug("Taluka selected successfully")
         else:
             self.logger.error(f"Taluka '{taluka_name}' not found in dropdown")
         return result
@@ -993,7 +980,7 @@ class FormFiller:
         Returns:
             True if the village was found and selected, False otherwise.
         """
-        self.logger.info(f"Selecting Village: {village_name}")
+        self.logger.debug(f"Selecting Village: {village_name}")
         
         # First try exact/partial match
         result = self.select_dropdown_option(CONFIG['VILLAGE_DROPDOWN_ID'], village_name, partial_match=True)
@@ -1015,10 +1002,10 @@ class FormFiller:
                 best_match = matcher.find_best_match(village_name, available_options)
                 
                 if best_match:
-                    self.logger.info(f"VillageNameMatcher found best match: '{best_match}' for '{village_name}'")
+                    self.logger.debug(f"VillageNameMatcher found best match: '{best_match}' for '{village_name}'")
                     result = self.select_dropdown_option(CONFIG['VILLAGE_DROPDOWN_ID'], best_match, partial_match=False)
                     if result:
-                        self.logger.info(f"Successfully selected matched village: {best_match}")
+                        self.logger.debug(f"Successfully selected matched village: {best_match}")
                 else:
                     # Generate detailed matching report for debugging
                     report = matcher.get_match_strategies_report(village_name, available_options)
@@ -1028,7 +1015,7 @@ class FormFiller:
                 self.logger.warning(f"Error during enhanced village matching: {e}")
         
         if result:
-            self.logger.info("Village selected successfully")
+            self.logger.debug("Village selected successfully")
         else:
             self.logger.error(f"Village '{village_name}' not found in dropdown")
         
@@ -1046,7 +1033,7 @@ class FormFiller:
         # Convert survey_block_number to string to fix issues with integer survey numbers
         survey_block_number = str(survey_block_number).strip()
         
-        self.logger.info(f"Selecting Survey/Block Number: {survey_block_number}")
+        self.logger.debug(f"Selecting Survey/Block Number: {survey_block_number}")
         
         # Wait a bit for the dropdown to be populated - reduced wait time
         time.sleep(1)  # Reduced from 2 seconds to 1 second
@@ -1054,7 +1041,7 @@ class FormFiller:
         try:
             result = self.select_dropdown_option(CONFIG['SURVEY_DROPDOWN_ID'], survey_block_number, partial_match=True)
             if result:
-                self.logger.info("Survey/Block Number selected successfully")
+                self.logger.debug("Survey/Block Number selected successfully")
             else:
                 self.logger.warning(f"Survey/Block Number not found matching: {survey_block_number}")
                 
@@ -1065,7 +1052,7 @@ class FormFiller:
                 select = Select(dropdown)
                 if len(select.options) > 1:  # Skip the first option if it's a placeholder
                     select.select_by_index(1)
-                    self.logger.info("Selected first available Survey/Block Number as fallback")
+                    self.logger.debug("Selected first available Survey/Block Number as fallback")
                     return True
             return result
         except Exception as e:
@@ -1078,7 +1065,7 @@ class FormFiller:
                 select = Select(dropdown)
                 if len(select.options) > 1:  # Skip the first option if it's a placeholder
                     select.select_by_index(1)
-                    self.logger.info("Selected first available Survey/Block Number as fallback after error")
+                    self.logger.debug("Selected first available Survey/Block Number as fallback after error")
                     return True
             except Exception as inner_e:
                 self.logger.error(f"Error in fallback survey selection: {str(inner_e)}")
@@ -1090,7 +1077,7 @@ class FormFiller:
         Returns:
             The recognized CAPTCHA text or None if recognition failed.
         """
-        self.logger.info("Starting captcha recognition process")
+        self.logger.debug("Starting captcha recognition process")
         
         try:
             # Wait a bit for the page to fully load after survey selection
@@ -1105,7 +1092,7 @@ class FormFiller:
                 captcha_img = self.wait.until(
                     EC.visibility_of_element_located((By.ID, captcha_id))
                 )
-                self.logger.info(f"Found CAPTCHA image with ID: {captcha_id}")
+                self.logger.debug(f"Found CAPTCHA image with ID: {captcha_id}")
             except Exception as e:
                 self.logger.warning(f"Could not find CAPTCHA with ID {captcha_id}: {str(e)}")
                 
@@ -1125,7 +1112,7 @@ class FormFiller:
                 for selector in captcha_selectors:
                     try:
                         captcha_img = self.driver.find_element(By.CSS_SELECTOR, selector)
-                        self.logger.info(f"Found CAPTCHA image with selector: {selector}")
+                        self.logger.debug(f"Found CAPTCHA image with selector: {selector}")
                         break
                     except:
                         continue
@@ -1139,7 +1126,7 @@ class FormFiller:
                             alt = img.get_attribute('alt') or ''
                             if 'captcha' in src.lower() or 'captcha' in alt.lower():
                                 captcha_img = img
-                                self.logger.info(f"Found CAPTCHA image with src: {src}")
+                                self.logger.debug(f"Found CAPTCHA image with src: {src}")
                                 break
                     except Exception as e:
                         self.logger.warning(f"Error searching for CAPTCHA images: {str(e)}")
@@ -1209,7 +1196,7 @@ class FormFiller:
                     
                     captcha_input.clear()
                     captcha_input.send_keys(captcha_value)
-                    self.logger.info(f"Entered captcha value: {captcha_value}")
+                    self.logger.debug(f"Entered captcha value: {captcha_value}")
                     return captcha_value
                 else:
                     self.logger.error("CAPTCHA recognition failed - no value returned")
@@ -1231,21 +1218,21 @@ class FormFiller:
             A tuple (success, error_message) where success is True if the form was submitted
             successfully, and error_message is None or the error message if submission failed.
         """
-        self.logger.info("Submitting the form")
+        self.logger.debug("Submitting the form")
         try:
             submit_button = self.wait.until(
                 EC.element_to_be_clickable((By.ID, CONFIG['SUBMIT_BUTTON_ID']))
             )
-            self.logger.info("Found submit button, clicking...")
+            self.logger.debug("Found submit button, clicking...")
             submit_button.click()
-            self.logger.info("Submit button clicked successfully")
+            self.logger.debug("Submit button clicked successfully")
         except Exception as e:
             self.logger.error(f"Error clicking submit button: {str(e)}")
             return False, f"Submit button error: {str(e)}"
         
         # Check for alert (captcha error)
         try:
-            self.logger.info("Checking for alerts...")
+            self.logger.debug("Checking for alerts...")
             WebDriverWait(self.driver, CONFIG['CAPTCHA_WAIT_TIMEOUT']).until(EC.alert_is_present())
             alert = self.driver.switch_to.alert
             alert_text = alert.text
@@ -1255,19 +1242,19 @@ class FormFiller:
             return False, alert_text
         except TimeoutException:
             # No alert means success
-            self.logger.info("Form submitted successfully - no alerts found")
+            self.logger.debug("Form submitted successfully - no alerts found")
             
             # Log current state
             try:
                 current_url = self.driver.current_url
-                self.logger.info(f"Current URL after submission: {current_url}")
+                self.logger.debug(f"Current URL after submission: {current_url}")
                 
                 page_title = self.driver.title
-                self.logger.info(f"Page title after submission: {page_title}")
+                self.logger.debug(f"Page title after submission: {page_title}")
                 
                 # Check if page is still responsive
                 ready_state = self.driver.execute_script("return document.readyState")
-                self.logger.info(f"Page ready state: {ready_state}")
+                self.logger.debug(f"Page ready state: {ready_state}")
                 
             except Exception as e:
                 self.logger.error(f"Error checking page state after submission: {str(e)}")
@@ -1284,64 +1271,64 @@ class FormFiller:
             A tuple (success, error_message) where success is True if the PDF was generated
             successfully, and error_message is None or the error message if generation failed.
         """
-        self.logger.info("Attempting to generate PDF")
+        self.logger.debug("Attempting to generate PDF")
         
         # Create output directory if it doesn't exist
         try:
             os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            self.logger.info(f"Output directory created/verified: {os.path.dirname(output_path)}")
+            self.logger.debug(f"Output directory created/verified: {os.path.dirname(output_path)}")
         except Exception as e:
             self.logger.error(f"Error creating output directory: {str(e)}")
             return False, f"Directory creation error: {str(e)}"
         
         try:
             # Log current state before PDF generation
-            self.logger.info("Checking page state before PDF generation...")
+            self.logger.debug("Checking page state before PDF generation...")
             try:
                 current_url = self.driver.current_url
-                self.logger.info(f"Current URL before PDF generation: {current_url}")
+                self.logger.debug(f"Current URL before PDF generation: {current_url}")
                 
                 page_title = self.driver.title
-                self.logger.info(f"Page title before PDF generation: {page_title}")
+                self.logger.debug(f"Page title before PDF generation: {page_title}")
                 
                 ready_state = self.driver.execute_script("return document.readyState")
-                self.logger.info(f"Page ready state before PDF generation: {ready_state}")
+                self.logger.debug(f"Page ready state before PDF generation: {ready_state}")
                 
             except Exception as e:
                 self.logger.error(f"Error checking page state before PDF generation: {str(e)}")
             
             # Wait for the page to load completely
-            self.logger.info(f"Waiting {CONFIG['PAGE_LOAD_WAIT']} seconds for page to load...")
+            self.logger.debug(f"Waiting {CONFIG['PAGE_LOAD_WAIT']} seconds for page to load...")
             time.sleep(CONFIG['PAGE_LOAD_WAIT'])
             
             # Check if driver is still responsive
-            self.logger.info("Testing driver responsiveness...")
+            self.logger.debug("Testing driver responsiveness...")
             try:
                 test_result = self.driver.execute_script("return 'Driver is responsive'")
-                self.logger.info(f"Driver test result: {test_result}")
+                self.logger.debug(f"Driver test result: {test_result}")
             except Exception as e:
                 self.logger.error(f"Driver not responsive: {str(e)}")
                 return False, f"Driver not responsive: {str(e)}"
             
             # Generate PDF
-            self.logger.info("Executing PDF generation command...")
+            self.logger.debug("Executing PDF generation command...")
             try:
                 result = self.driver.execute_cdp_cmd("Page.printToPDF", {"printBackground": True})
-                self.logger.info("PDF generation command executed successfully")
+                self.logger.debug("PDF generation command executed successfully")
                 
                 pdf_data = result.get("data")
                 if pdf_data:
-                    self.logger.info(f"PDF data received, length: {len(pdf_data)} characters")
+                    self.logger.debug(f"PDF data received, length: {len(pdf_data)} characters")
                     
                     # Save PDF
-                    self.logger.info(f"Saving PDF to: {output_path}")
+                    self.logger.debug(f"Saving PDF to: {output_path}")
                     with open(output_path, "wb") as f:
                         f.write(base64.b64decode(pdf_data))
                     
                     # Verify file was created
                     if os.path.exists(output_path):
                         file_size = os.path.getsize(output_path)
-                        self.logger.info(f"PDF saved successfully to: {output_path} (size: {file_size} bytes)")
+                        self.logger.debug(f"PDF saved successfully to: {output_path} (size: {file_size} bytes)")
                         return True, None
                     else:
                         error_msg = "PDF file was not created"
@@ -1401,7 +1388,7 @@ class AnyRoRScraper:
         if self.driver:
             try:
                 self.driver.quit()
-                self.logger.info("AnyRoRScraper: WebDriver cleaned up")
+                self.logger.debug("AnyRoRScraper: WebDriver cleaned up")
             except Exception as e:
                 self.logger.warning(f"AnyRoRScraper: Error during cleanup: {e}")
             finally:
@@ -1421,7 +1408,7 @@ class AnyRoRScraper:
         village_name = str(village_name).strip()
         survey_block_number = str(survey_block_number).strip()
         
-        self.logger.info(f"Fetching land record for {district_name}, {taluka_name}, {village_name}, {survey_block_number}")
+        self.logger.debug(f"Fetching land record for {district_name}, {taluka_name}, {village_name}, {survey_block_number}")
         
         try:
             # Create output directory if it doesn't exist
@@ -1450,7 +1437,7 @@ class AnyRoRScraper:
             max_attempts = 3
             for attempt in range(max_attempts):
                 try:
-                    self.logger.info(f"Attempt {attempt + 1} to select land record type")
+                    self.logger.debug(f"Attempt {attempt + 1} to select land record type")
                     
                     # Try direct JavaScript execution first
                     js_script = """
@@ -1465,7 +1452,7 @@ class AnyRoRScraper:
                     """
                     result = self.driver.execute_script(js_script)
                     if result:
-                        self.logger.info("Successfully selected land record type using JavaScript")
+                        self.logger.debug("Successfully selected land record type using JavaScript")
                         time.sleep(2)
                         break
                     
@@ -1478,7 +1465,7 @@ class AnyRoRScraper:
                         'return document.getElementById("ContentPlaceHolder1_drpLandRecord").value;'
                     )
                     if selected_value == '8':
-                        self.logger.info("Successfully verified land record type selection")
+                        self.logger.debug("Successfully verified land record type selection")
                         break
                     else:
                         self.logger.warning(f"Land record type selection verification failed. Got value: {selected_value}")
@@ -1490,26 +1477,26 @@ class AnyRoRScraper:
                     time.sleep(2)
             
             # Continue with rest of the form...
-            self.logger.info("Starting district selection...")
+            self.logger.debug("Starting district selection...")
             district_selected = self.form_filler.select_district(district_name)
             if not district_selected:
                 self.logger.error(f"Failed to select district: {district_name}")
                 return {'success': False, 'error': f"District not found: {district_name}"}
             
-            self.logger.info("Starting taluka selection...")
+            self.logger.debug("Starting taluka selection...")
             taluka_selected = self.form_filler.select_taluka(taluka_name)
             if not taluka_selected:
                 self.logger.error(f"Failed to select taluka: {taluka_name}")
                 return {'success': False, 'error': f"Taluka not found: {taluka_name}"}
                 
-            self.logger.info("Starting village selection...")
+            self.logger.debug("Starting village selection...")
             village_selected = self.form_filler.select_village(village_name)
             if not village_selected:
                 self.logger.error(f"Failed to select village: {village_name}")
                 return {'success': False, 'error': f"Village not found: {village_name}"}
                 
             # Retry if survey selection fails
-            self.logger.info("Starting survey selection...")
+            self.logger.debug("Starting survey selection...")
             for attempt in range(3):  # Try up to 3 times
                 survey_selected = self.form_filler.select_survey(survey_block_number)
                 if survey_selected:
@@ -1535,27 +1522,27 @@ class AnyRoRScraper:
                 return {'success': False, 'error': f"Survey number not found: {survey_block_number}"}
             
             # Solve captcha
-            self.logger.info("Starting CAPTCHA solving...")
+            self.logger.debug("Starting CAPTCHA solving...")
             captcha_solved = self.form_filler.solve_captcha()
             if not captcha_solved:
                 self.logger.error("Failed to solve captcha")
                 return {'success': False, 'error': "Captcha could not be solved"}
                 
             # Submit the form
-            self.logger.info("Starting form submission...")
+            self.logger.debug("Starting form submission...")
             submission_success = self.form_filler.submit_form()
             if not submission_success:
                 self.logger.error("Form submission failed")
                 return {'success': False, 'error': "Form submission failed"}
                 
             # Generate PDF
-            self.logger.info("Starting PDF generation...")
+            self.logger.debug("Starting PDF generation...")
             pdf_success = self.form_filler.generate_pdf(output_path)
             if not pdf_success:
                 self.logger.error("PDF generation failed")
                 return {'success': False, 'error': "PDF generation failed"}
                 
-            self.logger.info(f"Successfully fetched land record and saved to {output_path}")
+            self.logger.debug(f"Successfully fetched land record and saved to {output_path}")
             return {
                 'success': True,
                 'output_path': output_path,

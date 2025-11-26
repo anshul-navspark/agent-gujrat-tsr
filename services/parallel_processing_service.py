@@ -143,7 +143,7 @@ class ParallelProcessingService:
     
     def _pdf_worker(self):
         """Worker function for PDF fetching"""
-        self.logger.info("PDF worker started")
+        self.logger.debug("PDF worker started")
         processor = None
         
         try:
@@ -167,7 +167,7 @@ class ParallelProcessingService:
                     if task is None:  # Shutdown signal
                         break
                     
-                    self.logger.info(f"PDF worker processing: {task.record_id}")
+                    self.logger.debug(f"PDF worker processing: {task.record_id}")
                     task.status = "pdf_fetching"
                     task.start_time = datetime.now()
                     self._notify_progress(task)
@@ -190,12 +190,12 @@ class ParallelProcessingService:
                         # Add to TSR queue (prefer waiting briefly over failing the task)
                         try:
                             self.tsr_queue.put(task, timeout=10)
-                            self.logger.info(f"PDF ready, queued for TSR: {task.record_id}")
+                            self.logger.debug(f"PDF ready, queued for TSR: {task.record_id}")
                         except queue.Full:
                             # As a last resort, block until space is available to avoid dropping work
                             self.logger.warning("TSR queue full; blocking enqueue to avoid losing task")
                             self.tsr_queue.put(task)
-                            self.logger.info(f"PDF ready, queued for TSR after wait: {task.record_id}")
+                            self.logger.debug(f"PDF ready, queued for TSR after wait: {task.record_id}")
                     else:
                         task.status = "failed"
                         task.error = result.error
@@ -217,11 +217,11 @@ class ParallelProcessingService:
         finally:
             if processor:
                 self._pdf_processor_queue.put(processor)
-            self.logger.info("PDF worker stopped")
+            self.logger.debug("PDF worker stopped")
     
     def _tsr_worker(self):
         """Worker function for TSR generation"""
-        self.logger.info("TSR worker started")
+        self.logger.debug("TSR worker started")
         
         try:
             while not self.shutdown_flag.is_set():
@@ -238,7 +238,7 @@ class ParallelProcessingService:
                     if task is None:  # Shutdown signal
                         break
                     
-                    self.logger.info(f"TSR worker processing: {task.record_id}")
+                    self.logger.debug(f"TSR worker processing: {task.record_id}")
                     task.status = "tsr_generating"
                     self._notify_progress(task)
                     
@@ -256,7 +256,7 @@ class ParallelProcessingService:
                         
                         task.status = "completed"
                         task.tsr_complete_time = datetime.now()
-                        self.logger.info(f"TSR completed: {task.record_id}")
+                        self.logger.debug(f"TSR completed: {task.record_id}")
                         
                     except Exception as e:
                         task.status = "failed"
@@ -277,11 +277,11 @@ class ParallelProcessingService:
                         self.tsr_queue.task_done()
         
         finally:
-            self.logger.info("TSR worker stopped")
+            self.logger.debug("TSR worker stopped")
     
     def start_workers(self):
         """Start all worker threads"""
-        self.logger.info(f"Starting {self.max_pdf_workers} PDF workers and {self.max_tsr_workers} TSR workers")
+        self.logger.debug(f"Starting {self.max_pdf_workers} PDF workers and {self.max_tsr_workers} TSR workers")
         
         # Start PDF workers
         for i in range(self.max_pdf_workers):
@@ -321,36 +321,36 @@ class ParallelProcessingService:
                 self._notify_progress(task)
                 try:
                     self.tsr_queue.put(task, timeout=10)
-                    self.logger.info(f"Skipped fetch (exists), queued for TSR: {task_id}")
+                    self.logger.debug(f"Skipped fetch (exists), queued for TSR: {task_id}")
                 except queue.Full:
                     self.logger.warning("TSR queue full; blocking enqueue to avoid losing task")
                     self.tsr_queue.put(task)
-                    self.logger.info(f"Queued for TSR after wait: {task_id}")
+                    self.logger.debug(f"Queued for TSR after wait: {task_id}")
             else:
                 # Add to PDF queue (prefer waiting briefly over failing the task)
                 try:
                     self.pdf_queue.put(task, timeout=10)
-                    self.logger.info(f"Task queued for PDF: {task_id}")
+                    self.logger.debug(f"Task queued for PDF: {task_id}")
                 except queue.Full:
                     self.logger.warning("PDF queue full; blocking enqueue to avoid losing task")
                     self.pdf_queue.put(task)
-                    self.logger.info(f"Task queued for PDF after wait: {task_id}")
+                    self.logger.debug(f"Task queued for PDF after wait: {task_id}")
         
         return task_ids
     
     def pause_processing(self):
         """Pause all processing"""
         self.pause_flag.set()
-        self.logger.info("Processing paused")
+        self.logger.debug("Processing paused")
     
     def resume_processing(self):
         """Resume processing"""
         self.pause_flag.clear()
-        self.logger.info("Processing resumed")
+        self.logger.debug("Processing resumed")
     
     def stop_processing(self):
         """Stop all processing and clean up"""
-        self.logger.info("Stopping processing...")
+        self.logger.debug("Stopping processing...")
         self.shutdown_flag.set()
         
         # Signal shutdown to workers
@@ -370,7 +370,7 @@ class ParallelProcessingService:
         self.pdf_executor.shutdown(wait=True, timeout=30)
         self.tsr_executor.shutdown(wait=True, timeout=30)
         
-        self.logger.info("Processing stopped")
+        self.logger.debug("Processing stopped")
     
     def get_task_status(self, task_id: str) -> Optional[PipelineTask]:
         """Get the status of a specific task"""

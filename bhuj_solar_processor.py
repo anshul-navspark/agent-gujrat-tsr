@@ -11,17 +11,15 @@ Usage:
 Options:
     --excel-file       Path to the Excel file (default: "Bhuj Solar Land Survey List Feb 24 2025.xlsx")
     --output-dir       Base directory for output files (default: "output")
-    --no-sequential    Process records in parallel instead of sequentially
+    --parallel         Process records in parallel instead of sequentially
     --max-workers      Maximum number of parallel workers (default: 4)
     --start-row        Start processing from this row number (default: 0, first data row)
     --end-row          Stop processing at this row number (default: process all)
     --pdf-only         Only fetch PDFs, skip TSR generation
     --verbose          Enable verbose logging
-    --test-conversion  Test survey number conversion without fetching records
-    --survey-numbers   List of survey numbers to test conversion (used with --test-conversion)
-    --no-cleanup       Skip cleanup of chromedriver cache between runs
+    --survey-numbers   List of survey numbers to process (filters Excel to only these survey numbers)
     --regenerate       Regenerate PDFs even if they already exist
-    --headless         Run in headless mode (default: False)
+    --no-headless      Run in visible mode (default: run headless)
 """
 
 import os
@@ -35,9 +33,8 @@ import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import argparse
 from tqdm import tqdm
-import re
-from selenium import webdriver
-from webdriver_manager.chrome import ChromeDriverManager
+import argparse
+from tqdm import tqdm
 
 # Import your existing modules
 
@@ -49,7 +46,7 @@ from utils.translations import (
     translate_to_gujarati
 )
 from utils.survey_utils import (
-    convert_survey_number, get_alternative_survey_formats, sanitize_filename
+    convert_survey_number, sanitize_filename
 )
 
 def setup_logging(verbose=False):
@@ -75,7 +72,7 @@ def setup_logging(verbose=False):
     return logging.getLogger(__name__)
 
 # A completely self-contained function to fetch the land record
-def fetch_land_record_isolated(district, taluka, village, survey, output_path, timeout=300):
+def fetch_land_record_isolated(district, taluka, village, survey, output_path, headless_mode, timeout=300):
     """
     A self-contained function to fetch land records that can be run in its own process.
     This avoids issues with signals and shared resources.
@@ -97,14 +94,14 @@ def fetch_land_record_isolated(district, taluka, village, survey, output_path, t
         
         # Clean up any zombie processes first
         try:
-            subprocess_cmd = ["pkill", "-f", "chromedriver"]
             import subprocess
+            subprocess_cmd = ["pkill", "-f", "chromedriver"]
             subprocess.run(subprocess_cmd, check=False)
         except Exception as e:
             logger.warning(f"Failed to kill zombie processes: {str(e)}")
         
         # Create scraper instance and fetch the land record
-        scraper = AnyRoRScraper(headless=True, logger=logger)
+        scraper = AnyRoRScraper(headless=headless_mode, logger=logger)
         try:
             result_dict = scraper.fetch_land_record(
                 district_name=district,
@@ -187,9 +184,9 @@ def process_single_row(row, args, logger):
             'gujarati_survey': guj_survey
         })
         
-        # Log the processing information
-        logger.info(f"Processing row {row.name}: {district} ({guj_district}), {taluka} ({guj_taluka}), "
-                    f"{village} ({guj_village}), Survey: {survey} (Converted: {guj_survey})")
+        # Log the processing information (debug level - too verbose for INFO)
+        logger.debug(f"Processing row {row.name}: {district} ({guj_district}), {taluka} ({guj_taluka}), "
+                     f"{village} ({guj_village}), Survey: {survey} (Converted: {guj_survey})")
         
         # Determine output paths
         output_dir = args.output_dir
@@ -210,18 +207,17 @@ def process_single_row(row, args, logger):
         
         # Check if PDF already exists and skip if it does (unless regeneration is requested)
         if os.path.exists(pdf_path) and not args.regenerate:
-            logger.info(f"PDF already exists for row {row.name}, skipping PDF generation")
             result['pdf_path'] = pdf_path
             result['status'] = 'PDF Already Exists'
         else:
             # Fetch the land record and save as PDF
-            logger.info(f"Fetching land record for row {row.name}")
+            logger.debug(f"Fetching land record for row {row.name}")
             
             max_attempts = 3
             for attempt in range(max_attempts):
                 try:
                     # Use the regular anyror_refactored for sequential mode
-                    if not args.no_sequential:
+                    if not args.parallel:
                         # Clean up any zombie chromedriver processes first
                         try:
                             from anyror_refactored import WebDriverManager
@@ -231,7 +227,8 @@ def process_single_row(row, args, logger):
                             logger.warning(f"Failed to kill zombie processes: {str(e)}")
                         
                         # Create scraper instance and fetch the land record
-                        scraper = AnyRoRScraper(headless=True, logger=logger)
+                        is_headless = not args.no_headless
+                        scraper = AnyRoRScraper(headless=is_headless, logger=logger)
                         try:
                             result_dict = scraper.fetch_land_record(
                                 district_name=guj_district,
@@ -261,13 +258,13 @@ def process_single_row(row, args, logger):
                                 scraper.web_driver_manager.close()
                             except:
                                 pass
-                    else:
+                    else:  # parallel mode
                         # For parallel mode, use our isolated function in a process pool
                         # This ensures complete isolation of the browser instances
                         with ProcessPoolExecutor(max_workers=1) as executor:
                             future = executor.submit(
                                 fetch_land_record_isolated,
-                                guj_district, guj_taluka, guj_village, guj_survey, pdf_path, 300  # Add timeout
+                                guj_district, guj_taluka, guj_village, guj_survey, pdf_path, not args.no_headless, 300  # Add timeout
                             )
                             
                             try:
@@ -319,7 +316,7 @@ def process_single_row(row, args, logger):
         # If PDF was generated successfully and TSR generation is requested
         if result['pdf_path'] and not args.pdf_only:
             try:
-                logger.info(f"Generating TSR for row {row.name}")
+                logger.debug(f"Generating TSR for row {row.name}")
                 
                 generate_tsr_from_pdf(
                     pdf_path=result['pdf_path'],
@@ -328,7 +325,7 @@ def process_single_row(row, args, logger):
                 
                 result['tsr_path'] = tsr_path
                 result['status'] = 'TSR Generated'
-                logger.info(f"Report generated successfully: {tsr_path}")
+                logger.debug(f"Report generated successfully: {tsr_path}")
                 
             except Exception as e:
                 logger.error(f"Failed to generate TSR for row {row.name}: {str(e)}")
@@ -353,10 +350,7 @@ def process_bhuj_solar_data(args):
     tsr_dir = os.path.join(args.output_dir, "tsr")
     
     os.makedirs(pdf_dir, exist_ok=True)
-    logger.info(f"Created directory: {pdf_dir}")
-    
     os.makedirs(tsr_dir, exist_ok=True)
-    logger.info(f"Created directory: {tsr_dir}")
     
     # Read the Excel file
     excel_path = args.excel_file
@@ -366,17 +360,14 @@ def process_bhuj_solar_data(args):
         data_df = pd.read_excel(excel_path)
         data_df = data_df.fillna('')
         
-        # Print column names for debugging
-        logger.info(f"Excel columns: {list(data_df.columns)}")
-        
         logger.info(f"Successfully read data with {len(data_df)} records")
     except Exception as e:
         logger.error(f"Error reading Excel file: {str(e)}")
         return []
 
     # Filter rows if specific survey numbers are requested
-    if args.process_survey_numbers and args.survey_numbers:
-        logger.info(f"Filtering by specific survey numbers: {args.survey_numbers}")
+    if args.survey_numbers:
+        logger.debug(f"Filtering by specific survey numbers: {args.survey_numbers}")
         # Convert survey numbers to strings to avoid type matching issues
         survey_numbers = [str(s).strip() for s in args.survey_numbers]
         # Get the column name that contains survey numbers
@@ -390,7 +381,7 @@ def process_bhuj_solar_data(args):
         
         if filtered_rows:
             data_df = pd.DataFrame(filtered_rows)
-            logger.info(f"Filtered to {len(data_df)} rows matching the specified survey numbers")
+            logger.debug(f"Filtered to {len(data_df)} rows matching the specified survey numbers")
         else:
             logger.warning(f"No rows found matching the specified survey numbers")
             return []
@@ -417,7 +408,7 @@ def process_bhuj_solar_data(args):
     # Process rows
     results = []
     
-    if args.no_sequential:
+    if args.parallel:
         logger.info("Processing in parallel")
         with concurrent.futures.ThreadPoolExecutor(max_workers=args.max_workers) as executor:
             futures = {executor.submit(process_single_row, row, args, logger): idx for idx, row in data_df.iterrows()}
@@ -462,7 +453,7 @@ def main():
                         help="Path to the Excel file")
     parser.add_argument('--output-dir', default="output",
                         help="Base directory for output files")
-    parser.add_argument('--no-sequential', action='store_true',
+    parser.add_argument('--parallel', action='store_true',
                         help="Process records in parallel instead of sequentially")
     parser.add_argument('--max-workers', type=int, default=4,
                         help="Maximum number of parallel workers")
@@ -474,78 +465,30 @@ def main():
                         help="Only fetch PDFs, skip TSR generation")
     parser.add_argument('--verbose', action='store_true',
                         help="Enable verbose logging")
-    parser.add_argument('--test-conversion', action='store_true',
-                        help="Test survey number conversion without fetching records")
     parser.add_argument('--survey-numbers', nargs='+',
-                        help="List of survey numbers to test conversion or to process specifically")
-    parser.add_argument('--process-survey-numbers', action='store_true',
-                        help="Process only specific survey numbers provided in --survey-numbers")
-    parser.add_argument('--no-cleanup', action='store_true',
-                        help="Skip cleanup of chromedriver cache between runs")
+                        help="List of survey numbers to process (filters Excel to only these survey numbers)")
     parser.add_argument('--regenerate', action='store_true',
                         help="Regenerate PDFs even if they already exist")
-    parser.add_argument('--headless', action='store_true',
-                        help="Run in headless mode (default: False)")
+    parser.add_argument('--no-headless', action='store_true',
+                        help="Run in visible mode (disable headless mode)")
     
     args = parser.parse_args()
     
     # Setup logging
     logger = setup_logging(args.verbose)
-    if args.test_conversion:
-        if not args.survey_numbers:
-            logger.error("Please provide survey numbers to test with --survey-numbers")
-            return
-        
-        for survey in args.survey_numbers:
-            converted = convert_survey_number(survey)
-            print(f"Original: {survey} -> Converted: {converted}")
-        return
     
-    # Clean up ChromeDriver cache if not disabled
-    if not args.no_cleanup:
-        try:
-            # Import WebDriverManager and clean the cache
-            from anyror_refactored import WebDriverManager
-            wdm = WebDriverManager()
-            logger.info("Cleaning ChromeDriver cache before starting")
-            wdm._clean_chromedriver_cache()
-        except Exception as e:
-            logger.warning(f"Failed to clean ChromeDriver cache: {str(e)}")
-    
-    # Update the AnyRoRScraper initialization in process_single_row
+    # Clean up ChromeDriver cache
     try:
-        # Initialize scraper with non-headless mode by default
-        scraper = AnyRoRScraper(headless=args.headless, logger=logger)
-        
-        # Add additional debugging for land record type selection
-        if scraper.driver:
-            try:
-                # Try to select land record type directly using JavaScript
-                js_script = """
-                    var select = document.getElementById('ContentPlaceHolder1_drpLandRecord');
-                    if(select) {
-                        select.value = '8';
-                        var event = new Event('change', { bubbles: true });
-                        select.dispatchEvent(event);
-                        if(typeof jQuery !== 'undefined') {
-                            jQuery(select).trigger('change');
-                        }
-                        return true;
-                    }
-                    return false;
-                """
-                result = scraper.driver.execute_script(js_script)
-                logger.info(f"Direct JavaScript selection result: {result}")
-            except Exception as e:
-                logger.warning(f"JavaScript selection attempt failed: {str(e)}")
-        
-        process_bhuj_solar_data(args)
-    finally:
-        if scraper and scraper.driver:
-            try:
-                scraper.driver.quit()
-            except:
-                pass
+        # Import WebDriverManager and clean the cache
+        from anyror_refactored import WebDriverManager
+        wdm = WebDriverManager()
+        logger.info("Cleaning ChromeDriver cache before starting")
+        wdm._clean_chromedriver_cache()
+    except Exception as e:
+        logger.warning(f"Failed to clean ChromeDriver cache: {str(e)}")
+    
+    # Process the data
+    process_bhuj_solar_data(args)
 
 if __name__ == "__main__":
     main()

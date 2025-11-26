@@ -116,7 +116,7 @@ def add_chain_of_title_section(document, entries, entry_table):
         entries: List of entry objects to include in the Chain of Title section
     """
     logger = logging.getLogger(__name__)
-    logger.info("Adding Chain of Title section with two-column format")
+    logger.debug("Adding Chain of Title section with two-column format")
     
     # Add section heading
     add_section_heading(document, "3.  Chain of Title", numbered=True)
@@ -608,7 +608,7 @@ def add_findings_table(doc, findings):
         None
     """
     logger = logging.getLogger(__name__)
-    logger.info("Adding Findings table")
+    logger.debug("Adding Findings table")
     
     # Add section heading
     doc.add_paragraph()

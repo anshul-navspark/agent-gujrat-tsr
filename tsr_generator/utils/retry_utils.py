@@ -49,7 +49,7 @@ def retry_with_backoff(
                         raise e
                     
                     logger.warning(f"Attempt {attempt + 1}/{max_attempts} failed for {func.__name__}: {e}")
-                    logger.info(f"Retrying in {current_delay} seconds...")
+                    logger.debug(f"Retrying in {current_delay} seconds...")
                     time.sleep(current_delay)
                     current_delay *= backoff_factor
             

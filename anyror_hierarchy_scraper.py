@@ -225,7 +225,7 @@ class AnyRoRHierarchyScraper:
     # ---- navigation helpers ------------------------------------------------
     def open_form(self):
         assert self.driver and self.wait
-        self.logger.info("Opening AnyRoR rural land record page...")
+        self.logger.debug("Opening AnyRoR rural land record page...")
         max_retries = 3
         for attempt in range(max_retries):
             try:
@@ -242,7 +242,7 @@ class AnyRoRHierarchyScraper:
                     self.logger.error(f"Failed to load page after {max_retries} attempts")
                     raise
         
-        self.logger.info("Selecting land record type...")
+        self.logger.debug("Selecting land record type...")
         self._select_option_by_value(
             CONFIG["LAND_RECORD_TYPE_ID"], CONFIG["LAND_RECORD_TYPE_VALUE"]
         )
@@ -313,13 +313,13 @@ class AnyRoRHierarchyScraper:
         hierarchy: Dict[str, Dict[str, object]] = {}
 
         district_options = self._get_dropdown_options(CONFIG["DISTRICT_DROPDOWN_ID"])
-        self.logger.info("Found %d districts", len(district_options))
+        self.logger.debug("Found %d districts", len(district_options))
 
         for idx, district in enumerate(district_options):
             if district_limit and idx >= district_limit:
                 break
 
-            self.logger.info("Processing district %s (%d/%d)", district.text, idx + 1, len(district_options))
+            self.logger.debug("Processing district %s (%d/%d)", district.text, idx + 1, len(district_options))
             self._select_option_by_text(CONFIG["DISTRICT_DROPDOWN_ID"], district.text)
             self._wait_for_settle()
 
@@ -337,13 +337,13 @@ class AnyRoRHierarchyScraper:
     ) -> Dict[str, Dict[str, object]]:
         taluka_options = self._get_dropdown_options(CONFIG["TALUKA_DROPDOWN_ID"])
         taluka_map: Dict[str, Dict[str, object]] = {}
-        self.logger.info("  Found %d talukas", len(taluka_options))
+        self.logger.debug("  Found %d talukas", len(taluka_options))
 
         for idx, taluka in enumerate(taluka_options):
             if taluka_limit and idx >= taluka_limit:
                 break
 
-            self.logger.info("  Taluka %s (%d/%d)", taluka.text, idx + 1, len(taluka_options))
+            self.logger.debug("  Taluka %s (%d/%d)", taluka.text, idx + 1, len(taluka_options))
             self._select_option_by_text(CONFIG["TALUKA_DROPDOWN_ID"], taluka.text)
             self._wait_for_settle()
 
@@ -363,7 +363,7 @@ class AnyRoRHierarchyScraper:
             return {}
 
         villages = {}
-        self.logger.info("    Found %d villages", len(village_options))
+        self.logger.debug("    Found %d villages", len(village_options))
         for village in village_options:
             villages[village.text] = generate_possible_english_names(village.text)
         return villages
@@ -407,18 +407,18 @@ def main(argv: Optional[List[str]] = None):
     args = parse_args(argv)
     logger = Logger.setup(console_log_level=logging.INFO)
 
-    logger.info("Starting AnyRoR hierarchy scrape...")
+    logger.debug("Starting AnyRoR hierarchy scrape...")
     with AnyRoRHierarchyScraper(headless=args.headless, logger=logger) as scraper:
         hierarchy = scraper.scrape(
             district_limit=args.district_limit,
             taluka_limit=args.taluka_limit,
         )
 
-    logger.info("Writing hierarchy to %s", args.output)
+    logger.debug("Writing hierarchy to %s", args.output)
     with open(args.output, "w", encoding="utf-8") as fh:
         json.dump(hierarchy, fh, ensure_ascii=False, indent=2)
 
-    logger.info("Done. Total districts captured: %d", len(hierarchy))
+    logger.debug("Done. Total districts captured: %d", len(hierarchy))
 
 
 if __name__ == "__main__":

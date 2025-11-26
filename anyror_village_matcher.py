@@ -34,41 +34,41 @@ class VillageNameMatcher:
         # Strategy 1: Exact match
         for option in available_options:
             if option.strip() == target_clean:
-                self.logger.info(f"Found exact match: {option}")
+                self.logger.debug(f"Found exact match: {option}")
                 return option
         
         # Strategy 2: Case-insensitive exact match
         target_lower = target_clean.lower()
         for option in available_options:
             if option.strip().lower() == target_lower:
-                self.logger.info(f"Found case-insensitive match: {option}")
+                self.logger.debug(f"Found case-insensitive match: {option}")
                 return option
         
         # Strategy 3: Partial match (target in option)
         for option in available_options:
             if target_clean in option.strip():
-                self.logger.info(f"Found partial match (target in option): {option}")
+                self.logger.debug(f"Found partial match (target in option): {option}")
                 return option
         
         # Strategy 4: Reverse partial match (option in target)
         for option in available_options:
             option_clean = option.strip()
             if option_clean and option_clean in target_clean:
-                self.logger.info(f"Found reverse partial match (option in target): {option}")
+                self.logger.debug(f"Found reverse partial match (option in target): {option}")
                 return option
         
         # Strategy 5: Case-insensitive partial matching
         for option in available_options:
             option_lower = option.strip().lower()
             if target_lower in option_lower or option_lower in target_lower:
-                self.logger.info(f"Found case-insensitive partial match: {option}")
+                self.logger.debug(f"Found case-insensitive partial match: {option}")
                 return option
         
         # Strategy 6: Fuzzy matching using difflib
         matches = difflib.get_close_matches(target_clean, available_options, n=3, cutoff=0.6)
         if matches:
             best_match = matches[0]
-            self.logger.info(f"Found fuzzy match: {best_match}")
+            self.logger.debug(f"Found fuzzy match: {best_match}")
             return best_match
         
         # Strategy 7: Word-based matching (split by spaces and check individual words)
@@ -88,7 +88,7 @@ class VillageNameMatcher:
                     best_option = option
         
         if best_option:
-            self.logger.info(f"Found word-based match with score {best_score:.2f}: {best_option}")
+            self.logger.debug(f"Found word-based match with score {best_score:.2f}: {best_option}")
             return best_option
         
         # Strategy 8: Enhanced Gujarati-English transliteration matching
@@ -112,7 +112,7 @@ class VillageNameMatcher:
             # Check if any part of the target transliterates to something in the option
             for eng, guj in transliteration_map.items():
                 if eng in target_lower and guj in option:
-                    self.logger.info(f"Found transliteration match: {option} (matched {eng} → {guj})")
+                    self.logger.debug(f"Found transliteration match: {option} (matched {eng} → {guj})")
                     return option
         
         # Strategy 9: Pattern matching for codes (like "- 034")
@@ -129,7 +129,7 @@ class VillageNameMatcher:
                         # Use fuzzy matching on the name part
                         similarity = difflib.SequenceMatcher(None, main_part.lower(), option_name.lower()).ratio()
                         if similarity > 0.4:  # Lower threshold for cross-language matching
-                            self.logger.info(f"Found pattern match: {option} (similarity: {similarity:.2f})")
+                            self.logger.debug(f"Found pattern match: {option} (similarity: {similarity:.2f})")
                             return option
         
         self.logger.warning(f"No suitable match found for village: {target_village}")

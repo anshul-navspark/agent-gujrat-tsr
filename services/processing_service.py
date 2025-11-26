@@ -90,7 +90,7 @@ class LandRecordProcessor:
                     try:
                         if scraper is None:
                             scraper = _new_scraper()
-                        self.logger.info(
+                        self.logger.debug(
                             f"Fetching land record for {district_guj}, {taluka_guj}, {village_guj}, {survey_number_guj}"
                         )
                         result = scraper.fetch_land_record(
@@ -125,7 +125,7 @@ class LandRecordProcessor:
             # Generate TSR
             tsr_path = None
             if generate_tsr:
-                self.logger.info(f"Generating TSR from {paths['pdf']}")
+                self.logger.debug(f"Generating TSR from {paths['pdf']}")
                 generate_tsr_from_pdf(paths["pdf"], paths["tsr"], use_agent=use_agent)
                 tsr_path = paths["tsr"]
 

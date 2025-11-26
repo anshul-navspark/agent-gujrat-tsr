@@ -11,7 +11,7 @@ def generate_findings_table(pdf_text):
         list: A list of dictionaries with standard findings
     """
     logger = logging.getLogger(__name__)
-    logger.info("Generating standard findings")
+    logger.debug("Generating standard findings")
     
     # Standard findings
     findings = [
@@ -127,5 +127,5 @@ def generate_findings_table(pdf_text):
         }
     ]
     
-    logger.info(f"Generated {len(findings)} standard findings")
+    logger.debug(f"Generated {len(findings)} standard findings")
     return findings 

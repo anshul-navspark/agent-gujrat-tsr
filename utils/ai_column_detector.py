@@ -100,7 +100,7 @@ class AIColumnDetector:
         
         columns = list(df.columns)
         try:
-            self.logger.info(f"Analyzing {len(columns)} columns for auto-detection")
+            self.logger.debug(f"Analyzing {len(columns)} columns for auto-detection")
         except:
             pass  # Silently continue if logging fails
         
@@ -114,7 +114,7 @@ class AIColumnDetector:
             if best_column:
                 used_columns.add(best_column)
                 try:
-                    self.logger.info(f"Detected {field_type} → {best_column}")
+                    self.logger.debug(f"Detected {field_type} → {best_column}")
                 except:
                     pass  # Silently continue if logging fails
         

@@ -119,7 +119,7 @@ class AIBatchService:
         
         # Add to processing queue
         self.pdf_text_queue.put(task)
-        self.logger.info(f"AI task submitted: {task_id}")
+        self.logger.debug(f"AI task submitted: {task_id}")
         
         return task_id
     
@@ -156,7 +156,7 @@ class AIBatchService:
             for task in tasks_batch:
                 try:
                     task.land_details = extract_land_records_ai(task.pdf_text)
-                    self.logger.info(f"Land details extracted for {task.task_id}")
+                    self.logger.debug(f"Land details extracted for {task.task_id}")
                 except Exception as e:
                     self.logger.error(f"Land details extraction failed for {task.task_id}: {e}")
                     task.error = f"Land details extraction error: {str(e)}"
@@ -165,7 +165,7 @@ class AIBatchService:
             for task in tasks_batch:
                 try:
                     task.entry_details = extract_entry_details_ai(task.pdf_text)
-                    self.logger.info(f"Entry details extracted for {task.task_id}")
+                    self.logger.debug(f"Entry details extracted for {task.task_id}")
                 except Exception as e:
                     self.logger.error(f"Entry details extraction failed for {task.task_id}: {e}")
                     task.error = f"Entry details extraction error: {str(e)}"
@@ -174,7 +174,7 @@ class AIBatchService:
             for task in tasks_batch:
                 try:
                     task.findings = generate_findings_table(task.pdf_text)
-                    self.logger.info(f"Findings generated for {task.task_id}")
+                    self.logger.debug(f"Findings generated for {task.task_id}")
                 except Exception as e:
                     self.logger.error(f"Findings generation failed for {task.task_id}: {e}")
                     task.error = f"Findings generation error: {str(e)}"
@@ -219,7 +219,7 @@ class AIBatchService:
                 )
                 
                 task.status = "completed"
-                self.logger.info(f"TSR document generated for {task.task_id}: {tsr_path}")
+                self.logger.debug(f"TSR document generated for {task.task_id}: {tsr_path}")
                 
             except Exception as e:
                 task.status = "failed"
@@ -249,7 +249,7 @@ class AIBatchService:
         else:
             pending_tasks = pending_tasks[:self.batch_size]
         
-        self.logger.info(f"Processing AI batch of {len(pending_tasks)} tasks")
+        self.logger.debug(f"Processing AI batch of {len(pending_tasks)} tasks")
         
         # Stage 1: Extract PDF text in parallel
         self._extract_pdf_text_batch(pending_tasks)
@@ -261,7 +261,7 @@ class AIBatchService:
         self._generate_documents_batch(pending_tasks)
         
         completed_count = len([t for t in pending_tasks if t.status == "completed"])
-        self.logger.info(f"AI batch completed: {completed_count}/{len(pending_tasks)} successful")
+        self.logger.debug(f"AI batch completed: {completed_count}/{len(pending_tasks)} successful")
         
         return completed_count
     
@@ -293,7 +293,7 @@ class AIBatchService:
         for task_id in completed_ids:
             del self.tasks[task_id]
         
-        self.logger.info(f"Cleared {len(completed_ids)} completed tasks")
+        self.logger.debug(f"Cleared {len(completed_ids)} completed tasks")
 
 
 # Optimized TSR generation function that uses the batch service

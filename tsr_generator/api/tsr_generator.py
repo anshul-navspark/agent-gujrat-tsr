@@ -38,7 +38,7 @@ def generate_tsr_from_pdf(pdf_path, output_path, logger=None, use_agent: bool = 
         if use_agent:
             # Route to agentic workflow
             try:
-                logger.info("Using Agentic workflow for TSR generation")
+                logger.debug("Using Agentic workflow for TSR generation")
                 from agent_system.backend.services.agent_service import generate_tsr_agentic
                 agent_result = generate_tsr_agentic(pdf_path, output_path)
                 if agent_result.get('success'):
@@ -53,7 +53,7 @@ def generate_tsr_from_pdf(pdf_path, output_path, logger=None, use_agent: bool = 
                 logger.warning(f"Agent path error, falling back to legacy: {agent_exc}")
 
         # Extract text from PDF (legacy path)
-        logger.info(f"Extracting text from PDF: {pdf_path}")
+        logger.debug(f"Extracting text from PDF: {pdf_path}")
         pdf_text = extract_text_from_pdf(pdf_path)
         if pdf_text is None:
             logger.error("Failed to extract text from PDF")
@@ -63,33 +63,33 @@ def generate_tsr_from_pdf(pdf_path, output_path, logger=None, use_agent: bool = 
             }
         
         # Extract land details using dedicated AI approach
-        logger.info("Extracting land details using dedicated AI approach")
+        logger.debug("Extracting land details using dedicated AI approach")
         land_details = extract_land_details(pdf_text)
         
-        logger.info("Entry Details extraction (consisting old entries)")
+        logger.debug("Entry Details extraction (consisting old entries)")
         entry_table = extract_entry_table(pdf_text)
 
         # Extract entry details using enhanced structured approach
-        logger.info("Extracting entry details using enhanced structured approach")
+        logger.debug("Extracting entry details using enhanced structured approach")
         entries = extract_entry_details(pdf_text)
         
         # No need for separate translation as it's handled in the extraction process
-        logger.info("Entry translation is now handled within the extraction process")
+        logger.debug("Entry translation is now handled within the extraction process")
         
         # Generate findings
-        logger.info("Generating findings")
+        logger.debug("Generating findings")
         findings = generate_findings_table(pdf_text)
         
         # Ensure output directory exists
         output_dir = os.path.dirname(output_path)
         if output_dir and not os.path.exists(output_dir):
             os.makedirs(output_dir)
-            logger.info(f"Created output directory: {output_dir}")
+            logger.debug(f"Created output directory: {output_dir}")
         
         # Create DOCX report with structured entries
-        logger.info(f"Creating DOCX report with enhanced entry formatting: {output_path}")
+        logger.debug(f"Creating DOCX report with enhanced entry formatting: {output_path}")
         output_file = create_tsr_document(entry_table,entries, land_details, findings, output_path)
-        logger.info(f"Report generated successfully: {output_file}")
+        logger.debug(f"Report generated successfully: {output_file}")
         
         # Include entry type statistics in the result
         entry_types = {}

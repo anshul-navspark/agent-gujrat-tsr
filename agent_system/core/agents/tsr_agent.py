@@ -156,7 +156,7 @@ Human: {input}
         return agent
     
     def generate_tsr(self, pdf_text: str, output_path: str) -> Dict[str, Any]:
-        self.logger.info("Starting TSR generation with agent")
+        self.logger.debug("Starting TSR generation with agent")
         try:
             request = (
                 "Generate a Title Search Report (TSR) from this land record. Save to: "
