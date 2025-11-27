@@ -7,7 +7,6 @@ import pandas as pd
 import logging
 from typing import Dict, Optional, List, Tuple
 import re
-from collections import Counter
 
 
 class AIColumnDetector:

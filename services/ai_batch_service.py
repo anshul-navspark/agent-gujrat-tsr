@@ -4,9 +4,7 @@ Optimized AI batch processing service for TSR generation.
 This service batches AI calls and pre-computes prompts for better performance.
 """
 
-import asyncio
 import json
-import time
 import logging
 import os
 from typing import List, Dict, Any, Optional, Tuple
@@ -301,7 +299,6 @@ def generate_tsr_optimized(pdf_path: str, output_path: str, batch_service: Optio
     """
     Optimized TSR generation that can work with batch processing
     """
-    import os
     
     try:
         if batch_service:

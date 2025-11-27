@@ -1,7 +1,51 @@
+# Logs and output
 logs
-__pycache__
-venv
-.env
 output
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+
+# Virtual environment
+venv
+env
+ENV
+
+# Environment variables
+.env
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+.coverage
+htmlcov
+.pytest_cache
+
+# Deprecated code
 deprecated
+
+# Excel files (except templates)
 *.xlsx
+!*template*.xlsx
+
+# Temporary files
+*.tmp
+*.bak
+*.log

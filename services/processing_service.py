@@ -8,6 +8,7 @@ Title Search Report (DOCX), as well as batch helpers for DataFrames.
 from __future__ import annotations
 
 import os
+import math
 import logging
 import traceback
 from dataclasses import dataclass
@@ -18,14 +19,8 @@ import pandas as pd
 from anyror_refactored import AnyRoRScraper
 from selenium.common.exceptions import InvalidSessionIdException, TimeoutException, WebDriverException
 from tsr_generator import generate_tsr_from_pdf
-import importlib
-
-def _get_translation_module():
-    try:
-        mod = importlib.import_module("bhuj_solar_processor")
-        return mod
-    except Exception:
-        return None
+from utils.json_translations import translate_to_gujarati, TranslationNotFoundError
+from utils.survey_utils import convert_survey_number
 
 
 def ensure_dir(path: str) -> None:
@@ -70,7 +65,6 @@ class LandRecordProcessor:
         survey_number_guj: str,
         regenerate_pdf: bool = False,
         generate_tsr: bool = True,
-        use_agent: bool = False,
     ) -> ProcessResult:
         """Fetch PDF from AnyRoR and optionally generate TSR.
 
@@ -126,7 +120,7 @@ class LandRecordProcessor:
             tsr_path = None
             if generate_tsr:
                 self.logger.debug(f"Generating TSR from {paths['pdf']}")
-                generate_tsr_from_pdf(paths["pdf"], paths["tsr"], use_agent=use_agent)
+                generate_tsr_from_pdf(paths["pdf"], paths["tsr"])
                 tsr_path = paths["tsr"]
 
             return ProcessResult(success=True, pdf_path=paths["pdf"], tsr_path=tsr_path)
@@ -168,7 +162,6 @@ class LandRecordProcessor:
                 if x is None:
                     return True
                 try:
-                    import math
                     if isinstance(x, float) and math.isnan(x):
                         return True
                 except Exception:
@@ -187,17 +180,17 @@ class LandRecordProcessor:
             survey_guj = str(s_raw).strip()
 
             # Auto-translate common English names to Gujarati for batch inputs
-            # Use live dictionaries from bhuj_solar_processor to avoid stale copies
-            _mod = _get_translation_module()
-            if _mod is not None:
-                try:
-                    district_guj = _mod.translate_to_gujarati(district_guj, _mod.DISTRICT_TRANSLATIONS, default=district_guj)
-                    taluka_guj = _mod.translate_to_gujarati(taluka_guj, _mod.TALUKA_TRANSLATIONS, default=taluka_guj)
-                    village_guj = _mod.translate_to_gujarati(village_guj, _mod.VILLAGE_TRANSLATIONS, default=village_guj)
-                    survey_guj = _mod.convert_survey_number(survey_guj)
-                except Exception:
-                    # Soft-fallback: leave values as-is on any error
-                    pass
+            try:
+                district_guj = translate_to_gujarati(district_guj, context='district')
+                taluka_guj = translate_to_gujarati(taluka_guj, context='taluka')
+                village_guj = translate_to_gujarati(village_guj, context='village')
+                survey_guj = convert_survey_number(survey_guj)
+            except TranslationNotFoundError as e:
+                results.append(ProcessResult(success=False, error=f"Row {idx}: {str(e)}"))
+                continue
+            except Exception:
+                # Soft-fallback: leave values as-is on any other error
+                pass
 
             # Skip placeholder rows like 'New' survey
             if survey_guj.lower() == "new":

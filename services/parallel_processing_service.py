@@ -8,7 +8,6 @@ pipelines for significantly improved performance.
 import os
 import time
 import queue
-import asyncio
 import threading
 import concurrent.futures
 from dataclasses import dataclass, field

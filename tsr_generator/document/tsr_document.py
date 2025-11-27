@@ -10,7 +10,6 @@ import re
 
 from tsr_generator.utils.text_utils import sanitize_text
 from tsr_generator.document.docx_generator import (
-    add_table_with_header,
     add_section_heading,
     add_chain_of_title_section,
     add_findings_table

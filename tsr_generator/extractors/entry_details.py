@@ -44,9 +44,7 @@ def extract_entry_table(pdf_text):
         Desired output (exact):
         176 506 748 797 1013 1046
         """
-    response = llm.invoke(prompt + "\n" + pdf_text)
-    print(response.content)
-    
+    response = llm.invoke(prompt + "\n" + pdf_text)    
     # Extract only numeric tokens from the response, filtering out non-digit characters
     # Handle various LLM output formats including code blocks, markdown, etc.
     content = response.content

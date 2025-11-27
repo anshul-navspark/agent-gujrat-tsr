@@ -7,7 +7,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from dotenv import load_dotenv
 
 from tsr_generator.utils.text_utils import convert_gujarati_to_english_numerals, translate_gujarati_text
-from tsr_generator.utils.retry_utils import retry_with_backoff, safe_execute, RetryableError
+from tsr_generator.utils.retry_utils import retry_with_backoff, RetryableError
 
 @retry_with_backoff(max_attempts=3, delay=2.0, exceptions=(RetryableError, ConnectionError, TimeoutError))
 def extract_land_records_ai(pdf_text):

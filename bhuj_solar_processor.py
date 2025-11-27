@@ -24,6 +24,7 @@ Options:
 
 import os
 import sys
+import subprocess
 import pandas as pd
 import logging
 from datetime import datetime
@@ -33,21 +34,11 @@ import concurrent.futures
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import argparse
 from tqdm import tqdm
-import argparse
-from tqdm import tqdm
 
-# Import your existing modules
-
-import anyror_refactored
-from anyror_refactored import AnyRoRScraper  # Add this import
-from tsr_generator import generate_tsr_from_pdf  # Import from the new package
-from utils.translations import (
-    DISTRICT_TRANSLATIONS, TALUKA_TRANSLATIONS, VILLAGE_TRANSLATIONS,
-    translate_to_gujarati
-)
-from utils.survey_utils import (
-    convert_survey_number, sanitize_filename
-)
+from anyror_refactored import AnyRoRScraper, WebDriverManager
+from tsr_generator import generate_tsr_from_pdf
+from utils.json_translations import translate_to_gujarati, TranslationNotFoundError
+from utils.survey_utils import convert_survey_number, sanitize_filename
 
 def setup_logging(verbose=False):
     """Setup logging configuration"""
@@ -89,12 +80,10 @@ def fetch_land_record_isolated(district, taluka, village, survey, output_path, h
         logging.basicConfig(level=logging.INFO, format=log_format)
         logger = logging.getLogger('fetch_process')
         
-        # Import here to avoid any global import issues
-        from anyror_refactored import AnyRoRScraper
+        # AnyRoRScraper already imported at top of file
         
         # Clean up any zombie processes first
         try:
-            import subprocess
             subprocess_cmd = ["pkill", "-f", "chromedriver"]
             subprocess.run(subprocess_cmd, check=False)
         except Exception as e:
@@ -168,9 +157,15 @@ def process_single_row(row, args, logger):
         survey = str(survey).strip()
         
         # Translate English names to Gujarati using dictionaries
-        guj_district = translate_to_gujarati(district, DISTRICT_TRANSLATIONS, default=district)
-        guj_taluka = translate_to_gujarati(taluka, TALUKA_TRANSLATIONS, default=taluka)
-        guj_village = translate_to_gujarati(village, VILLAGE_TRANSLATIONS, default=village)
+        try:
+            guj_district = translate_to_gujarati(district, context='district')
+            guj_taluka = translate_to_gujarati(taluka, context='taluka')
+            guj_village = translate_to_gujarati(village, context='village')
+        except TranslationNotFoundError as e:
+            logger.error(f"Skipping row {row.name}: {e}")
+            result['error'] = str(e)
+            result['status'] = 'Skipped'
+            return result
         
         # Convert survey number to Gujarati format
         guj_survey = convert_survey_number(survey)
@@ -220,7 +215,7 @@ def process_single_row(row, args, logger):
                     if not args.parallel:
                         # Clean up any zombie chromedriver processes first
                         try:
-                            from anyror_refactored import WebDriverManager
+                            # WebDriverManager already imported at top
                             wdm = WebDriverManager()
                             wdm._kill_zombie_chromedrivers()
                         except Exception as e:
@@ -288,7 +283,6 @@ def process_single_row(row, args, logger):
                                 future.cancel()
                                 logger.error(f"Timeout while fetching land record for row {row.name}")
                                 # Clean up any zombie processes
-                                import subprocess
                                 subprocess.run(["pkill", "-f", "chromedriver"], check=False)
                                 
                                 if attempt < max_attempts - 1:
@@ -303,7 +297,6 @@ def process_single_row(row, args, logger):
                     logger.error(traceback.format_exc())
                     
                     # Clean up resources
-                    import subprocess
                     subprocess.run(["pkill", "-f", "chromedriver"], check=False)
                     
                     if attempt < max_attempts - 1:
@@ -410,7 +403,7 @@ def process_bhuj_solar_data(args):
     
     if args.parallel:
         logger.info("Processing in parallel")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=args.max_workers) as executor:
+        with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
             futures = {executor.submit(process_single_row, row, args, logger): idx for idx, row in data_df.iterrows()}
             
             for future in tqdm(concurrent.futures.as_completed(futures), total=len(futures), desc="Processing"):
@@ -479,8 +472,7 @@ def main():
     
     # Clean up ChromeDriver cache
     try:
-        # Import WebDriverManager and clean the cache
-        from anyror_refactored import WebDriverManager
+        # WebDriverManager already imported at top
         wdm = WebDriverManager()
         logger.info("Cleaning ChromeDriver cache before starting")
         wdm._clean_chromedriver_cache()
