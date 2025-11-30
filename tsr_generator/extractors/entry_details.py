@@ -103,8 +103,8 @@ def extract_entry_details_ai(pdf_text):
         1. entry_number - The entry number
         2. date - The date (DD/MM/YYYY)
         3. type - Category of entry (LOAN, DEATH, RELEASE, LOAN CLOSE, SALE, PARTITION, PERSONS ADD, TO TRANSFER, EXCHANGE, LIFETIME DISTRIBUTION, NOT RELATED, ORDER, RELINQUISHMENT, etc.)
-        4. description - Detailed description following the exact format from examples
-        5. certification - Line about certification if available (starts with "The Entry is certified..." or "The Entry is rejected")
+        4. description - Detailed description following the exact format from examples. MUST BE IN ENGLISH. Translate any Gujarati text. Do NOT include any Gujarati characters.
+        5. certification - Line about certification if available (starts with "The Entry is certified..." or "The Entry is rejected"). MUST BE IN ENGLISH. Do NOT include any Gujarati characters.
 
         Many entries will only have an entry number listed in a table format without any other details, under the table heading "Entry Details". For these entries:
         - entry_number: Use the number from the table
@@ -270,8 +270,8 @@ def extract_entry_details_fallback(entry_section):
         - entry_number: The numeric entry number
         - date: In DD/MM/YYYY format if available
         - type: Category (LOAN, DEATH, RELEASE, SALE, PARTITION, EXCHANGE, LIFETIME DISTRIBUTION, NOT RELATED, ORDER, RELINQUISHMENT, etc.)
-        - description: Start with "That" and provide complete details (except for NOT RELATED and PROMULGATION types)
-        - certification: Information about who certified the entry and when
+        - description: Start with "That" and provide complete details (except for NOT RELATED and PROMULGATION types). MUST BE IN ENGLISH. Translate all Gujarati text. Do NOT include any Gujarati characters.
+        - certification: Information about who certified the entry and when. MUST BE IN ENGLISH. Do NOT include any Gujarati characters.
 
         For entries where you can identify the entry number but not the description or other details, you may include them with empty fields. Only do this if the number clearly appears under the "Entry Details" heading or next to "Entry No.". Do not create entries from Khata/Survey numbers.
 

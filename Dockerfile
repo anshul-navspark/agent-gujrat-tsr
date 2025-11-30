@@ -28,4 +28,5 @@ COPY . .
 EXPOSE 8501
 
 # Run the application
-CMD ["streamlit", "run", "app/streamlit_app.py", "--server.address=0.0.0.0"]
+# Run the application
+CMD ["uvicorn", "api_server:app", "--host", "0.0.0.0", "--port", "8080"]

@@ -1,0 +1,11 @@
+# Streamlit Cloud Requirements
+# Minimal dependencies for UI-only deployment
+
+streamlit>=1.28.0
+pandas>=2.0.0
+openpyxl>=3.1.0
+requests>=2.31.0
+python-docx>=1.1.0
+
+# Optional: For async API calls
+httpx>=0.25.0

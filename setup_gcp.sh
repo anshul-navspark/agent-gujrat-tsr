@@ -47,17 +47,15 @@ echo ""
 echo "✅ Project created"
 echo ""
 
-# Set as default project
-echo "Step 3: Setting as default project..."
-gcloud config set project $PROJECT_ID
-
-# Set default region and zone (Mumbai - closest to Jaipur)
-echo "Step 4: Setting default region and zone..."
-gcloud config set compute/region asia-south1
-gcloud config set compute/zone asia-south1-a
+# Enable APIs
+echo "Step 3: Enabling required APIs..."
+gcloud services enable run.googleapis.com \
+    cloudbuild.googleapis.com \
+    artifactregistry.googleapis.com \
+    compute.googleapis.com
 
 echo ""
-echo "✅ Configuration complete"
+echo "✅ APIs enabled"
 echo ""
 
 # Display project info
@@ -65,35 +63,17 @@ echo "=== Project Information ==="
 echo "Project ID: $PROJECT_ID"
 echo "Project Name: Gujarat TSR Agent"
 echo "Region: asia-south1 (Mumbai)"
-echo "Zone: asia-south1-a"
 echo ""
 
-# Update deploy.sh with project ID
-echo "Step 5: Updating deployment script..."
-if [ -f "deploy/deploy.sh" ]; then
-    # Use different sed syntax for macOS
-    sed -i '' "s/PROJECT_ID=\"your-project-id\"/PROJECT_ID=\"$PROJECT_ID\"/" deploy/deploy.sh
-    echo "✅ Updated deploy/deploy.sh with project ID"
-else
-    echo "⚠️  deploy/deploy.sh not found, skipping update"
-fi
-
-echo ""
 echo "=== ⚠️  IMPORTANT NEXT STEPS ==="
 echo ""
 echo "1. Enable billing for your project:"
 echo "   Visit: https://console.cloud.google.com/billing/linkedaccount?project=$PROJECT_ID"
 echo ""
-echo "2. After enabling billing, enable required APIs:"
-echo "   gcloud services enable compute.googleapis.com"
-echo ""
-echo "3. List available billing accounts (if needed):"
-echo "   gcloud billing accounts list"
-echo ""
-echo "4. Link billing account (replace BILLING_ACCOUNT_ID):"
+echo "2. Link billing account (replace BILLING_ACCOUNT_ID):"
 echo "   gcloud billing projects link $PROJECT_ID --billing-account=BILLING_ACCOUNT_ID"
 echo ""
-echo "5. Once billing is enabled, deploy your app:"
-echo "   ./deploy/deploy.sh"
+echo "3. Once billing is enabled, deploy your app:"
+echo "   ./deploy/deploy_cloud_run.sh"
 echo ""
 echo "=== Setup Complete! ==="

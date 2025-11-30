@@ -35,15 +35,17 @@ def extract_land_records_ai(pdf_text):
         
         # Create a focused prompt for extracting land details
         prompt = f"""
-        Extract these specific land record details from the text below, translating from Gujarati to English as needed:
+        Extract these specific land record details from the text below, translating ALL Gujarati text to English.
         
-        1. village_name - Name of the village
-        2. taluka_name - Name of the taluka
-        3. district_name - Name of the district 
+        CRITICAL: The output must contain ONLY English text. Do NOT include any Gujarati characters. Translate every value.
+        
+        1. village_name - Name of the village (Translate to English)
+        2. taluka_name - Name of the taluka (Translate to English)
+        3. district_name - Name of the district (Translate to English)
         4. survey_number - Survey/Block Number
         5. total_area - Total area in the format like "2-79-23" (hectares-ares-square meters)
-        6. nature_of_land - Nature/use of the land (like agricultural, old tenure,new tenure etc.)
-        7. owner - Name of the land owner or khatedar
+        6. nature_of_land - Nature/use of the land (Translate to English, e.g., "Agricultural", "Old Tenure", "New Tenure")
+        7. owner - Name of the land owner or khatedar (Translate to English)
         
         Be precise and extract only what's clearly stated in the document. Look for sections labeled "Land Details" or similar.
         
