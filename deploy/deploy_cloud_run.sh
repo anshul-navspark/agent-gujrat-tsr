@@ -33,10 +33,35 @@ gcloud run deploy $SERVICE_NAME \
     --region $REGION \
     --allow-unauthenticated \
     --memory 4Gi \
-    --timeout 300 \
+    --timeout 3600 \
     --project $PROJECT_ID
 
 echo ""
 echo "✅ Deployment complete!"
 echo "Service URL:"
 gcloud run services describe $SERVICE_NAME --platform managed --region $REGION --format 'value(status.url)' --project $PROJECT_ID
+
+echo ""
+echo "Step 3: Cleaning up old revisions..."
+# Get all revisions except the latest 3
+OLD_REVISIONS=$(gcloud run revisions list \
+    --service=$SERVICE_NAME \
+    --region=$REGION \
+    --project=$PROJECT_ID \
+    --format='value(metadata.name)' \
+    --sort-by='~metadata.creationTimestamp' \
+    | tail -n +4)
+
+if [ -z "$OLD_REVISIONS" ]; then
+    echo "No old revisions to delete."
+else
+    echo "Deleting old revisions:"
+    for revision in $OLD_REVISIONS; do
+        echo "  - Deleting $revision"
+        gcloud run revisions delete $revision \
+            --region=$REGION \
+            --project=$PROJECT_ID \
+            --quiet
+    done
+    echo "✅ Old revisions cleaned up!"
+fi
