@@ -24,13 +24,13 @@ class APIResponse:
 class TSRAPIClient:
     """Client for interacting with the Gujarat TSR Agent API"""
     
-    def __init__(self, api_url: str, timeout: int = 900, max_retries: int = 2):
+    def __init__(self, api_url: str, timeout: int = 1200, max_retries: int = 2):
         """
         Initialize API client
         
         Args:
             api_url: Base URL of the API (e.g., https://your-service.run.app)
-            timeout: Request timeout in seconds (default: 900 = 15 minutes)
+            timeout: Request timeout in seconds (default: 1200 = 20 minutes)
             max_retries: Maximum number of retry attempts for failed requests
         """
         self.api_url = api_url.rstrip('/')

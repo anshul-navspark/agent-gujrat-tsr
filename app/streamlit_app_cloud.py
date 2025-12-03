@@ -70,7 +70,7 @@ with st.sidebar:
         "API Timeout (seconds)",
         min_value=900,
         max_value=1200,
-        value=st.secrets.get("API_TIMEOUT", 900),
+        value=st.secrets.get("API_TIMEOUT", 1200),
         help="Maximum time to wait for API response"
     )
     
