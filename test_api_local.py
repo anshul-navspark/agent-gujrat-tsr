@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 
 def test_api():
     district = "Kutch"
-    taluka = "abadsa"
+    taluka = "bhuj"
     village = "trambo"
-    survey = "51"
+    survey = "32"
     
     logger.info(f"Testing with: {district}, {taluka}, {village}, {survey}")
     

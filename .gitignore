@@ -52,3 +52,5 @@ deprecated
 *.tmp
 *.bak
 *.log
+
+*.docx

@@ -109,7 +109,7 @@ with st.sidebar:
         "Concurrent API Calls",
         min_value=1,
         max_value=10,
-        value=4,
+        value=10,
         help="Number of simultaneous API requests for batch processing"
     )
 
