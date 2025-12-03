@@ -1,0 +1,11 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '--build-arg'
+      - 'CACHEBUST=${_CACHEBUST}'
+      - '-t'
+      - '${_IMAGE_TAG}'
+      - '.'
+images:
+  - '${_IMAGE_TAG}'

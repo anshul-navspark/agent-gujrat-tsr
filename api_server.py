@@ -109,12 +109,39 @@ async def process_record(request: LandRecordRequest, background_tasks: Backgroun
         )
         
         if not result.get('success'):
+            logger.error(f"Scraping failed with result: {result}")
             raise HTTPException(status_code=500, detail=f"Scraping failed: {result.get('error')}")
             
+        # Enhanced logging for diagnostics
         logger.info(f"PDF scraped successfully: {pdf_path}")
         
+        # Log PDF file details
+        if os.path.exists(pdf_path):
+            pdf_size = os.path.getsize(pdf_path)
+            logger.info(f"Scraped PDF size: {pdf_size} bytes")
+            
+            # Try to get PDF page count
+            try:
+                import PyPDF2
+                with open(pdf_path, 'rb') as f:
+                    pdf_reader = PyPDF2.PdfReader(f)
+                    page_count = len(pdf_reader.pages)
+                    logger.info(f"Scraped PDF has {page_count} pages")
+                    
+                    # Log first 200 chars of first page text
+                    if page_count > 0:
+                        first_page_text = pdf_reader.pages[0].extract_text()[:200]
+                        logger.info(f"First page preview: {first_page_text}")
+            except Exception as e:
+                logger.warning(f"Could not read PDF metadata: {e}")
+        else:
+            logger.error(f"PDF file does not exist at {pdf_path}")
+        
         # Generate TSR
+        logger.info(f"Starting TSR generation from PDF: {pdf_path}")
         tsr_result = generate_tsr_from_pdf(pdf_path, docx_path, logger)
+        
+        logger.info(f"TSR generation result: success={tsr_result.get('success')}, error={tsr_result.get('error')}")
         
         if not tsr_result['success']:
             raise HTTPException(status_code=500, detail=f"TSR Generation failed: {tsr_result.get('error')}")
@@ -152,3 +179,54 @@ async def process_record(request: LandRecordRequest, background_tasks: Backgroun
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
+@app.get("/debug-env")
+def debug_environment():
+    """
+    Debug endpoint to verify environment configuration.
+    Returns information about the environment setup.
+    """
+    import platform
+    import subprocess
+    
+    debug_info = {
+        "platform": platform.system(),
+        "python_version": platform.python_version(),
+        "environment_variables": {
+            "GEMINI_API_KEY": "SET" if os.getenv("GEMINI_API_KEY") else "NOT SET",
+            "GEMINI_MODEL_NAME": os.getenv("GEMINI_MODEL_NAME", "default: gemini-2.5-flash"),
+            "CHROME_BIN": os.getenv("CHROME_BIN", "NOT SET"),
+            "CHROMEDRIVER_PATH": os.getenv("CHROMEDRIVER_PATH", "NOT SET"),
+        },
+        "chrome_available": False,
+        "chromedriver_available": False
+    }
+    
+    # Check for Chrome/Chromium
+    chrome_paths = [
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/usr/bin/google-chrome",
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+    ]
+    
+    for chrome_path in chrome_paths:
+        if os.path.exists(chrome_path):
+            debug_info["chrome_available"] = True
+            debug_info["chrome_path"] = chrome_path
+            break
+    
+    # Check for ChromeDriver
+    chromedriver_paths = [
+        "/usr/bin/chromedriver",
+        "/usr/local/bin/chromedriver"
+    ]
+    
+    for driver_path in chromedriver_paths:
+        if os.path.exists(driver_path):
+            debug_info["chromedriver_available"] = True
+            debug_info["chromedriver_path"] = driver_path
+            break
+    
+    return debug_info
+

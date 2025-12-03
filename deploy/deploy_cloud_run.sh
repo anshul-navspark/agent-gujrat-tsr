@@ -20,9 +20,12 @@ if ! command -v gcloud &> /dev/null; then
     exit 1
 fi
 
-# Build container image
+# Build container image with cache busting
 echo "Step 1: Building container image..."
-gcloud builds submit --tag $IMAGE_TAG --project $PROJECT_ID
+BUILD_TIMESTAMP=$(date +%s)
+echo "Build timestamp: $BUILD_TIMESTAMP (forces fresh build)"
+gcloud builds submit --config=cloudbuild.yaml --project $PROJECT_ID \
+    --substitutions=_IMAGE_TAG=$IMAGE_TAG,_CACHEBUST=$BUILD_TIMESTAMP
 
 echo ""
 echo "Step 2: Deploying to Cloud Run..."

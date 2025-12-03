@@ -78,10 +78,12 @@ def extract_land_records_ai(pdf_text):
         
         # Parse JSON from the response robustly
         content = response.content if hasattr(response, 'content') else str(response)
-        logger.debug(f"AI response content: {content}")
+        logger.info(f"AI response received, length: {len(content)} characters")
+        logger.debug(f"AI response content (first 500 chars): {content[:500]}")
         
         # Clean the content
         content = ''.join(ch for ch in content if ch == '\t' or ch == '\n' or ch == '\r' or ord(ch) >= 32)
+        logger.debug(f"Cleaned content (first 500 chars): {content[:500]}")
         
         # Try multiple JSON extraction strategies
         land_details = None

@@ -8,6 +8,9 @@ RUN apt-get update && apt-get install -y \
     libpoppler-cpp-dev \
     pkg-config \
     python3-dev \
+    fonts-indic \
+    fonts-noto \
+    fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 # Set environment variables
@@ -20,6 +23,9 @@ WORKDIR /app
 # Install Python dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Cache busting argument - forces rebuild from here when value changes
+ARG CACHEBUST=1
 
 # Copy application code
 COPY . .
