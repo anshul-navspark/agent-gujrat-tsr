@@ -3,7 +3,7 @@ import shutil
 import tempfile
 import logging
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from tsr_generator.api.tsr_generator import generate_tsr_from_pdf
 from anyror_refactored import AnyRoRScraper, WebDriverManager
@@ -63,14 +63,26 @@ async def generate_tsr(background_tasks: BackgroundTasks, file: UploadFile = Fil
             cleanup_temp_file(input_path)
             raise HTTPException(status_code=500, detail=f"Generation failed: {result.get('error')}")
 
-        # Schedule cleanup
-        background_tasks.add_task(cleanup_temp_file, input_path)
-        background_tasks.add_task(cleanup_temp_file, output_path)
+        # Read file into memory before cleanup to avoid race conditions
+        try:
+            with open(output_path, 'rb') as f:
+                docx_content = f.read()
+        except Exception as e:
+            logger.error(f"Failed to read generated DOCX: {e}")
+            cleanup_temp_file(input_path)
+            cleanup_temp_file(output_path)
+            raise HTTPException(status_code=500, detail=f"Failed to read generated file: {e}")
         
-        return FileResponse(
-            path=output_path, 
-            filename=output_filename,
-            media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        # Clean up immediately since we have the content in memory
+        cleanup_temp_file(input_path)
+        cleanup_temp_file(output_path)
+        
+        return Response(
+            content=docx_content,
+            media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            headers={
+                'Content-Disposition': f'attachment; filename="{output_filename}"'
+            }
         )
 
     except HTTPException:
@@ -148,16 +160,27 @@ async def process_record(request: LandRecordRequest, background_tasks: Backgroun
             
         logger.info(f"TSR generated successfully: {docx_path}")
         
-        # Schedule cleanup
-        background_tasks.add_task(cleanup_temp_file, pdf_path)
-        background_tasks.add_task(cleanup_temp_file, docx_path)
+        # Read file into memory before cleanup to avoid race conditions under high concurrency
+        try:
+            with open(docx_path, 'rb') as f:
+                docx_content = f.read()
+        except Exception as e:
+            logger.error(f"Failed to read generated DOCX: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to read generated file: {e}")
+        
+        # Clean up immediately since we have the content in memory
+        cleanup_temp_file(pdf_path)
+        cleanup_temp_file(docx_path)
         
         output_filename = f"TSR_{request.village}_{request.survey_number}.docx"
         
-        return FileResponse(
-            path=docx_path,
-            filename=output_filename,
-            media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        
+        return Response(
+            content=docx_content,
+            media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            headers={
+                'Content-Disposition': f'attachment; filename="{output_filename}"'
+            }
         )
         
     except HTTPException:

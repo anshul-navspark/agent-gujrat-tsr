@@ -22,7 +22,8 @@ fi
 
 # Build container image with cache busting
 echo "Step 1: Building container image..."
-BUILD_TIMESTAMP=$(date +%s)
+# BUILD_TIMESTAMP=$(date +%s)
+BUILD_TIMESTAMP=1
 echo "Build timestamp: $BUILD_TIMESTAMP (forces fresh build)"
 gcloud builds submit --config=cloudbuild.yaml --project $PROJECT_ID \
     --substitutions=_IMAGE_TAG=$IMAGE_TAG,_CACHEBUST=$BUILD_TIMESTAMP
@@ -35,12 +36,13 @@ gcloud run deploy $SERVICE_NAME \
     --platform managed \
     --region $REGION \
     --allow-unauthenticated \
-    --memory 4Gi \
-    --cpu 2 \
+    --cpu 1 \
     --timeout 3600 \
-    --concurrency 8 \
+    --concurrency 5 \
     --max-instances 10 \
-    --project $PROJECT_ID
+    --project $PROJECT_ID\
+    --memory 4Gi 
+
 
 echo ""
 echo "✅ Deployment complete!"
