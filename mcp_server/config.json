@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "tsr-tools": {
+      "command": "python",
+      "args": [
+        "/home/user/agent-gujrat-tsr/mcp_server/server.py"
+      ],
+      "env": {
+        "PYTHONPATH": "/home/user/agent-gujrat-tsr"
+      }
+    }
+  }
+}
