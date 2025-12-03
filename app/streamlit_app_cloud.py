@@ -108,8 +108,8 @@ with st.sidebar:
     max_workers = st.slider(
         "Concurrent API Calls",
         min_value=1,
-        max_value=30,
-        value=4,
+        max_value=60,
+        value=60,
         help="Number of simultaneous API requests for batch processing"
     )
 
@@ -365,22 +365,25 @@ with tab2:
                     
                     # Create ZIP of all DOCX files
                     if success_count > 0:
-                        with tempfile.TemporaryDirectory() as tmpdir:
-                            zip_path = os.path.join(tmpdir, "tsr_documents.zip")
-                            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
-                                for result in results:
-                                    if result['success'] and result['docx_content']:
-                                        filename = f"{result['district']}_{result['taluka']}_{result['village']}_{result['survey']}_TSR.docx"
-                                        filename = filename.replace(" ", "_").replace("/", "_")
-                                        zf.writestr(filename, result['docx_content'])
-                            
-                            with open(zip_path, 'rb') as f:
-                                st.download_button(
-                                    "📥 Download All TSR Documents (ZIP)",
-                                    data=f,
-                                    file_name="tsr_documents.zip",
-                                    mime="application/zip"
-                                )
+                        # Create ZIP in memory to avoid temp directory cleanup issues
+                        zip_buffer = io.BytesIO()
+                        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+                            for result in results:
+                                if result['success'] and result['docx_content']:
+                                    filename = f"{result['district']}_{result['taluka']}_{result['village']}_{result['survey']}_TSR.docx"
+                                    filename = filename.replace(" ", "_").replace("/", "_")
+                                    zf.writestr(filename, result['docx_content'])
+                        
+                        # Get the ZIP data before buffer goes out of scope
+                        zip_buffer.seek(0)
+                        zip_data = zip_buffer.getvalue()
+                        
+                        st.download_button(
+                            "📥 Download All TSR Documents (ZIP)",
+                            data=zip_data,
+                            file_name="tsr_documents.zip",
+                            mime="application/zip"
+                        )
         
         except Exception as e:
             st.error(f"❌ Error reading Excel: {e}")
