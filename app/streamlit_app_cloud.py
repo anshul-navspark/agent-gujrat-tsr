@@ -108,8 +108,8 @@ with st.sidebar:
     max_workers = st.slider(
         "Concurrent API Calls",
         min_value=1,
-        max_value=60,
-        value=60,
+        max_value=50,
+        value=50,
         help="Number of simultaneous API requests for batch processing"
     )
 
