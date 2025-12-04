@@ -5,6 +5,7 @@ import logging
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
+from urllib.parse import quote
 from tsr_generator.api.tsr_generator import generate_tsr_from_pdf
 from anyror_refactored import AnyRoRScraper, WebDriverManager
 
@@ -29,7 +30,7 @@ def cleanup_temp_file(path: str):
         logger.error(f"Error cleaning up file {path}: {e}")
 
 @app.post("/generate-tsr")
-async def generate_tsr(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+def generate_tsr(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     """
     Generate a TSR DOCX document from an uploaded PDF land record.
     """
@@ -77,11 +78,14 @@ async def generate_tsr(background_tasks: BackgroundTasks, file: UploadFile = Fil
         cleanup_temp_file(input_path)
         cleanup_temp_file(output_path)
         
+        # Prepare filename for header
+        encoded_filename = quote(output_filename)
+        
         return Response(
             content=docx_content,
             media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             headers={
-                'Content-Disposition': f'attachment; filename="{output_filename}"'
+                'Content-Disposition': f"attachment; filename=\"TSR_Document.docx\"; filename*=UTF-8''{encoded_filename}"
             }
         )
 
@@ -94,7 +98,7 @@ async def generate_tsr(background_tasks: BackgroundTasks, file: UploadFile = Fil
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/process-record")
-async def process_record(request: LandRecordRequest, background_tasks: BackgroundTasks):
+def process_record(request: LandRecordRequest, background_tasks: BackgroundTasks):
     """
     Scrape land record PDF from AnyRoR and generate TSR DOCX.
     """
@@ -175,11 +179,14 @@ async def process_record(request: LandRecordRequest, background_tasks: Backgroun
         output_filename = f"TSR_{request.village}_{request.survey_number}.docx"
         
         
+        # Prepare filename for header
+        encoded_filename = quote(output_filename)
+        
         return Response(
             content=docx_content,
             media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             headers={
-                'Content-Disposition': f'attachment; filename="{output_filename}"'
+                'Content-Disposition': f"attachment; filename=\"TSR_Report.docx\"; filename*=UTF-8''{encoded_filename}"
             }
         )
         

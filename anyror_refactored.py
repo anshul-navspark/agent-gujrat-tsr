@@ -49,7 +49,8 @@ CONFIG = {
     'VILLAGE_DROPDOWN_ID': 'ContentPlaceHolder1_ddlVillage',
     'SURVEY_DROPDOWN_ID': 'ContentPlaceHolder1_ddlSurveyNo',
     'CAPTCHA_IMG_ID': 'ContentPlaceHolder1_i_captcha_1',
-    'CAPTCHA_INPUT_ID': 'ContentPlaceHolder1_txtCaptcha',
+    # 'CAPTCHA_INPUT_ID': 'ContentPlaceHolder1_txtCaptcha',
+    'CAPTCHA_INPUT_ID': 'ContentPlaceHolder1_txt_captcha1',
     'SUBMIT_BUTTON_ID': 'ContentPlaceHolder1_btnGo',
     'WAIT_TIMEOUT': 20,
     'CAPTCHA_WAIT_TIMEOUT': 2,
@@ -144,80 +145,101 @@ class CaptchaSolver:
             convert_system_message_to_human=True,
         )
     
-    def solve(self, image_data):
+    def solve(self, image_data, max_attempts=3):
         """Recognize CAPTCHA from image data.
         
         Args:
             image_data: Binary image data of the CAPTCHA.
+            max_attempts: Maximum number of attempts to solve the captcha.
             
         Returns:
             The recognized CAPTCHA text or None if recognition failed.
         """
-        self.logger.debug("Using LLM to recognize captcha")
-        try:
-            # Convert image data to base64 for sending to the LLM
-            img = Image.open(io.BytesIO(image_data))
-            
-            # Save to a temporary file
-            with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
-                img.save(temp_file, format='PNG')
-                temp_file_path = temp_file.name
-            
+        for attempt in range(max_attempts):
+            self.logger.debug(f"Using LLM to recognize captcha (attempt {attempt + 1}/{max_attempts})")
             try:
-                # Create a message with the image
-                message = HumanMessage(
-                    content=[
-                        {
-                            "type": "text", 
-                            "text": "This is a captcha image. Please identify the 6 digits shown in the image. Return ONLY the digits with no additional text or explanation."
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{base64.b64encode(open(temp_file_path, 'rb').read()).decode('utf-8')}"
+                # Convert image data to base64 for sending to the LLM
+                img = Image.open(io.BytesIO(image_data))
+                
+                # Save to a temporary file
+                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
+                    img.save(temp_file, format='PNG')
+                    temp_file_path = temp_file.name
+                
+                try:
+                    # Create a message with the image
+                    message = HumanMessage(
+                        content=[
+                            {
+                                "type": "text", 
+                                "text": "This is a captcha image. Please identify the 6 digits shown in the image. Return ONLY the digits with no additional text or explanation."
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{base64.b64encode(open(temp_file_path, 'rb').read()).decode('utf-8')}"
+                                }
                             }
-                        }
-                    ]
-                )
-                
-                # Direct LLM call (avoid signal and thread timers for Streamlit compatibility)
-                try:
-                    response = self.llm.invoke([message])
+                        ]
+                    )
+                    
+                    # Direct LLM call (avoid signal and thread timers for Streamlit compatibility)
+                    try:
+                        response = self.llm.invoke([message])
+                    except Exception as e:
+                        self.logger.error(f"LLM request failed on attempt {attempt + 1}: {str(e)}")
+                        import traceback as _tb
+                        self.logger.error(_tb.format_exc())
+                        if attempt < max_attempts - 1:
+                            time.sleep(1)  # Brief delay before retry
+                            continue
+                        return None
+                    
+                    # Clean up the temporary file
+                    try:
+                        os.unlink(temp_file_path)
+                    except Exception:
+                        pass
+                    
+                    # Extract only digits from the response
+                    captcha_text = ''.join(re.findall(r'\d', response.content))
+                    
+                    if len(captcha_text) == 6:  # Verify we got exactly 6 digits
+                        self.logger.debug(f"LLM recognized captcha: {captcha_text} (attempt {attempt + 1})")
+                        return captcha_text
+                    elif len(captcha_text) > 6:
+                        # Take first 6 digits if more were found
+                        captcha_text = captcha_text[:6]
+                        self.logger.debug(f"LLM returned {len(captcha_text)} digits, using first 6: {captcha_text} (attempt {attempt + 1})")
+                        return captcha_text
+                    else:
+                        self.logger.warning(f"Attempt {attempt + 1}: Invalid captcha format (got {len(captcha_text)} digits): {response.content}")
+                        if attempt < max_attempts - 1:
+                            time.sleep(1)  # Brief delay before retry
+                            continue
+                        return None
+                        
                 except Exception as e:
-                    self.logger.error(f"LLM request failed: {str(e)}")
-                    import traceback as _tb
-                    self.logger.error(_tb.format_exc())
-                    return None
-                
-                # Clean up the temporary file
-                try:
-                    os.unlink(temp_file_path)
-                except Exception:
-                    pass
-                
-                # Extract only digits from the response
-                captcha_text = ''.join(re.findall(r'\d', response.content))
-                
-                if len(captcha_text) == 6:  # Verify we got exactly 6 digits
-                    self.logger.debug(f"LLM recognized captcha: {captcha_text}")
-                    return captcha_text
-                else:
-                    self.logger.warning(f"LLM returned invalid captcha format: {response.content}")
+                    self.logger.error(f"Error in LLM processing on attempt {attempt + 1}: {str(e)}")
+                    self.logger.error(traceback.format_exc())
+                    try:
+                        os.unlink(temp_file_path)
+                    except Exception:
+                        pass
+                    if attempt < max_attempts - 1:
+                        time.sleep(1)
+                        continue
                     return None
                     
             except Exception as e:
-                self.logger.error(f"Error in LLM processing: {str(e)}")
+                self.logger.error(f"Error recognizing captcha with LLM on attempt {attempt + 1}: {str(e)}")
                 self.logger.error(traceback.format_exc())
-                try:
-                    os.unlink(temp_file_path)
-                except Exception:
-                    pass
+                if attempt < max_attempts - 1:
+                    time.sleep(1)
+                    continue
                 return None
-                
-        except Exception as e:
-            self.logger.error(f"Error recognizing captcha with LLM: {str(e)}")
-            self.logger.error(traceback.format_exc())
-            return None
+        
+        return None
 
 
 class WebDriverManager:
