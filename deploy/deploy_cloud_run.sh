@@ -38,7 +38,7 @@ gcloud run deploy $SERVICE_NAME \
     --allow-unauthenticated \
     --cpu 1 \
     --timeout 3600 \
-    --concurrency 5 \
+    --concurrency 4 \
     --max-instances 10 \
     --project $PROJECT_ID\
     --memory 4Gi 
