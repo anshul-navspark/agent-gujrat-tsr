@@ -8,6 +8,8 @@ from pydantic import BaseModel
 from urllib.parse import quote
 from tsr_generator.api.tsr_generator import generate_tsr_from_pdf
 from anyror_refactored import AnyRoRScraper, WebDriverManager
+from utils.json_translations import translate_to_english
+from utils.survey_utils import sanitize_filename
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -176,7 +178,18 @@ def process_record(request: LandRecordRequest, background_tasks: BackgroundTasks
         cleanup_temp_file(pdf_path)
         cleanup_temp_file(docx_path)
         
-        output_filename = f"TSR_{request.village}_{request.survey_number}.docx"
+        # Translate Gujarati names to English for filename
+        try:
+            district_eng = translate_to_english(request.district, context='district')
+            taluka_eng = translate_to_english(request.taluka, context='taluka')
+            village_eng = translate_to_english(request.village, context='village')
+            survey_eng = sanitize_filename(request.survey_number)
+            
+            output_filename = f"TSR_{district_eng}_{taluka_eng}_{village_eng}_{survey_eng}.docx"
+        except Exception as e:
+            logger.warning(f"Failed to translate filename to English: {e}")
+            # Fallback to sanitized Gujarati names
+            output_filename = f"TSR_{sanitize_filename(request.village)}_{sanitize_filename(request.survey_number)}.docx"
         
         
         # Prepare filename for header

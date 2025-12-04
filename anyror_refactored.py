@@ -161,18 +161,50 @@ class CaptchaSolver:
                 # Convert image data to base64 for sending to the LLM
                 img = Image.open(io.BytesIO(image_data))
                 
+                # ENHANCEMENT: Preprocess image for better recognition
+                # This is especially important in Cloud Run where image quality might be lower
+                try:
+                    from PIL import ImageEnhance
+                    
+                    # Convert to RGB if needed
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                    
+                    # Resize if too small (improves recognition)
+                    if img.width < 200 or img.height < 100:
+                        scale_factor = max(200 / img.width, 100 / img.height)
+                        new_size = (int(img.width * scale_factor), int(img.height * scale_factor))
+                        img = img.resize(new_size, Image.Resampling.LANCZOS)
+                        self.logger.debug(f"Resized captcha image to {new_size}")
+                    
+                    # Enhance contrast for better digit recognition
+                    enhancer = ImageEnhance.Contrast(img)
+                    img = enhancer.enhance(1.5)  # Increase contrast by 50%
+                    
+                    # Enhance sharpness
+                    enhancer = ImageEnhance.Sharpness(img)
+                    img = enhancer.enhance(2.0)  # Double the sharpness
+                    
+                    self.logger.debug("Applied image preprocessing for better recognition")
+                except Exception as e:
+                    self.logger.warning(f"Image preprocessing failed, using original: {e}")
+                
                 # Save to a temporary file
                 with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as temp_file:
-                    img.save(temp_file, format='PNG')
+                    img.save(temp_file, format='PNG', quality=95)
                     temp_file_path = temp_file.name
                 
                 try:
-                    # Create a message with the image
+                    # Create a message with the image - enhanced prompt for better recognition
                     message = HumanMessage(
                         content=[
                             {
                                 "type": "text", 
-                                "text": "This is a captcha image. Please identify the 6 digits shown in the image. Return ONLY the digits with no additional text or explanation."
+                                "text": """This is a CAPTCHA image containing exactly 6 numeric digits (0-9).
+Please carefully examine the image and identify all 6 digits from left to right.
+The digits may be slightly distorted or have noise, but focus on the core shapes.
+Return ONLY the 6 digits as a single number with no spaces, punctuation, or explanation.
+Example response format: 123456"""
                             },
                             {
                                 "type": "image_url",
