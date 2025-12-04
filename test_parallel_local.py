@@ -80,10 +80,10 @@ def main():
         
         rows = [row for _, row in df_clean.iterrows()]
         
-        # Max workers for 8GB M1 Mac - reduced to 2 for stability
+        # Max workers for 8GB M1 Mac - now safe at 2 with port conflict fix
         # Each Chrome instance takes ~300-500MB. 2 instances = ~600MB-1GB.
-        # This prevents WebDriver crashes and reduces captcha rate limiting.
-        max_workers = 4
+        # Port conflicts are now prevented by random port allocation.
+        max_workers = 1
         logger.info(f"Starting parallel processing of {len(rows)} records with {max_workers} workers")
         start_total = time.time()
         

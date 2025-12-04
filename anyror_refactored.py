@@ -246,10 +246,13 @@ class WebDriverManager:
     """Manages WebDriver instances and browser interactions."""
     
     def __init__(self):
+        import threading
         self.driver = None
         self.headless = True  # Default to headless
         # Track whether webdriver-manager cache was cleaned in this process
         self._wdm_cache_cleaned = False
+        # Thread lock for safe parallel initialization
+        self._init_lock = threading.Lock()
     
     def _kill_zombie_chromedrivers(self):
         """Kill any zombie chromedriver processes."""
@@ -333,6 +336,8 @@ class WebDriverManager:
     
     def _setup_chrome_options(self, headless=True):
         """Set up Chrome options."""
+        import random
+        
         chrome_options = webdriver.ChromeOptions()
         
         # For Streamlit Cloud and Linux systems, use chromium if available
@@ -349,6 +354,12 @@ class WebDriverManager:
         
         if headless:
             chrome_options.add_argument("--headless=new")
+        
+        # CRITICAL FIX: Use random port for remote debugging to prevent port conflicts
+        # when running multiple ChromeDriver instances in parallel
+        # Port range: 9222-9999 (default is 9222, which causes conflicts)
+        random_port = random.randint(9222, 9999)
+        chrome_options.add_argument(f"--remote-debugging-port={random_port}")
         
         # Common options
         chrome_options.add_argument("--no-sandbox")
@@ -374,45 +385,50 @@ class WebDriverManager:
         logger = logging.getLogger(__name__)
         self.headless = headless  # Store headless setting
         
-        # First, kill any zombie chromedriver processes
-        self._kill_zombie_chromedrivers()
-        
-        # Set up Chrome options
-        chrome_options = self._setup_chrome_options(headless)
-        
-        # Try different approaches to initialize WebDriver
-        approaches = [
-            self._approach_selenium_manager,  # Try Selenium Manager first (Selenium 4.6+)
-            self._approach_clean_cache_and_auto_manager,
-            self._approach_specify_major_version,
-            self._approach_non_headless_mode,
-            self._approach_explicit_driver_path
-        ]
-        
-        for approach in approaches:
-            try:
-                driver = approach(chrome_options)
-                if driver:
-                    # Set script timeout
-                    driver.set_script_timeout(timeout)
-                    # Test if driver is responsive
-                    driver.execute_script("return document.readyState")
-                    self.driver = driver
-                    return driver
-            except Exception as e:
-                logger.error(f"Failed with approach {approach.__name__}: {str(e)}")
-                # Clean up any failed driver instance
+        # Use lock to prevent race conditions during parallel initialization
+        with self._init_lock:
+            logger.debug("Acquired initialization lock")
+            
+            # First, kill any zombie chromedriver processes
+            self._kill_zombie_chromedrivers()
+            
+            # Set up Chrome options (with random port for parallel instances)
+            chrome_options = self._setup_chrome_options(headless)
+            
+            # Try different approaches to initialize WebDriver
+            approaches = [
+                self._approach_selenium_manager,  # Try Selenium Manager first (Selenium 4.6+)
+                self._approach_clean_cache_and_auto_manager,
+                self._approach_specify_major_version,
+                self._approach_non_headless_mode,
+                self._approach_explicit_driver_path
+            ]
+            
+            for approach in approaches:
                 try:
-                    if self.driver:
-                        self.driver.quit()
-                        self.driver = None
-                except:
-                    pass
-                # Give a pause before trying next approach
-                time.sleep(1)
-        
-        logger.error("All WebDriver initialization approaches failed")
-        raise Exception("All WebDriver initialization approaches failed. Please check Chrome and ChromeDriver compatibility.")
+                    driver = approach(chrome_options)
+                    if driver:
+                        # Set script timeout
+                        driver.set_script_timeout(timeout)
+                        # Test if driver is responsive
+                        driver.execute_script("return document.readyState")
+                        self.driver = driver
+                        logger.debug(f"Successfully initialized driver with {approach.__name__}")
+                        return driver
+                except Exception as e:
+                    logger.error(f"Failed with approach {approach.__name__}: {str(e)}")
+                    # Clean up any failed driver instance
+                    try:
+                        if self.driver:
+                            self.driver.quit()
+                            self.driver = None
+                    except:
+                        pass
+                    # Give a pause before trying next approach
+                    time.sleep(1)
+            
+            logger.error("All WebDriver initialization approaches failed")
+            raise Exception("All WebDriver initialization approaches failed. Please check Chrome and ChromeDriver compatibility.")
     
     def _approach_selenium_manager(self, chrome_options):
         """Initialize WebDriver using Selenium Manager (Selenium 4.6+).
