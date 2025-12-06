@@ -11,6 +11,7 @@ import pandas as pd
 import streamlit as st
 import logging
 import sys
+import time
 
 # Add parent directory to path to allow imports from utils
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -427,6 +428,50 @@ with tab3:
             st.metric("✅ Successful", successful)
         with col3:
             st.metric("❌ Failed", failed)
+        
+        # Retry logic
+        if failed > 0:
+            st.divider()
+            if st.button(f"🔄 Retry {failed} Failed Entries", type="primary"):
+                failed_indices = [i for i, r in enumerate(st.session_state.processing_results) if not r['success']]
+                
+                # Progress tracking
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                completed = 0
+                
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    # Submit tasks mapping future to index
+                    future_to_index = {
+                        executor.submit(
+                            process_single_record_api,
+                            st.session_state.api_client,
+                            st.session_state.processing_results[i]['district'],
+                            st.session_state.processing_results[i]['taluka'],
+                            st.session_state.processing_results[i]['village'],
+                            st.session_state.processing_results[i]['survey'],
+                            st.session_state.processing_results[i].get('row_idx')
+                        ): i
+                        for i in failed_indices
+                    }
+                    
+                    for future in as_completed(future_to_index):
+                        idx = future_to_index[future]
+                        try:
+                            new_result = future.result()
+                            # Update session state with new result
+                            st.session_state.processing_results[idx] = new_result
+                        except Exception as e:
+                            st.error(f"Error retrying item {idx}: {e}")
+                            
+                        completed += 1
+                        progress = completed / len(failed_indices)
+                        progress_bar.progress(progress)
+                        status_text.text(f"Retried {completed}/{len(failed_indices)} records")
+                
+                st.success("Retry complete!")
+                time.sleep(1)
+                st.rerun()
         
         # Results table
         st.divider()
