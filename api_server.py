@@ -198,28 +198,50 @@ def process_record(request: LandRecordRequest, background_tasks: BackgroundTasks
         cleanup_temp_file(pdf_path)
         cleanup_temp_file(docx_path)
         
-        # Use English names from request for filename
+        # Prepare filename
         try:
-            district_eng = sanitize_filename(request.district)
-            taluka_eng = sanitize_filename(request.taluka)
-            village_eng = sanitize_filename(request.village)
-            survey_eng = sanitize_filename(request.survey_number)
+            # We want to try to keep english names if possible, but if input is Gujarati, 
+            # we need to be careful.
             
-            base_filename = f"{district_eng}_{taluka_eng}_{village_eng}_{survey_eng}"
+            # Helper to ensure ASCII filename for headers
+            def to_ascii_filename(s):
+                # Remove non-ASCII characters
+                return "".join(c for c in str(s) if ord(c) < 128).replace(' ', '_')
+
+            # Create base filename (might contain Unicode)
+            district_safe = sanitize_filename(request.district)
+            taluka_safe = sanitize_filename(request.taluka)
+            village_safe = sanitize_filename(request.village)
+            survey_safe = sanitize_filename(request.survey_number)
+            
+            base_filename = f"{district_safe}_{taluka_safe}_{village_safe}_{survey_safe}"
+            
+            # Create ASCII version for header (fallback)
+            # If all chars are non-ASCII (e.g. fully Gujarati), this might be empty/underscores.
+            # In that case use a generic name.
+            base_filename_ascii = f"{to_ascii_filename(request.district)}_{to_ascii_filename(request.taluka)}_{to_ascii_filename(request.village)}_{to_ascii_filename(request.survey_number)}"
+            if len(base_filename_ascii.replace('_', '')) < 3:
+                base_filename_ascii = f"Record_{os.urandom(4).hex()}"
+            
             docx_filename = f"TSR_{base_filename}.docx"
             pdf_filename = f"Original_{base_filename}.pdf"
             zip_filename = f"TSR_Package_{base_filename}.zip"
+            
+            zip_filename_ascii = f"TSR_Package_{base_filename_ascii}.zip"
+            
         except Exception as e:
             logger.warning(f"Failed to generate filename: {e}")
             docx_filename = "TSR_Report.docx"
             pdf_filename = "Original_Record.pdf"
             zip_filename = "TSR_Package.zip"
+            zip_filename_ascii = "TSR_Package.zip"
         
         # Create ZIP file in memory
         import io
         import zipfile
         zip_buffer = io.BytesIO()
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            # We can use Unicode filenames inside ZIP
             zf.writestr(docx_filename, docx_content)
             if pdf_content:
                 zf.writestr(pdf_filename, pdf_content)
@@ -234,7 +256,7 @@ def process_record(request: LandRecordRequest, background_tasks: BackgroundTasks
             content=zip_content,
             media_type='application/zip',
             headers={
-                'Content-Disposition': f"attachment; filename=\"{zip_filename}\"; filename*=UTF-8''{encoded_filename}"
+                'Content-Disposition': f"attachment; filename=\"{zip_filename_ascii}\"; filename*=UTF-8''{encoded_filename}"
             }
         )
         

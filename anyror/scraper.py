@@ -108,93 +108,59 @@ class AnyRoRScraper:
                 self.logger.error("Land record dropdown not found in page source")
                 self.logger.debug(f"Page source: {page_source[:1000]}...")
             
-            # Try to select land record type multiple times
+            # Unified retry loop for all form selections
             max_attempts = 3
+            form_filled = False
+            last_error = None
+
             for attempt in range(max_attempts):
                 try:
-                    self.logger.debug(f"Attempt {attempt + 1} to select land record type")
+                    self.logger.debug(f"Form filling attempt {attempt + 1}/{max_attempts}")
                     
-                    # Try direct JavaScript execution first
-                    js_script = """
-                        var select = document.getElementById('ContentPlaceHolder1_drpLandRecord');
-                        if(select) {
-                            select.value = '8';
-                            var event = new Event('change', { bubbles: true });
-                            select.dispatchEvent(event);
-                            return true;
-                        }
-                        return false;
-                    """
-                    result = self.driver.execute_script(js_script)
-                    if result:
-                        self.logger.debug("Successfully selected land record type using JavaScript")
+                    if attempt > 0:
+                        self.logger.info("Refreshing page for retry...")
+                        self.driver.refresh()
+                        time.sleep(CONFIG.get('PAGE_LOAD_WAIT', 5))  # Use get() just in case
+                        self.form_filler.navigate_to_form()
                         time.sleep(2)
-                        break
-                    
-                    # If JavaScript fails, try Selenium Select
+
+                    # 1. Select Land Record Type
+                    # Using form_filler's method which is robust
                     self.form_filler.select_land_record_type()
-                    time.sleep(2)
                     
-                    # Verify selection
-                    selected_value = self.driver.execute_script(
-                        'return document.getElementById("ContentPlaceHolder1_drpLandRecord").value;'
-                    )
-                    if selected_value == '8':
-                        self.logger.debug("Successfully verified land record type selection")
-                        break
-                    else:
-                        self.logger.warning(f"Land record type selection verification failed. Got value: {selected_value}")
-                        
-                except Exception as e:
-                    self.logger.error(f"Attempt {attempt + 1} failed: {str(e)}")
-                    if attempt == max_attempts - 1:
-                        raise
-                    time.sleep(2)
-            
-            # Continue with rest of the form...
-            self.logger.debug("Starting district selection...")
-            district_selected = self.form_filler.select_district(district_name)
-            if not district_selected:
-                self.logger.error(f"Failed to select district: {district_name}")
-                return {'success': False, 'error': f"District not found: {district_name}"}
-            
-            self.logger.debug("Starting taluka selection...")
-            taluka_selected = self.form_filler.select_taluka(taluka_name)
-            if not taluka_selected:
-                self.logger.error(f"Failed to select taluka: {taluka_name}")
-                return {'success': False, 'error': f"Taluka not found: {taluka_name}"}
-                
-            self.logger.debug("Starting village selection...")
-            village_selected = self.form_filler.select_village(village_name)
-            if not village_selected:
-                self.logger.error(f"Failed to select village: {village_name}")
-                return {'success': False, 'error': f"Village not found: {village_name}"}
-                
-            # Retry if survey selection fails
-            self.logger.debug("Starting survey selection...")
-            for attempt in range(3):  # Try up to 3 times
-                survey_selected = self.form_filler.select_survey(survey_block_number)
-                if survey_selected:
+                    # 2. Select District
+                    self.logger.debug("Starting district selection...")
+                    if not self.form_filler.select_district(district_name):
+                        raise Exception(f"District not found: {district_name}")
+                    
+                    # 3. Select Taluka
+                    self.logger.debug("Starting taluka selection...")
+                    if not self.form_filler.select_taluka(taluka_name):
+                        raise Exception(f"Taluka not found: {taluka_name}")
+                    
+                    # 4. Select Village
+                    self.logger.debug("Starting village selection...")
+                    if not self.form_filler.select_village(village_name):
+                        raise Exception(f"Village not found: {village_name}")
+                    
+                    # 5. Select Survey
+                    self.logger.debug("Starting survey selection...")
+                    if not self.form_filler.select_survey(survey_block_number):
+                        raise Exception(f"Survey number not found: {survey_block_number}")
+                    
+                    form_filled = True
                     break
                     
-                self.logger.warning(f"Survey selection failed on attempt {attempt+1}, retrying...")
-                # Refresh the page and navigate through the form again
-                self.driver.refresh()
-                
-                # Wait for page to load after refresh
-                time.sleep(CONFIG['PAGE_LOAD_WAIT'])
-                
-                # Select the land record type again
-                self.form_filler.select_land_record_type()
-                
-                # Select district, taluka, village again
-                self.form_filler.select_district(district_name)
-                self.form_filler.select_taluka(taluka_name)
-                self.form_filler.select_village(village_name)
-                
-            if not survey_selected:
-                self.logger.error(f"Failed to select survey number: {survey_block_number}")
-                return {'success': False, 'error': f"Survey number not found: {survey_block_number}"}
+                except Exception as e:
+                    last_error = str(e)
+                    self.logger.warning(f"Form filling attempt {attempt + 1} failed: {last_error}")
+                    if attempt == max_attempts - 1:
+                        self.logger.error(f"All form filling attempts failed. Last error: {last_error}")
+                    else:
+                        time.sleep(2)
+            
+            if not form_filled:
+                return {'success': False, 'error': f"Scraping failed: {last_error}"}
             
             # Retry loop for CAPTCHA/Submission
             max_captcha_attempts = 3

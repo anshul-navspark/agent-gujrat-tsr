@@ -624,8 +624,20 @@ class FormFiller:
                 EC.element_to_be_clickable((By.ID, CONFIG['SUBMIT_BUTTON_ID']))
             )
             self.logger.debug("Found submit button, clicking...")
-            submit_button.click()
-            self.logger.debug("Submit button clicked successfully")
+            
+            # Use JavaScript click to avoid "Read timed out" error if the page load is slow/blocking
+            # "Read timed out" often happens with standard .click() if the browser blocks waiting for response
+            try:
+                self.driver.execute_script("arguments[0].click();", submit_button)
+                self.logger.debug("Submit button clicked successfully via JavaScript")
+            except Exception as js_e:
+                self.logger.warning(f"JS click failed, falling back to standard click: {js_e}")
+                submit_button.click()
+                self.logger.debug("Submit button clicked successfully via standard click")
+                
+            # Wait a bit for any immediate reactions (like alerts or page reload init)
+            time.sleep(2)
+            
         except Exception as e:
             self.logger.error(f"Error clicking submit button: {str(e)}")
             return False, f"Submit button error: {str(e)}"
@@ -641,13 +653,23 @@ class FormFiller:
             
             return False, alert_text
         except TimeoutException:
-            # No alert means success
+            # No alert means success (likely)
             self.logger.debug("Form submitted successfully - no alerts found")
             
             # Log current state
             try:
                 current_url = self.driver.current_url
                 self.logger.debug(f"Current URL after submission: {current_url}")
+                
+                # Check for "invalid input" error messages on page usually shown in labels
+                # Example: ContentPlaceHolder1_lblMsg
+                try:
+                    error_lbl = self.driver.find_element(By.ID, "ContentPlaceHolder1_lblMsg")
+                    if error_lbl.is_displayed() and error_lbl.text.strip():
+                        self.logger.warning(f"Error message on page: {error_lbl.text}")
+                        # Sometimes it's not a hard failure, but worth noting
+                except:
+                    pass
                 
                 page_title = self.driver.title
                 self.logger.debug(f"Page title after submission: {page_title}")
