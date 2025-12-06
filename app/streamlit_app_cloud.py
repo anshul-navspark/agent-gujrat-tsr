@@ -294,7 +294,7 @@ with tab2:
                 if not records_to_process:
                     st.error("❌ No valid records found")
                 else:
-                    st.info(f"📝 Processing {len(records_to_process)} records with {max_workers} concurrent API calls...")
+                    st.info(f"📝 Processing {len(records_to_process)} records")
                     
                     # Progress tracking
                     progress_bar = st.progress(0)
@@ -302,6 +302,8 @@ with tab2:
                     
                     results = []
                     completed = 0
+                    
+                    start_time = datetime.now()
                     
                     # Process in parallel
                     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -330,9 +332,12 @@ with tab2:
                             progress_bar.progress(progress)
                             status_text.text(f"Processed {completed}/{len(records_to_process)} records")
                     
+                    end_time = datetime.now()
+                    duration = end_time - start_time
+                    
                     # Store results
                     st.session_state.processing_results = results
-                    st.success(f"✅ Completed! Processed {len(records_to_process)} records.")
+                    st.success(f"✅ Completed! Processed {len(records_to_process)} records in {duration}.")
         
         except Exception as e:
             st.error(f"❌ Error reading Excel: {e}")
