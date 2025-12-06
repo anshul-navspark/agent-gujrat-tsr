@@ -22,11 +22,13 @@ if "GEMINI_API_KEY" in st.secrets:
 try:
     from utils.json_translations import translate_to_gujarati
     from utils.survey_utils import convert_survey_number
+    from utils.ai_column_detector import auto_detect_columns
 except ImportError:
     # Fallback if utils not found (e.g. local run issues)
     logging.warning("Could not import utils. Translation will be disabled.")
     def translate_to_gujarati(text, context='village'): return text
     def convert_survey_number(num): return num
+    def auto_detect_columns(df, logger=None): return {'district': None, 'taluka': None, 'village': None, 'survey': None}, ""
 
 from pathlib import Path
 from datetime import datetime
@@ -58,7 +60,7 @@ logging.basicConfig(
 api_url = st.secrets.get("API_URL", "https://gujrat-tsr-agent-5vu5tfjlga-el.a.run.app")
 api_timeout = st.secrets.get("API_TIMEOUT", 1200)
 max_retries = st.secrets.get("API_MAX_RETRIES", 2)
-max_workers = 25
+max_workers = 20
 
 # Initialize API client
 if st.session_state.api_client is None or st.session_state.api_client.api_url != api_url:
@@ -235,17 +237,47 @@ with tab2:
             st.success(f"📊 Loaded {len(df)} rows")
             st.dataframe(df.head(), use_container_width=True)
             
+            # Auto-detect columns
+            detected_map, report = auto_detect_columns(df)
+            
+            # Helper to get index of detected column
+            def get_col_index(col_name, default_idx):
+                if col_name and col_name in cols:
+                    return cols.index(col_name)
+                return default_idx
+
             # Column mapping
             st.subheader("📋 Column Mapping")
+            
+            if report:
+                with st.expander("🤖 AI Detection Report", expanded=False):
+                    st.text(report)
+            
             cols = list(df.columns)
             
             col1, col2 = st.columns(2)
             with col1:
-                col_district = st.selectbox("District column", options=cols, index=0)
-                col_taluka = st.selectbox("Taluka column", options=cols, index=min(1, len(cols)-1))
+                col_district = st.selectbox(
+                    "District column", 
+                    options=cols, 
+                    index=get_col_index(detected_map.get('district'), 0)
+                )
+                col_taluka = st.selectbox(
+                    "Taluka column", 
+                    options=cols, 
+                    index=get_col_index(detected_map.get('taluka'), min(1, len(cols)-1))
+                )
             with col2:
-                col_village = st.selectbox("Village column", options=cols, index=min(2, len(cols)-1))
-                col_survey = st.selectbox("Survey column", options=cols, index=min(3, len(cols)-1))
+                col_village = st.selectbox(
+                    "Village column", 
+                    options=cols, 
+                    index=get_col_index(detected_map.get('village'), min(2, len(cols)-1))
+                )
+                col_survey = st.selectbox(
+                    "Survey column", 
+                    options=cols, 
+                    index=get_col_index(detected_map.get('survey'), min(3, len(cols)-1))
+                )
             
             if st.button("🚀 Process All Records", type="primary"):
                 # Clear previous results
