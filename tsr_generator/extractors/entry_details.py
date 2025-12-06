@@ -44,7 +44,21 @@ def extract_entry_table(pdf_text):
         Desired output (exact):
         176 506 748 797 1013 1046
         """
-    response = llm.invoke(prompt + "\n" + pdf_text)    
+    import time
+    max_retries = 3
+    retry_delay = 5
+    response = None
+    
+    for attempt in range(max_retries):
+        try:
+            response = llm.invoke(prompt + "\n" + pdf_text)
+            break
+        except Exception as e:
+            if "429" in str(e) or "resource" in str(e).lower() and attempt < max_retries - 1:
+                print(f"Rate limit hit in table extraction. Sleeping for {retry_delay}s...")
+                time.sleep(retry_delay)
+                continue
+            raise e    
     # Extract only numeric tokens from the response, filtering out non-digit characters
     # Handle various LLM output formats including code blocks, markdown, etc.
     content = response.content
@@ -206,7 +220,22 @@ def extract_entry_details_ai(pdf_text):
         {entry_section}
         """
         
-        response = llm.invoke(prompt)
+        import time
+        max_retries = 3
+        retry_delay = 5
+        response = None
+        
+        for attempt in range(max_retries):
+            try:
+                response = llm.invoke(prompt)
+                break
+            except Exception as e:
+                is_rate_limit = "429" in str(e) or "resource" in str(e).lower() or "quota" in str(e).lower()
+                if is_rate_limit and attempt < max_retries - 1:
+                    logger.warning(f"Rate limit hit in extract_entry_details_ai. Sleeping for {retry_delay}s before retry {attempt+1}/{max_retries}...")
+                    time.sleep(retry_delay)
+                    continue
+                raise e
         
         # Parse JSON from the response with robust cleaning of control characters
         content = response.content if hasattr(response, 'content') else str(response)
@@ -303,7 +332,22 @@ def extract_entry_details_fallback(entry_section):
         {entry_section}
         """
         
-        response = llm.invoke(prompt)
+        import time
+        max_retries = 3
+        retry_delay = 5
+        response = None
+        
+        for attempt in range(max_retries):
+            try:
+                response = llm.invoke(prompt)
+                break
+            except Exception as e:
+                is_rate_limit = "429" in str(e) or "resource" in str(e).lower() or "quota" in str(e).lower()
+                if is_rate_limit and attempt < max_retries - 1:
+                    logger.warning(f"Rate limit hit in fallback extraction. Sleeping for {retry_delay}s before retry {attempt+1}/{max_retries}...")
+                    time.sleep(retry_delay)
+                    continue
+                raise e
         
         # Parse JSON from the response
         content = response.content if hasattr(response, 'content') else str(response)

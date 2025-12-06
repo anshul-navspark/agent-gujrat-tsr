@@ -166,27 +166,40 @@ class JSONTranslationSystem:
         # Build prompt with dictionary entries
         prompt = self._build_matching_prompt(english_text, candidates, context)
         
-        try:
-            response = self.llm.invoke(prompt)
-            result = response.content.strip()
-            
-            # Check if AI returned NO_MATCH
-            if result == "NO_MATCH" or result == "NO MATCH":
-                self.logger.info(f"AI found no match for '{english_text}'")
-                return None
-            
-            # Verify the result is actually in our dictionary
-            candidate_gujarati_names = [c['gujarati'] for c in candidates]
-            if result in candidate_gujarati_names:
-                self.logger.info(f"AI matched '{english_text}' → '{result}'")
-                return result
-            else:
-                self.logger.warning(f"AI returned invalid match: {result}")
-                return None
+        import time
+        max_retries = 3
+        retry_delay = 5  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                response = self.llm.invoke(prompt)
+                result = response.content.strip()
                 
-        except Exception as e:
-            self.logger.error(f"AI matching failed: {e}")
-            return None
+                # Check if AI returned NO_MATCH
+                if result == "NO_MATCH" or result == "NO MATCH":
+                    self.logger.info(f"AI found no match for '{english_text}'")
+                    return None
+                
+                # Verify the result is actually in our dictionary
+                candidate_gujarati_names = [c['gujarati'] for c in candidates]
+                if result in candidate_gujarati_names:
+                    self.logger.info(f"AI matched '{english_text}' → '{result}'")
+                    return result
+                else:
+                    self.logger.warning(f"AI returned invalid match: {result}")
+                    return None
+                    
+            except Exception as e:
+                error_str = str(e).lower()
+                is_rate_limit = "429" in error_str or "resource" in error_str or "quota" in error_str
+                
+                if is_rate_limit and attempt < max_retries - 1:
+                    self.logger.warning(f"Rate limit hit (429). Sleeping for {retry_delay}s before retry {attempt+1}/{max_retries}...")
+                    time.sleep(retry_delay)
+                    continue
+                
+                self.logger.error(f"AI matching failed: {e}")
+                return None
     
     def _get_smart_candidates(self, english_text: str, context: str, limit: int = 30) -> List[Dict]:
         """Get candidate entries with phonetic/similarity filtering"""

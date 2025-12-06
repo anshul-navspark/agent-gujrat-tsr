@@ -83,7 +83,7 @@ def main():
         # Max workers for 8GB M1 Mac - now safe at 2 with port conflict fix
         # Each Chrome instance takes ~300-500MB. 2 instances = ~600MB-1GB.
         # Port conflicts are now prevented by random port allocation.
-        max_workers = 3
+        max_workers = 4
         logger.info(f"Starting parallel processing of {len(rows)} records with {max_workers} workers")
         start_total = time.time()
         
