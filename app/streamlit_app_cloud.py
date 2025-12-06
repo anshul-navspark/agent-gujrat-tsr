@@ -53,64 +53,19 @@ logging.basicConfig(
     format='%(asctime)s | %(levelname)s | %(name)s | %(message)s'
 )
 
-# Sidebar - API Configuration
-with st.sidebar:
-    st.header("⚙️ API Configuration")
-    
-    # Get API URL from secrets or allow manual input
-    default_api_url = st.secrets.get("API_URL", "https://gujrat-tsr-agent-5vu5tfjlga-el.a.run.app")
-    api_url = st.text_input(
-        "API URL",
-        value=default_api_url,
-        help="Cloud Run API endpoint URL"
-    )
-    
-    # API settings
-    api_timeout = st.number_input(
-        "API Timeout (seconds)",
-        min_value=900,
-        max_value=1200,
-        value=st.secrets.get("API_TIMEOUT", 1200),
-        help="Maximum time to wait for API response"
-    )
-    
-    max_retries = st.number_input(
-        "Max Retries",
-        min_value=0,
-        max_value=5,
-        value=st.secrets.get("API_MAX_RETRIES", 2),
-        help="Number of retry attempts for failed requests"
-    )
-    
-    # Initialize API client
-    if st.session_state.api_client is None or \
-       st.session_state.api_client.api_url != api_url:
-        st.session_state.api_client = TSRAPIClient(
-            api_url=api_url,
-            timeout=api_timeout,
-            max_retries=max_retries
-        )
-    
-    # API Health Check
-    st.divider()
-    st.subheader("🏥 API Health")
-    if st.button("Check API Health"):
-        with st.spinner("Checking API..."):
-            is_healthy = st.session_state.api_client.health_check()
-            if is_healthy:
-                st.success("✅ API is healthy and responding")
-            else:
-                st.error("❌ API is not responding")
-    
-    # Batch Processing Settings
-    st.divider()
-    st.subheader("⚡ Batch Processing")
-    max_workers = st.slider(
-        "Concurrent API Calls",
-        min_value=1,
-        max_value=30,
-        value=20,
-        help="Number of simultaneous API requests for batch processing"
+# API and Processing Configuration
+# Get API URL from secrets
+api_url = st.secrets.get("API_URL", "https://gujrat-tsr-agent-5vu5tfjlga-el.a.run.app")
+api_timeout = st.secrets.get("API_TIMEOUT", 1200)
+max_retries = st.secrets.get("API_MAX_RETRIES", 2)
+max_workers = 25
+
+# Initialize API client
+if st.session_state.api_client is None or st.session_state.api_client.api_url != api_url:
+    st.session_state.api_client = TSRAPIClient(
+        api_url=api_url,
+        timeout=api_timeout,
+        max_retries=max_retries
     )
 
 # Helper functions
