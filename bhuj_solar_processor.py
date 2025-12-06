@@ -35,7 +35,7 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 import argparse
 from tqdm import tqdm
 
-from anyror_refactored import AnyRoRScraper, WebDriverManager
+from anyror import AnyRoRScraper, WebDriverManager
 from tsr_generator import generate_tsr_from_pdf
 from utils.json_translations import translate_to_gujarati, TranslationNotFoundError
 from utils.survey_utils import convert_survey_number, sanitize_filename

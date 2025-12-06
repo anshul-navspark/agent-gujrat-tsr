@@ -16,7 +16,7 @@ from typing import Dict, Any, Optional, List
 
 import pandas as pd
 
-from anyror_refactored import AnyRoRScraper
+from anyror import AnyRoRScraper
 from selenium.common.exceptions import InvalidSessionIdException, TimeoutException, WebDriverException
 from tsr_generator import generate_tsr_from_pdf
 from utils.json_translations import translate_to_gujarati, TranslationNotFoundError

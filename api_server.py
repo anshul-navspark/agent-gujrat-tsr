@@ -7,8 +7,8 @@ from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 from urllib.parse import quote
 from tsr_generator.api.tsr_generator import generate_tsr_from_pdf
-from anyror_refactored import AnyRoRScraper, WebDriverManager
-from utils.json_translations import translate_to_english
+from anyror import AnyRoRScraper, WebDriverManager
+from utils.json_translations import translate_to_gujarati
 from utils.survey_utils import sanitize_filename
 
 # Configure logging
@@ -117,11 +117,22 @@ def process_record(request: LandRecordRequest, background_tasks: BackgroundTasks
         # Note: In Cloud Run, we might want to be careful with headless mode and resources
         scraper = AnyRoRScraper(headless=True, logger=logger)
         
+        # Translate to Gujarati for scraper
+        try:
+            district_guj = translate_to_gujarati(request.district, context='district')
+            taluka_guj = translate_to_gujarati(request.taluka, context='taluka')
+            village_guj = translate_to_gujarati(request.village, context='village')
+        except Exception as e:
+            logger.warning(f"Translation to Gujarati failed: {e}. Using original inputs.")
+            district_guj = request.district
+            taluka_guj = request.taluka
+            village_guj = request.village
+
         # Fetch land record
         result = scraper.fetch_land_record(
-            district_name=request.district,
-            taluka_name=request.taluka,
-            village_name=request.village,
+            district_name=district_guj,
+            taluka_name=taluka_guj,
+            village_name=village_guj,
             survey_block_number=request.survey_number,
             output_path=pdf_path
         )
@@ -178,18 +189,17 @@ def process_record(request: LandRecordRequest, background_tasks: BackgroundTasks
         cleanup_temp_file(pdf_path)
         cleanup_temp_file(docx_path)
         
-        # Translate Gujarati names to English for filename
+        # Use English names from request for filename
         try:
-            district_eng = translate_to_english(request.district, context='district')
-            taluka_eng = translate_to_english(request.taluka, context='taluka')
-            village_eng = translate_to_english(request.village, context='village')
+            district_eng = sanitize_filename(request.district)
+            taluka_eng = sanitize_filename(request.taluka)
+            village_eng = sanitize_filename(request.village)
             survey_eng = sanitize_filename(request.survey_number)
             
             output_filename = f"TSR_{district_eng}_{taluka_eng}_{village_eng}_{survey_eng}.docx"
         except Exception as e:
-            logger.warning(f"Failed to translate filename to English: {e}")
-            # Fallback to sanitized Gujarati names
-            output_filename = f"TSR_{sanitize_filename(request.village)}_{sanitize_filename(request.survey_number)}.docx"
+            logger.warning(f"Failed to generate filename: {e}")
+            output_filename = f"TSR_Report.docx"
         
         
         # Prepare filename for header

@@ -1,0 +1,738 @@
+"""
+Form Filler for Gujarat Land Record Automation
+
+Handles form filling operations on the AnyRoR website.
+"""
+
+import os
+import time
+import base64
+import logging
+import traceback
+from functools import lru_cache
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait, Select
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
+from anyror_village_matcher import VillageNameMatcher
+from .config import CONFIG
+
+
+class FormFiller:
+    """Handles form filling operations on the AnyRoR website."""
+    
+    def __init__(self, driver, wait, captcha_solver, logger=None):
+        """
+        Initialize the form filler.
+        
+        Args:
+            driver: WebDriver instance.
+            wait: WebDriverWait instance.
+            captcha_solver: CaptchaSolver instance.
+            logger: Logger instance for logging.
+        """
+        self.driver = driver
+        self.wait = wait
+        self.captcha_solver = captcha_solver
+        self.logger = logger or logging.getLogger(__name__)
+    
+    def navigate_to_form(self):
+        """Navigate to the AnyRoR form page."""
+        self.logger.debug(f"Navigating to AnyRoR website: {CONFIG['URL']}")
+        
+        try:
+            # First try the direct land record URL
+            self.driver.get(CONFIG['URL'])
+            time.sleep(2)  # Wait for initial load
+            
+            # Check if we need to navigate to the correct page
+            current_url = self.driver.current_url
+            if 'LandRecordRural.aspx' not in current_url:
+                self.logger.debug("Not on land record page, trying alternative navigation")
+                
+                # Try clicking the land record link if present
+                try:
+                    land_record_link = self.driver.find_element(By.XPATH, "//a[contains(text(), 'Land Record')]")
+                    land_record_link.click()
+                    time.sleep(2)
+                except Exception as e:
+                    self.logger.warning(f"Could not find land record link: {str(e)}")
+            
+            # Wait for the page to load and verify we're on the correct page
+            try:
+                # Wait for the land record type dropdown
+                self.wait.until(
+                    EC.presence_of_element_located((By.ID, CONFIG['LAND_RECORD_TYPE_ID']))
+                )
+                
+                # Log the current URL and page title for debugging
+                self.logger.debug(f"Current URL: {self.driver.current_url}")
+                self.logger.debug(f"Page Title: {self.driver.title}")
+                
+                # Check if the dropdown is actually visible
+                dropdown = self.driver.find_element(By.ID, CONFIG['LAND_RECORD_TYPE_ID'])
+                if not dropdown.is_displayed():
+                    self.logger.warning("Land record dropdown is present but not visible")
+                    
+                # Get all dropdown options for debugging
+                select = Select(dropdown)
+                options = [f"{o.get_attribute('value')}: {o.text}" for o in select.options]
+                self.logger.debug(f"Available options in land record dropdown: {options}")
+                
+            except Exception as e:
+                self.logger.error(f"Error waiting for land record form: {str(e)}")
+                self.logger.error(traceback.format_exc())
+                
+                # Try to get the page source for debugging
+                try:
+                    self.logger.debug(f"Page source: {self.driver.page_source[:1000]}...")
+                except:
+                    pass
+                
+                raise
+            
+            self.logger.debug("Successfully navigated to the land record form page")
+            
+        except Exception as e:
+            self.logger.error(f"Error navigating to form page: {str(e)}")
+            self.logger.error(traceback.format_exc())
+            raise
+    
+    def select_land_record_type(self):
+        """Select the land record type."""
+        self.logger.debug("Selecting Land Record Type")
+        
+        try:
+            # Wait for the dropdown to be present in the DOM
+            dropdown_id = CONFIG['LAND_RECORD_TYPE_ID']
+            try:
+                self.wait.until(
+                    EC.presence_of_element_located((By.ID, dropdown_id))
+                )
+            except Exception as e:
+                # Log all select elements and their IDs for debugging
+                self.logger.error(f"Dropdown with id {dropdown_id} not found. Listing all select elements on page.")
+                selects = self.driver.find_elements(By.TAG_NAME, 'select')
+                for sel in selects:
+                    self.logger.error(f"Select element id: {sel.get_attribute('id')}, name: {sel.get_attribute('name')}, outerHTML: {sel.get_attribute('outerHTML')[:200]}")
+                raise
+            
+            # Try multiple approaches to select the land record type
+            success = False
+            
+            # Approach 1: Direct JavaScript execution
+            try:
+                js_script = """
+                    var select = document.getElementById(arguments[0]);
+                    if(select) {
+                        select.value = arguments[1];
+                        var event = new Event('change', { bubbles: true });
+                        select.dispatchEvent(event);
+                        if(typeof jQuery !== 'undefined') {
+                            jQuery(select).trigger('change');
+                        }
+                        return true;
+                    }
+                    return false;
+                """
+                result = self.driver.execute_script(js_script, dropdown_id, CONFIG['LAND_RECORD_TYPE_VALUE'])
+                if result:
+                    self.logger.debug("Successfully selected land record type using JavaScript")
+                    success = True
+            except Exception as e:
+                self.logger.debug(f"JavaScript selection failed: {str(e)}")
+            
+            # Approach 2: Use Selenium's Select class
+            if not success:
+                try:
+                    dropdown = self.wait.until(
+                        EC.element_to_be_clickable((By.ID, dropdown_id))
+                    )
+                    select = Select(dropdown)
+                    select.select_by_value(CONFIG['LAND_RECORD_TYPE_VALUE'])
+                    self.logger.debug("Successfully selected land record type using Selenium Select")
+                    success = True
+                except Exception as e:
+                    self.logger.debug(f"Selenium Select failed: {str(e)}")
+                    # Log all options for debugging
+                    try:
+                        dropdown = self.driver.find_element(By.ID, dropdown_id)
+                        select = Select(dropdown)
+                        for option in select.options:
+                            self.logger.error(f"Option value: {option.get_attribute('value')}, text: {option.text}")
+                    except Exception as inner:
+                        self.logger.error(f"Could not log dropdown options: {inner}")
+            
+            # Approach 3: Click and select using JavaScript
+            if not success:
+                try:
+                    js_click_script = """
+                        var select = document.getElementById(arguments[0]);
+                        if(select) {
+                            select.click();
+                            setTimeout(function() {
+                                select.value = arguments[1];
+                                select.dispatchEvent(new Event('change', { bubbles: true }));
+                            }, 500);
+                            return true;
+                        }
+                        return false;
+                    """
+                    result = self.driver.execute_script(js_click_script, dropdown_id, CONFIG['LAND_RECORD_TYPE_VALUE'])
+                    if result:
+                        self.logger.debug("Successfully selected land record type using click and JavaScript")
+                        success = True
+                except Exception as e:
+                    self.logger.debug(f"Click and JavaScript selection failed: {str(e)}")
+            
+            # Wait for any AJAX requests to complete
+            time.sleep(2)
+            
+            try:
+                # Wait for AJAX to complete using jQuery if available
+                self.wait.until(
+                    lambda driver: driver.execute_script('return (typeof jQuery === "undefined") || (jQuery.active === 0);')
+                )
+            except Exception as e:
+                self.logger.debug(f"jQuery wait failed, using time delay: {str(e)}")
+                time.sleep(CONFIG['DROPDOWN_WAIT_TIMEOUT'])
+            
+            # Verify the selection was successful
+            selected_value = self.driver.execute_script(
+                'return document.getElementById(arguments[0]).value;',
+                dropdown_id
+            )
+            
+            if selected_value != CONFIG['LAND_RECORD_TYPE_VALUE']:
+                raise Exception(f"Land record type selection failed. Expected {CONFIG['LAND_RECORD_TYPE_VALUE']} but got {selected_value}")
+            
+            self.logger.debug("Land record type selection verified successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Error selecting land record type: {str(e)}")
+            self.logger.error(traceback.format_exc())
+            raise
+    
+    @lru_cache(maxsize=64)
+    def _get_dropdown_options(self, dropdown_id):
+        """
+        Get options from a dropdown.
+        
+        Args:
+            dropdown_id: The ID of the dropdown element.
+            
+        Returns:
+            A list of options in the dropdown.
+        """
+        dropdown = self.wait.until(
+            EC.element_to_be_clickable((By.ID, dropdown_id))
+        )
+        select = Select(dropdown)
+        return select.options
+    
+    def select_dropdown_option(self, dropdown_id, option_text, partial_match=False):
+        """
+        Select an option from a dropdown.
+        
+        Args:
+            dropdown_id: The ID of the dropdown element.
+            option_text: The text of the option to select.
+            partial_match: Whether to use partial matching for the option text.
+            
+        Returns:
+            True if the option was found and selected, False otherwise.
+        """
+        # Ensure option_text is a string
+        option_text = str(option_text).strip()
+        
+        dropdown = self.wait.until(
+            EC.element_to_be_clickable((By.ID, dropdown_id))
+        )
+        select = Select(dropdown)
+        
+        for option in select.options:
+            option_text_stripped = option.text.strip()
+            if (partial_match and option_text in option_text_stripped) or option_text_stripped == option_text:
+                select.select_by_visible_text(option_text_stripped)
+                
+                # Wait for the page to update after selection
+                try:
+                    # Use a shorter timeout for this wait
+                    WebDriverWait(self.driver, CONFIG['DROPDOWN_WAIT_TIMEOUT']).until(
+                        EC.staleness_of(dropdown)
+                    )
+                except (TimeoutException, StaleElementReferenceException):
+                    # If staleness check times out or element is already stale, just wait a bit and continue
+                    self.logger.debug("Staleness check timed out or element already stale, continuing anyway")
+                    time.sleep(0.5)
+                
+                return True
+        
+        return False
+    
+    def select_district(self, district_name):
+        """
+        Select a district from the dropdown.
+        
+        Args:
+            district_name: The name of the district to select.
+            
+        Returns:
+            True if the district was found and selected, False otherwise.
+        """
+        self.logger.debug(f"Selecting District: {district_name}")
+        
+        # Wait for the dropdown to be clickable and handle stale elements
+        max_attempts = 3
+        for attempt in range(max_attempts):
+            try:
+                # Wait for the dropdown to be clickable
+                dropdown = self.wait.until(
+                    EC.element_to_be_clickable((By.ID, CONFIG['DISTRICT_DROPDOWN_ID']))
+                )
+                
+                # Create Select object
+                select_district = Select(dropdown)
+                
+                # Try to find the district in the options
+                found_district = False
+                for option in select_district.options:
+                    if district_name in option.text:
+                        select_district.select_by_visible_text(option.text)
+                        found_district = True
+                        self.logger.debug(f"Successfully selected district: {option.text}")
+                        break
+                
+                if not found_district:
+                    self.logger.error(f"District not found: {district_name}")
+                    return False
+                    
+                # Wait for the page to update after selection
+                try:
+                    WebDriverWait(self.driver, CONFIG['DROPDOWN_WAIT_TIMEOUT']).until(
+                        EC.staleness_of(dropdown)
+                    )
+                except TimeoutException:
+                    # If staleness check times out, just wait a bit and continue
+                    self.logger.debug("Staleness check timed out, continuing anyway")
+                    time.sleep(0.5)
+                    
+                return True
+                
+            except StaleElementReferenceException:
+                self.logger.warning(f"Stale element encountered on attempt {attempt + 1}, retrying...")
+                if attempt == max_attempts - 1:
+                    self.logger.error("Failed to select district after all attempts due to stale elements")
+                    return False
+                time.sleep(1)
+            except Exception as e:
+                self.logger.error(f"Error selecting district on attempt {attempt + 1}: {str(e)}")
+                if attempt == max_attempts - 1:
+                    return False
+                time.sleep(1)
+        
+        return False
+    
+    def select_taluka(self, taluka_name):
+        """
+        Select a taluka from the dropdown.
+        
+        Args:
+            taluka_name: The name of the taluka to select.
+            
+        Returns:
+            True if the taluka was found and selected, False otherwise.
+        """
+        self.logger.debug(f"Selecting Taluka: {taluka_name}")
+        result = self.select_dropdown_option(CONFIG['TALUKA_DROPDOWN_ID'], taluka_name, partial_match=True)
+        if result:
+            self.logger.debug("Taluka selected successfully")
+        else:
+            self.logger.error(f"Taluka '{taluka_name}' not found in dropdown")
+        return result
+    
+    def select_village(self, village_name):
+        """
+        Select a village from the dropdown.
+        
+        Args:
+            village_name: The name of the village to select.
+            
+        Returns:
+            True if the village was found and selected, False otherwise.
+        """
+        self.logger.debug(f"Selecting Village: {village_name}")
+        
+        # First try exact/partial match
+        result = self.select_dropdown_option(CONFIG['VILLAGE_DROPDOWN_ID'], village_name, partial_match=True)
+        
+        if not result:
+            # If failed, try some common village name variations and debug
+            self.logger.warning(f"Initial village selection failed for: {village_name}")
+            
+            # Enhanced village matching using the VillageNameMatcher
+            try:
+                dropdown = self.wait.until(EC.element_to_be_clickable((By.ID, CONFIG['VILLAGE_DROPDOWN_ID'])))
+                select = Select(dropdown)
+                available_options = [opt.text.strip() for opt in select.options if opt.text.strip()]
+                
+                self.logger.debug(f"Available village options (first 10): {available_options[:10]}")
+                
+                # Use enhanced village matcher
+                matcher = VillageNameMatcher(self.logger)
+                best_match = matcher.find_best_match(village_name, available_options)
+                
+                if best_match:
+                    self.logger.debug(f"VillageNameMatcher found best match: '{best_match}' for '{village_name}'")
+                    result = self.select_dropdown_option(CONFIG['VILLAGE_DROPDOWN_ID'], best_match, partial_match=False)
+                    if result:
+                        self.logger.debug(f"Successfully selected matched village: {best_match}")
+                else:
+                    # Generate detailed matching report for debugging
+                    report = matcher.get_match_strategies_report(village_name, available_options)
+                    self.logger.warning(f"VillageNameMatcher could not find suitable match:\n{report}")
+                
+            except Exception as e:
+                self.logger.warning(f"Error during enhanced village matching: {e}")
+        
+        if result:
+            self.logger.debug("Village selected successfully")
+        else:
+            self.logger.error(f"Village '{village_name}' not found in dropdown")
+        
+        return result
+    
+    def select_survey(self, survey_block_number):
+        """
+        Select a survey/block number from the dropdown.
+        
+        Args:
+            survey_block_number: The survey/block number to select.
+            
+        Returns:
+            True if the survey/block number was found and selected, False otherwise.
+        """
+        # Convert survey_block_number to string to fix issues with integer survey numbers
+        survey_block_number = str(survey_block_number).strip()
+        
+        self.logger.debug(f"Selecting Survey/Block Number: {survey_block_number}")
+        
+        # Wait a bit for the dropdown to be populated
+        time.sleep(1)
+        
+        try:
+            result = self.select_dropdown_option(CONFIG['SURVEY_DROPDOWN_ID'], survey_block_number, partial_match=True)
+            if result:
+                self.logger.debug("Survey/Block Number selected successfully")
+            else:
+                self.logger.warning(f"Survey/Block Number not found matching: {survey_block_number}")
+                
+                # If not found by partial match, try to select the first option as fallback
+                dropdown = self.wait.until(
+                    EC.element_to_be_clickable((By.ID, CONFIG['SURVEY_DROPDOWN_ID']))
+                )
+                select = Select(dropdown)
+                if len(select.options) > 1:  # Skip the first option if it's a placeholder
+                    select.select_by_index(1)
+                    self.logger.debug("Selected first available Survey/Block Number as fallback")
+                    return True
+            return result
+        except Exception as e:
+            self.logger.error(f"Error selecting survey number: {str(e)}")
+            # Try to select the first option as fallback
+            try:
+                dropdown = self.wait.until(
+                    EC.element_to_be_clickable((By.ID, CONFIG['SURVEY_DROPDOWN_ID']))
+                )
+                select = Select(dropdown)
+                if len(select.options) > 1:  # Skip the first option if it's a placeholder
+                    select.select_by_index(1)
+                    self.logger.debug("Selected first available Survey/Block Number as fallback after error")
+                    return True
+            except Exception as inner_e:
+                self.logger.error(f"Error in fallback survey selection: {str(inner_e)}")
+            return False
+    
+    def solve_captcha(self):
+        """
+        Solve the CAPTCHA.
+        
+        Returns:
+            The recognized CAPTCHA text or None if recognition failed.
+        """
+        self.logger.debug("Starting captcha recognition process")
+        
+        try:
+            # Wait a bit for the page to fully load after survey selection
+            time.sleep(2)
+            
+            # Try multiple approaches to find the CAPTCHA image
+            captcha_img = None
+            captcha_id = CONFIG['CAPTCHA_IMG_ID']
+            
+            # Approach 1: Try the configured ID
+            try:
+                captcha_img = self.wait.until(
+                    EC.visibility_of_element_located((By.ID, captcha_id))
+                )
+                self.logger.debug(f"Found CAPTCHA image with ID: {captcha_id}")
+            except Exception as e:
+                self.logger.warning(f"Could not find CAPTCHA with ID {captcha_id}: {str(e)}")
+                
+                # Approach 2: Try common CAPTCHA image patterns
+                captcha_selectors = [
+                    "img[src*='captcha']",
+                    "img[src*='Captcha']", 
+                    "img[src*='CAPTCHA']",
+                    "img[alt*='captcha']",
+                    "img[alt*='Captcha']",
+                    "img[alt*='CAPTCHA']",
+                    "#ContentPlaceHolder1_imgCaptcha",
+                    "#ctl00_ContentPlaceHolder1_imgCaptcha",
+                    "img[src*='.ashx']",  # ASP.NET handler for CAPTCHA
+                ]
+                
+                for selector in captcha_selectors:
+                    try:
+                        captcha_img = self.driver.find_element(By.CSS_SELECTOR, selector)
+                        self.logger.debug(f"Found CAPTCHA image with selector: {selector}")
+                        break
+                    except:
+                        continue
+                
+                # Approach 3: Find any img element that might be a CAPTCHA
+                if not captcha_img:
+                    try:
+                        all_images = self.driver.find_elements(By.TAG_NAME, "img")
+                        for img in all_images:
+                            src = img.get_attribute('src') or ''
+                            alt = img.get_attribute('alt') or ''
+                            if 'captcha' in src.lower() or 'captcha' in alt.lower():
+                                captcha_img = img
+                                self.logger.debug(f"Found CAPTCHA image with src: {src}")
+                                break
+                    except Exception as e:
+                        self.logger.warning(f"Error searching for CAPTCHA images: {str(e)}")
+            
+            if not captcha_img:
+                self.logger.error("Could not find CAPTCHA image element")
+                # Log all img elements for debugging
+                try:
+                    all_images = self.driver.find_elements(By.TAG_NAME, "img")
+                    self.logger.error(f"Found {len(all_images)} img elements on page:")
+                    for i, img in enumerate(all_images[:10]):  # Log first 10 images
+                        src = img.get_attribute('src') or 'No src'
+                        alt = img.get_attribute('alt') or 'No alt'
+                        id_attr = img.get_attribute('id') or 'No id'
+                        self.logger.error(f"  Image {i}: id='{id_attr}', src='{src}', alt='{alt}'")
+                except Exception as e:
+                    self.logger.error(f"Error logging images: {str(e)}")
+                return None
+            
+            # Convert captcha to base64
+            try:
+                captcha_base64 = self.driver.execute_script("""
+                    var canvas = document.createElement('canvas');
+                    var context = canvas.getContext('2d');
+                    var img = arguments[0];
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    context.drawImage(img, 0, 0);
+                    return canvas.toDataURL('image/png').replace(/^data:image\\/(png|jpg);base64,/, '');
+                """, captcha_img)
+                
+                # Decode base64 to binary data
+                captcha_data = base64.b64decode(captcha_base64)
+                
+                # Solve the captcha
+                captcha_value = self.captcha_solver.solve(captcha_data)
+                
+                if captcha_value:
+                    # Find and fill the CAPTCHA input field
+                    captcha_input_id = CONFIG['CAPTCHA_INPUT_ID']
+                    try:
+                        captcha_input = self.wait.until(
+                            EC.visibility_of_element_located((By.ID, captcha_input_id))
+                        )
+                    except:
+                        # Try alternative input field selectors
+                        input_selectors = [
+                            "input[name*='captcha']",
+                            "input[name*='Captcha']",
+                            "input[placeholder*='captcha']",
+                            "input[placeholder*='Captcha']",
+                            "#ContentPlaceHolder1_txtCaptcha",
+                            "#ctl00_ContentPlaceHolder1_txtCaptcha"
+                        ]
+                        
+                        captcha_input = None
+                        for selector in input_selectors:
+                            try:
+                                captcha_input = self.driver.find_element(By.CSS_SELECTOR, selector)
+                                break
+                            except:
+                                continue
+                        
+                        if not captcha_input:
+                            self.logger.error("Could not find CAPTCHA input field")
+                            return None
+                    
+                    captcha_input.clear()
+                    captcha_input.send_keys(captcha_value)
+                    self.logger.debug(f"Entered captcha value: {captcha_value}")
+                    return captcha_value
+                else:
+                    self.logger.error("CAPTCHA recognition failed - no value returned")
+                    return None
+                    
+            except Exception as e:
+                self.logger.error(f"Error processing CAPTCHA image: {str(e)}")
+                return None
+                
+        except Exception as e:
+            self.logger.error(f"Error during CAPTCHA solving: {str(e)}")
+            self.logger.error(traceback.format_exc())
+            return None
+    
+    def submit_form(self):
+        """
+        Submit the form and handle any alerts.
+        
+        Returns:
+            A tuple (success, error_message) where success is True if the form was submitted
+            successfully, and error_message is None or the error message if submission failed.
+        """
+        self.logger.debug("Submitting the form")
+        try:
+            submit_button = self.wait.until(
+                EC.element_to_be_clickable((By.ID, CONFIG['SUBMIT_BUTTON_ID']))
+            )
+            self.logger.debug("Found submit button, clicking...")
+            submit_button.click()
+            self.logger.debug("Submit button clicked successfully")
+        except Exception as e:
+            self.logger.error(f"Error clicking submit button: {str(e)}")
+            return False, f"Submit button error: {str(e)}"
+        
+        # Check for alert (captcha error)
+        try:
+            self.logger.debug("Checking for alerts...")
+            WebDriverWait(self.driver, CONFIG['CAPTCHA_WAIT_TIMEOUT']).until(EC.alert_is_present())
+            alert = self.driver.switch_to.alert
+            alert_text = alert.text
+            self.logger.warning(f"Alert present: {alert_text}")
+            alert.accept()
+            
+            return False, alert_text
+        except TimeoutException:
+            # No alert means success
+            self.logger.debug("Form submitted successfully - no alerts found")
+            
+            # Log current state
+            try:
+                current_url = self.driver.current_url
+                self.logger.debug(f"Current URL after submission: {current_url}")
+                
+                page_title = self.driver.title
+                self.logger.debug(f"Page title after submission: {page_title}")
+                
+                # Check if page is still responsive
+                ready_state = self.driver.execute_script("return document.readyState")
+                self.logger.debug(f"Page ready state: {ready_state}")
+                
+            except Exception as e:
+                self.logger.error(f"Error checking page state after submission: {str(e)}")
+            
+            return True, None
+    
+    def generate_pdf(self, output_path):
+        """
+        Generate a PDF of the land record.
+        
+        Args:
+            output_path: The path where the PDF will be saved.
+            
+        Returns:
+            A tuple (success, error_message) where success is True if the PDF was generated
+            successfully, and error_message is None or the error message if generation failed.
+        """
+        self.logger.debug("Attempting to generate PDF")
+        
+        # Create output directory if it doesn't exist
+        try:
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            self.logger.debug(f"Output directory created/verified: {os.path.dirname(output_path)}")
+        except Exception as e:
+            self.logger.error(f"Error creating output directory: {str(e)}")
+            return False, f"Directory creation error: {str(e)}"
+        
+        try:
+            # Log current state before PDF generation
+            self.logger.debug("Checking page state before PDF generation...")
+            try:
+                current_url = self.driver.current_url
+                self.logger.debug(f"Current URL before PDF generation: {current_url}")
+                
+                page_title = self.driver.title
+                self.logger.debug(f"Page title before PDF generation: {page_title}")
+                
+                ready_state = self.driver.execute_script("return document.readyState")
+                self.logger.debug(f"Page ready state before PDF generation: {ready_state}")
+                
+            except Exception as e:
+                self.logger.error(f"Error checking page state before PDF generation: {str(e)}")
+            
+            # Wait for the page to load completely
+            self.logger.debug(f"Waiting {CONFIG['PAGE_LOAD_WAIT']} seconds for page to load...")
+            time.sleep(CONFIG['PAGE_LOAD_WAIT'])
+            
+            # Check if driver is still responsive
+            self.logger.debug("Testing driver responsiveness...")
+            try:
+                test_result = self.driver.execute_script("return 'Driver is responsive'")
+                self.logger.debug(f"Driver test result: {test_result}")
+            except Exception as e:
+                self.logger.error(f"Driver not responsive: {str(e)}")
+                return False, f"Driver not responsive: {str(e)}"
+            
+            # Generate PDF
+            self.logger.debug("Executing PDF generation command...")
+            try:
+                result = self.driver.execute_cdp_cmd("Page.printToPDF", {"printBackground": True})
+                self.logger.debug("PDF generation command executed successfully")
+                
+                pdf_data = result.get("data")
+                if pdf_data:
+                    self.logger.debug(f"PDF data received, length: {len(pdf_data)} characters")
+                    
+                    # Save PDF
+                    self.logger.debug(f"Saving PDF to: {output_path}")
+                    with open(output_path, "wb") as f:
+                        f.write(base64.b64decode(pdf_data))
+                    
+                    # Verify file was created
+                    if os.path.exists(output_path):
+                        file_size = os.path.getsize(output_path)
+                        self.logger.debug(f"PDF saved successfully to: {output_path} (size: {file_size} bytes)")
+                        return True, None
+                    else:
+                        error_msg = "PDF file was not created"
+                        self.logger.error(error_msg)
+                        return False, error_msg
+                else:
+                    error_msg = "PDF generation did not return any data"
+                    self.logger.error(error_msg)
+                    self.logger.error(f"Full result object: {result}")
+                    return False, error_msg
+                    
+            except Exception as e:
+                error_msg = f"PDF generation command failed: {str(e)}"
+                self.logger.error(error_msg)
+                self.logger.error(traceback.format_exc())
+                return False, error_msg
+                
+        except Exception as e:
+            error_msg = f"PDF generation error: {str(e)}"
+            self.logger.error(error_msg)
+            self.logger.error(traceback.format_exc())
+            return False, error_msg
