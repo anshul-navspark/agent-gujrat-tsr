@@ -291,9 +291,25 @@ class FormFiller:
                     EC.element_to_be_clickable((By.ID, CONFIG['DISTRICT_DROPDOWN_ID']))
                 )
                 
+                # Wait for dropdown to be populated with options (more than just the default "Select" option)
+                try:
+                    def dropdown_has_options(driver):
+                        element = driver.find_element(By.ID, CONFIG['DISTRICT_DROPDOWN_ID'])
+                        s = Select(element)
+                        return len(s.options) > 1
+
+                    WebDriverWait(self.driver, 10).until(dropdown_has_options)
+                except TimeoutException:
+                    self.logger.warning("District dropdown options did not populate in time")
+
                 # Create Select object
                 select_district = Select(dropdown)
                 
+                # Log options for debugging if needed
+                if attempt == max_attempts - 1:
+                    options_text = [o.text for o in select_district.options[:5]] # Log first 5 options
+                    self.logger.debug(f"Available district options: {options_text}...")
+
                 # Try to find the district in the options
                 found_district = False
                 for option in select_district.options:
