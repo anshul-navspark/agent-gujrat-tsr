@@ -108,7 +108,7 @@ with st.sidebar:
     max_workers = st.slider(
         "Concurrent API Calls",
         min_value=1,
-        max_value=30,
+        max_value=40,
         value=10,
         help="Number of simultaneous API requests for batch processing"
     )
@@ -377,43 +377,44 @@ with tab2:
                     
                     # Store results
                     st.session_state.processing_results = results
-                    
-                    # Summary
-                    success_count = sum(1 for r in results if r['success'])
-                    fail_count = len(results) - success_count
-                    
-                    st.success(f"✅ Completed! Success: {success_count}, Failed: {fail_count}")
-                    
-                    # Create ZIP of all DOCX files
-                    if success_count > 0:
-                        # Create ZIP in memory to avoid temp directory cleanup issues
-                        zip_buffer = io.BytesIO()
-                        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-                            for result in results:
-                                if result['success']:
-                                    if result.get('docx_content'):
-                                        filename = f"{result['district']}_{result['taluka']}_{result['village']}_{result['survey']}_TSR.docx"
-                                        filename = filename.replace(" ", "_").replace("/", "_")
-                                        zf.writestr(filename, result['docx_content'])
-                                    
-                                    if result.get('pdf_content'):
-                                        filename = f"{result['district']}_{result['taluka']}_{result['village']}_{result['survey']}_Original.pdf"
-                                        filename = filename.replace(" ", "_").replace("/", "_")
-                                        zf.writestr(filename, result['pdf_content'])
-                        
-                        # Get the ZIP data before buffer goes out of scope
-                        zip_buffer.seek(0)
-                        zip_data = zip_buffer.getvalue()
-                        
-                        st.download_button(
-                            "📥 Download All TSR Documents (ZIP)",
-                            data=zip_data,
-                            file_name="tsr_documents.zip",
-                            mime="application/zip"
-                        )
+                    st.success(f"✅ Completed! Processed {len(records_to_process)} records.")
         
         except Exception as e:
             st.error(f"❌ Error reading Excel: {e}")
+
+    # Display Download ZIP button if results exist (Outside the process button block)
+    if st.session_state.processing_results:
+        results = st.session_state.processing_results
+        success_count = sum(1 for r in results if r['success'])
+        
+        if success_count > 0:
+            st.divider()
+            st.subheader("📥 Download Results")
+            st.write(f"Success: {success_count} / {len(results)}")
+            
+            # Create ZIP directly here
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for result in results:
+                    if result['success']:
+                        if result.get('docx_content'):
+                            filename = f"{result['district']}_{result['taluka']}_{result['village']}_{result['survey']}_TSR.docx"
+                            filename = filename.replace(" ", "_").replace("/", "_")
+                            zf.writestr(filename, result['docx_content'])
+                        
+                        if result.get('pdf_content'):
+                            filename = f"{result['district']}_{result['taluka']}_{result['village']}_{result['survey']}_Original.pdf"
+                            filename = filename.replace(" ", "_").replace("/", "_")
+                            zf.writestr(filename, result['pdf_content'])
+            
+            zip_data = zip_buffer.getvalue()
+            
+            st.download_button(
+                "📥 Download All TSR Documents (ZIP)",
+                data=zip_data,
+                file_name="tsr_documents.zip",
+                mime="application/zip"
+            )
 
 # Tab 3: Results
 with tab3:
@@ -449,13 +450,37 @@ with tab3:
         st.dataframe(display_df, use_container_width=True, hide_index=True)
         
         # Export results
-        if st.button("📥 Export Results (CSV)"):
-            csv = results_df.to_csv(index=False)
+        csv = results_df.to_csv(index=False)
+        st.download_button(
+            "📥 Download Results CSV",
+            data=csv,
+            file_name=f"tsr_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
+        
+        # Download ZIP
+        success_count = sum(1 for r in st.session_state.processing_results if r['success'])
+        if success_count > 0:
+            zip_buffer = io.BytesIO()
+            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for result in st.session_state.processing_results:
+                    if result['success']:
+                        if result.get('docx_content'):
+                            filename = f"{result['district']}_{result['taluka']}_{result['village']}_{result['survey']}_TSR.docx"
+                            filename = filename.replace(" ", "_").replace("/", "_")
+                            zf.writestr(filename, result['docx_content'])
+                        
+                        if result.get('pdf_content'):
+                            filename = f"{result['district']}_{result['taluka']}_{result['village']}_{result['survey']}_Original.pdf"
+                            filename = filename.replace(" ", "_").replace("/", "_")
+                            zf.writestr(filename, result['pdf_content'])
+            
             st.download_button(
-                "Download Results CSV",
-                data=csv,
-                file_name=f"tsr_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
+                "📥 Download All TSR Documents (ZIP)",
+                data=zip_buffer.getvalue(),
+                file_name="tsr_documents.zip",
+                mime="application/zip",
+                key="results_tab_zip_download"
             )
         
         # Individual downloads

@@ -72,12 +72,12 @@ gcloud run deploy $SERVICE_NAME \
     --platform managed \
     --region $REGION \
     --allow-unauthenticated \
-    --cpu 1 \
+    --cpu 2 \
     --timeout 3600 \
     --concurrency 4 \
     --max-instances 10 \
     --project $PROJECT_ID \
-    --memory 2Gi \
+    --memory 4Gi \
     --set-env-vars="GEMINI_API_KEY=$GEMINI_API_KEY,GEMINI_MODEL_NAME=gemini-2.5-flash,CHROME_BIN=/usr/bin/chromium,CHROMEDRIVER_PATH=/usr/bin/chromedriver" 
 
 
