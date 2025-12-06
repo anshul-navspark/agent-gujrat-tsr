@@ -80,6 +80,27 @@ def save_docx_file(content: bytes, filename: str) -> str:
         f.write(content)
     return filepath
 
+def format_duration(delta) -> str:
+    """Format timedelta to readable string (X hours, Y minutes and Z seconds)"""
+    total_seconds = int(delta.total_seconds())
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+    
+    parts = []
+    if hours > 0:
+        parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+    if minutes > 0:
+        parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+    # Always show seconds if duration is short, otherwise optional? 
+    # Logic: always show seconds if < 1 minute, or if mixed with minutes/hours for precision
+    if seconds > 0 or not parts:
+        parts.append(f"{seconds} second{'s' if seconds != 1 else ''}")
+    
+    if len(parts) > 1:
+        return ", ".join(parts[:-1]) + " and " + parts[-1]
+    return parts[0]
+
 def process_single_record_api(
     client: TSRAPIClient,
     district: str,
@@ -194,16 +215,20 @@ with tab1:
                     st.error(f"Translation failed: {e}")
                     st.stop()
 
+                start_time = datetime.now()
                 result = process_single_record_api(
                     st.session_state.api_client,
                     guj_district, guj_taluka, guj_village, guj_survey
                 )
+                end_time = datetime.now()
+                duration = end_time - start_time
+                duration_str = format_duration(duration)
                 
                 # Add to results
                 st.session_state.processing_results.append(result)
                 
                 if result['success']:
-                    st.success("✅ TSR generated successfully!")
+                    st.success(f"✅ TSR generated successfully in {duration_str}!")
                     
                     # Download button
                     if result['docx_content']:
@@ -369,24 +394,7 @@ with tab2:
                     duration = end_time - start_time
                     
                     # Format duration to readable string
-                    total_seconds = int(duration.total_seconds())
-                    hours = total_seconds // 3600
-                    minutes = (total_seconds % 3600) // 60
-                    seconds = total_seconds % 60
-                    
-                    parts = []
-                    if hours > 0:
-                        parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
-                    if minutes > 0:
-                        parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
-                    # Always show seconds
-                    if seconds > 0 or not parts:
-                        parts.append(f"{seconds} second{'s' if seconds != 1 else ''}")
-                    
-                    if len(parts) > 1:
-                        duration_str = ", ".join(parts[:-1]) + " and " + parts[-1]
-                    else:
-                        duration_str = parts[0]
+                    duration_str = format_duration(duration)
                     
                     # Store results
                     st.session_state.processing_results = results
