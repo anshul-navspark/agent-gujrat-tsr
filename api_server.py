@@ -177,13 +177,22 @@ def process_record(request: LandRecordRequest, background_tasks: BackgroundTasks
             
         logger.info(f"TSR generated successfully: {docx_path}")
         
-        # Read file into memory before cleanup to avoid race conditions under high concurrency
+        # Read files into memory before cleanup
         try:
             with open(docx_path, 'rb') as f:
                 docx_content = f.read()
+            
+            # Read PDF content if it exists
+            pdf_content = None
+            if os.path.exists(pdf_path):
+                with open(pdf_path, 'rb') as f:
+                    pdf_content = f.read()
+            else:
+                logger.warning(f"PDF file not found at {pdf_path}")
+
         except Exception as e:
-            logger.error(f"Failed to read generated DOCX: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to read generated file: {e}")
+            logger.error(f"Failed to read generated files: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to read generated files: {e}")
         
         # Clean up immediately since we have the content in memory
         cleanup_temp_file(pdf_path)
@@ -196,20 +205,36 @@ def process_record(request: LandRecordRequest, background_tasks: BackgroundTasks
             village_eng = sanitize_filename(request.village)
             survey_eng = sanitize_filename(request.survey_number)
             
-            output_filename = f"TSR_{district_eng}_{taluka_eng}_{village_eng}_{survey_eng}.docx"
+            base_filename = f"{district_eng}_{taluka_eng}_{village_eng}_{survey_eng}"
+            docx_filename = f"TSR_{base_filename}.docx"
+            pdf_filename = f"Original_{base_filename}.pdf"
+            zip_filename = f"TSR_Package_{base_filename}.zip"
         except Exception as e:
             logger.warning(f"Failed to generate filename: {e}")
-            output_filename = f"TSR_Report.docx"
+            docx_filename = "TSR_Report.docx"
+            pdf_filename = "Original_Record.pdf"
+            zip_filename = "TSR_Package.zip"
         
+        # Create ZIP file in memory
+        import io
+        import zipfile
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(docx_filename, docx_content)
+            if pdf_content:
+                zf.writestr(pdf_filename, pdf_content)
         
+        # Get ZIP content
+        zip_content = zip_buffer.getvalue()
+
         # Prepare filename for header
-        encoded_filename = quote(output_filename)
+        encoded_filename = quote(zip_filename)
         
         return Response(
-            content=docx_content,
-            media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            content=zip_content,
+            media_type='application/zip',
             headers={
-                'Content-Disposition': f"attachment; filename=\"TSR_Report.docx\"; filename*=UTF-8''{encoded_filename}"
+                'Content-Disposition': f"attachment; filename=\"{zip_filename}\"; filename*=UTF-8''{encoded_filename}"
             }
         )
         

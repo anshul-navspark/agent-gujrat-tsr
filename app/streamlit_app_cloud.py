@@ -140,11 +140,20 @@ def process_single_record_api(
         )
         
         docx_path = None
-        if response.success and response.docx_content:
-            # Save DOCX file
-            filename = f"{district}_{taluka}_{village}_{survey}_TSR.docx"
-            filename = filename.replace(" ", "_").replace("/", "_")
-            docx_path = save_docx_file(response.docx_content, filename)
+        pdf_path = None
+        
+        if response.success:
+            if response.docx_content:
+                # Save DOCX file
+                filename = f"{district}_{taluka}_{village}_{survey}_TSR.docx"
+                filename = filename.replace(" ", "_").replace("/", "_")
+                docx_path = save_docx_file(response.docx_content, filename)
+            
+            if response.pdf_content:
+                # Save PDF file
+                filename = f"{district}_{taluka}_{village}_{survey}_Original.pdf"
+                filename = filename.replace(" ", "_").replace("/", "_")
+                pdf_path = save_docx_file(response.pdf_content, filename)
         
         return {
             'row_idx': row_idx,
@@ -155,6 +164,8 @@ def process_single_record_api(
             'success': response.success,
             'docx_path': docx_path,
             'docx_content': response.docx_content if response.success else None,
+            'pdf_path': pdf_path,
+            'pdf_content': response.pdf_content if response.success else None,
             'error': response.error,
             'timestamp': datetime.now().isoformat()
         }
@@ -168,6 +179,8 @@ def process_single_record_api(
             'success': False,
             'docx_path': None,
             'docx_content': None,
+            'pdf_path': None,
+            'pdf_content': None,
             'error': str(e),
             'timestamp': datetime.now().isoformat()
         }
@@ -241,6 +254,14 @@ with tab1:
                             data=result['docx_content'],
                             file_name=f"{district}_{taluka}_{village}_{survey}_TSR.docx",
                             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        )
+                    
+                    if result.get('pdf_content'):
+                        st.download_button(
+                            "📥 Download Original Record (PDF)",
+                            data=result['pdf_content'],
+                            file_name=f"{district}_{taluka}_{village}_{survey}_Original.pdf",
+                            mime="application/pdf"
                         )
                 else:
                     st.error(f"❌ Failed: {result['error']}")
@@ -369,10 +390,16 @@ with tab2:
                         zip_buffer = io.BytesIO()
                         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
                             for result in results:
-                                if result['success'] and result['docx_content']:
-                                    filename = f"{result['district']}_{result['taluka']}_{result['village']}_{result['survey']}_TSR.docx"
-                                    filename = filename.replace(" ", "_").replace("/", "_")
-                                    zf.writestr(filename, result['docx_content'])
+                                if result['success']:
+                                    if result.get('docx_content'):
+                                        filename = f"{result['district']}_{result['taluka']}_{result['village']}_{result['survey']}_TSR.docx"
+                                        filename = filename.replace(" ", "_").replace("/", "_")
+                                        zf.writestr(filename, result['docx_content'])
+                                    
+                                    if result.get('pdf_content'):
+                                        filename = f"{result['district']}_{result['taluka']}_{result['village']}_{result['survey']}_Original.pdf"
+                                        filename = filename.replace(" ", "_").replace("/", "_")
+                                        zf.writestr(filename, result['pdf_content'])
                         
                         # Get the ZIP data before buffer goes out of scope
                         zip_buffer.seek(0)
@@ -443,4 +470,14 @@ with tab3:
                         file_name=f"{result['district']}_{result['taluka']}_{result['village']}_{result['survey']}_TSR.docx",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         key=f"download_{idx}"
+                    )
+            
+            if result['success'] and result.get('pdf_content'):
+                with st.expander(f"Original PDF: {result['district']}, {result['taluka']}, {result['village']}, {result['survey']}"):
+                    st.download_button(
+                        "Download Original PDF",
+                        data=result['pdf_content'],
+                        file_name=f"{result['district']}_{result['taluka']}_{result['village']}_{result['survey']}_Original.pdf",
+                        mime="application/pdf",
+                        key=f"download_pdf_{idx}"
                     )

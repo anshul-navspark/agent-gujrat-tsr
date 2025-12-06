@@ -12,11 +12,15 @@ from dataclasses import dataclass
 import time
 
 
+import io
+import zipfile
+
 @dataclass
 class APIResponse:
     """Response from API processing"""
     success: bool
     docx_content: Optional[bytes] = None
+    pdf_content: Optional[bytes] = None
     error: Optional[str] = None
     status_code: Optional[int] = None
 
@@ -72,7 +76,7 @@ class TSRAPIClient:
             survey_number: Survey/Block number
             
         Returns:
-            APIResponse object with success status and DOCX content or error
+            APIResponse object with success status, DOCX and PDF content or error
         """
         payload = {
             "district": district,
@@ -96,9 +100,35 @@ class TSRAPIClient:
                 
                 if response.status_code == 200:
                     self.logger.info(f"Successfully processed record")
+                    
+                    docx_content = None
+                    pdf_content = None
+                    
+                    # Check if response is a ZIP file
+                    content_type = response.headers.get('Content-Type', '')
+                    if 'application/zip' in content_type:
+                        try:
+                            with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+                                for filename in zf.namelist():
+                                    if filename.endswith('.docx') and not filename.startswith('~'):
+                                        docx_content = zf.read(filename)
+                                    elif filename.endswith('.pdf'):
+                                        pdf_content = zf.read(filename)
+                        except Exception as e:
+                            self.logger.error(f"Failed to extract ZIP response: {e}")
+                            return APIResponse(
+                                success=False,
+                                error=f"Failed to process response: {str(e)}",
+                                status_code=200
+                            )
+                    else:
+                        # Assume it's just the DOCX file (backward compatibility)
+                        docx_content = response.content
+                    
                     return APIResponse(
                         success=True,
-                        docx_content=response.content,
+                        docx_content=docx_content,
+                        pdf_content=pdf_content,
                         status_code=200
                     )
                 else:
