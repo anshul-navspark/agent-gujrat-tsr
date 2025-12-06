@@ -367,8 +367,26 @@ with tab2:
                     
                     end_time = datetime.now()
                     duration = end_time - start_time
-                    # Format duration to remove microseconds (H:MM:SS)
-                    duration_str = str(duration).split('.')[0]
+                    
+                    # Format duration to readable string
+                    total_seconds = int(duration.total_seconds())
+                    hours = total_seconds // 3600
+                    minutes = (total_seconds % 3600) // 60
+                    seconds = total_seconds % 60
+                    
+                    parts = []
+                    if hours > 0:
+                        parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+                    if minutes > 0:
+                        parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+                    # Always show seconds
+                    if seconds > 0 or not parts:
+                        parts.append(f"{seconds} second{'s' if seconds != 1 else ''}")
+                    
+                    if len(parts) > 1:
+                        duration_str = ", ".join(parts[:-1]) + " and " + parts[-1]
+                    else:
+                        duration_str = parts[0]
                     
                     # Store results
                     st.session_state.processing_results = results
