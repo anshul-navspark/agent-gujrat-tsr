@@ -367,10 +367,12 @@ with tab2:
                     
                     end_time = datetime.now()
                     duration = end_time - start_time
+                    # Format duration to remove microseconds (H:MM:SS)
+                    duration_str = str(duration).split('.')[0]
                     
                     # Store results
                     st.session_state.processing_results = results
-                    st.success(f"✅ Completed! Processed {len(records_to_process)} records in {duration}.")
+                    st.success(f"✅ Completed! Processed {len(records_to_process)} records in {duration_str}.")
         
         except Exception as e:
             st.error(f"❌ Error reading Excel: {e}")
