@@ -88,30 +88,6 @@ def batch_processing_form(api_client: TSRAPIClient) -> None:
             if not mapping_valid:
                 st.warning("⚠️ Please map all required columns before processing.")
 
-            # Processing options
-            st.divider()
-            st.subheader("⚙️ Processing Options")
-
-            col1, col2 = st.columns(2)
-            with col1:
-                max_workers = st.slider(
-                    "Parallel Workers",
-                    min_value=1,
-                    max_value=50,
-                    value=int(st.secrets.get("MAX_WORKERS", 20)),
-                    help="Number of parallel API requests. Higher values may speed up processing but could hit rate limits.",
-                    key="batch_max_workers"
-                )
-            with col2:
-                start_row = st.number_input(
-                    "Start from Row",
-                    min_value=1,
-                    max_value=len(df),
-                    value=1,
-                    help="Start processing from this row (1-indexed).",
-                    key="batch_start_row"
-                )
-
             # Process button
             st.divider()
             if st.button("🚀 Start Batch Processing", type="primary", disabled=not mapping_valid):
@@ -122,8 +98,8 @@ def batch_processing_form(api_client: TSRAPIClient) -> None:
                     taluka_col=taluka_col,
                     village_col=village_col,
                     survey_col=survey_col,
-                    max_workers=max_workers,
-                    start_row=start_row
+                    max_workers=20,
+                    start_row=1
                 )
 
         except Exception as e:
