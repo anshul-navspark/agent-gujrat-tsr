@@ -19,6 +19,7 @@ from typing import List, Dict, Any, Optional
 
 from core.models import LandRecordRequest as CoreLandRecordRequest
 from app.api_client import TSRAPIClient, APIResponse
+from utils.ai_column_detector import AIColumnDetector, auto_detect_columns
 
 
 
@@ -48,38 +49,52 @@ def batch_processing_form(api_client: TSRAPIClient) -> None:
             with st.expander("📋 Preview Data", expanded=True):
                 st.dataframe(df.head(10), use_container_width=True, hide_index=True)
 
-            # Column mapping
+            # AI-based column detection
             st.divider()
-            st.subheader("🔗 Column Mapping")
-            st.caption("Map your Excel columns to the required fields.")
-
+            st.subheader("🤖 AI Column Mapping")
+            
+            # Use AI to detect columns
+            detected_mapping, confidence_report = auto_detect_columns(df)
+            
+            # Show AI detection report
+            with st.expander("🔍 AI Detection Report", expanded=False):
+                st.text(confidence_report)
+            
+            # Prepare available columns with empty option
             available_columns = [""] + list(df.columns)
+            
+            # Function to get index for detected column
+            def get_detected_index(field: str) -> int:
+                detected_col = detected_mapping.get(field)
+                if detected_col and detected_col in df.columns:
+                    return list(df.columns).index(detected_col) + 1  # +1 for empty option
+                return 0
 
             col1, col2 = st.columns(2)
             with col1:
                 district_col = st.selectbox(
                     "District Column",
                     available_columns,
-                    index=_find_column_index(df.columns, ["district", "dist", "જિલ્લો"]),
+                    index=get_detected_index('district'),
                     key="batch_district_col"
                 )
                 taluka_col = st.selectbox(
                     "Taluka Column",
                     available_columns,
-                    index=_find_column_index(df.columns, ["taluka", "tal", "તાલુકો"]),
+                    index=get_detected_index('taluka'),
                     key="batch_taluka_col"
                 )
             with col2:
                 village_col = st.selectbox(
                     "Village Column",
                     available_columns,
-                    index=_find_column_index(df.columns, ["village", "vil", "ગામ"]),
+                    index=get_detected_index('village'),
                     key="batch_village_col"
                 )
                 survey_col = st.selectbox(
                     "Survey Number Column",
                     available_columns,
-                    index=_find_column_index(df.columns, ["survey", "block", "સર્વે", "survey_number", "surveynumber"]),
+                    index=get_detected_index('survey'),
                     key="batch_survey_col"
                 )
 
@@ -104,24 +119,6 @@ def batch_processing_form(api_client: TSRAPIClient) -> None:
 
         except Exception as e:
             st.error(f"❌ Error reading Excel file: {str(e)}")
-
-
-def _find_column_index(columns: pd.Index, possible_names: List[str]) -> int:
-    """Find the index of a column by matching possible names (case-insensitive).
-
-    Args:
-        columns: DataFrame columns index.
-        possible_names: List of possible column names to match.
-
-    Returns:
-        1-indexed column position (0 means not found, for the empty option).
-    """
-    for i, col in enumerate(columns):
-        col_lower = str(col).lower().strip()
-        for name in possible_names:
-            if name.lower() in col_lower or col_lower in name.lower():
-                return i + 1  # +1 because first option is empty
-    return 0
 
 
 def _process_batch(
