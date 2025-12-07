@@ -26,11 +26,11 @@ def single_record_form(api_client: TSRAPIClient) -> None:
     st.subheader("Process Single Land Record")
     col1, col2 = st.columns(2)
     with col1:
-        district = st.text_input("District", key="single_district")
-        taluka = st.text_input("Taluka", key="single_taluka")
+        district = st.text_input("District", key="single_district", placeholder="e.g., Kutch")
+        taluka = st.text_input("Taluka", key="single_taluka", placeholder="e.g., Bhuj")
     with col2:
-        village = st.text_input("Village", key="single_village")
-        survey = st.text_input("Survey Number", key="single_survey")
+        village = st.text_input("Village", key="single_village", placeholder="e.g., Trambo")
+        survey = st.text_input("Survey Number", key="single_survey", placeholder="e.g., 32 or 145/1")
 
     if st.button("🚀 Generate TSR", type="primary"):
         if not all([district, taluka, village, survey]):
