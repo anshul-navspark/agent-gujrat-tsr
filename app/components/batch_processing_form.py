@@ -103,12 +103,38 @@ def batch_processing_form(api_client: TSRAPIClient) -> None:
             if not mapping_valid:
                 st.warning("⚠️ Please map all required columns before processing.")
 
+            # Filter to only valid rows (all required fields present)
+            if mapping_valid:
+                # Create mask for valid rows
+                valid_mask = (
+                    df[district_col].notna() & 
+                    df[district_col].astype(str).str.strip().ne('') &
+                    df[taluka_col].notna() & 
+                    df[taluka_col].astype(str).str.strip().ne('') &
+                    df[village_col].notna() & 
+                    df[village_col].astype(str).str.strip().ne('') &
+                    df[survey_col].notna() & 
+                    df[survey_col].astype(str).str.strip().ne('')
+                )
+                
+                valid_df = df[valid_mask].copy()
+                invalid_count = len(df) - len(valid_df)
+                
+                if invalid_count > 0:
+                    st.info(f"📋 {len(valid_df)} valid records found ({invalid_count} rows skipped due to empty values)")
+                else:
+                    st.info(f"📋 All {len(valid_df)} records are valid")
+                
+                if len(valid_df) == 0:
+                    st.error("❌ No valid records found. Please ensure all required columns have values.")
+                    mapping_valid = False
+
             # Process button
             st.divider()
             if st.button("🚀 Start Batch Processing", type="primary", disabled=not mapping_valid):
                 _process_batch(
                     api_client=api_client,
-                    df=df,
+                    df=valid_df,  # Use filtered DataFrame
                     district_col=district_col,
                     taluka_col=taluka_col,
                     village_col=village_col,
