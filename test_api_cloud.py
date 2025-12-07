@@ -17,9 +17,9 @@ logger = logging.getLogger(__name__)
 def test_cloud_api():
     # Test parameters
     district = "Kutch"
-    taluka = "abadsa"
+    taluka = "bhuj"
     village = "Trambo"
-    survey = "51"
+    survey = "32"
     
     logger.info(f"Testing Cloud Run API with: {district}, {taluka}, {village}, {survey}")
     
@@ -53,12 +53,45 @@ def test_cloud_api():
         response = requests.post(url, json=payload, timeout=900)
         
         if response.status_code == 200:
-            logger.info("✅ Success! Saving TSR from Cloud Run...")
-            output_filename = f"TSR_Cloud_{district}_{village}_{survey.replace('/', '_')}.docx"
-            with open(output_filename, "wb") as f:
-                f.write(response.content)
-            logger.info(f"✅ Saved to {output_filename}")
-            logger.info(f"File size: {len(response.content)} bytes")
+            logger.info("✅ Success! Processing response...")
+            
+            # Check if response is a ZIP file
+            content_type = response.headers.get('Content-Type', '')
+            if 'application/zip' in content_type:
+                import io
+                import zipfile
+                
+                try:
+                    with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+                        logger.info(f"Files in ZIP: {zf.namelist()}")
+                        
+                        for filename in zf.namelist():
+                            if filename.endswith('.docx') and not filename.startswith('~'):
+                                # Extract DOCX
+                                docx_content = zf.read(filename)
+                                output_filename = f"TSR_Cloud_{district}_{village}_{survey.replace('/', '_')}.docx"
+                                with open(output_filename, "wb") as f:
+                                    f.write(docx_content)
+                                logger.info(f"✅ Extracted and saved TSR to {output_filename}")
+                                
+                            elif filename.endswith('.pdf'):
+                                # Extract PDF
+                                pdf_content = zf.read(filename)
+                                pdf_filename = f"Original_Cloud_{district}_{village}_{survey.replace('/', '_')}.pdf"
+                                with open(pdf_filename, "wb") as f:
+                                    f.write(pdf_content)
+                                logger.info(f"✅ Extracted and saved PDF to {pdf_filename}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to process ZIP response: {e}")
+            else:
+                # Assume direct DOCX response
+                logger.info("Saving raw response as DOCX...")
+                output_filename = f"TSR_Cloud_{district}_{village}_{survey.replace('/', '_')}.docx"
+                with open(output_filename, "wb") as f:
+                    f.write(response.content)
+                logger.info(f"✅ Saved to {output_filename}")
+                
+            logger.info(f"Response size: {len(response.content)} bytes")
         else:
             logger.error(f"❌ Failed with status {response.status_code}")
             logger.error(f"Response: {response.text}")

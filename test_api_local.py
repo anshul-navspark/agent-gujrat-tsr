@@ -47,11 +47,36 @@ def test_api():
         response = requests.post(url, json=payload)
         
         if response.status_code == 200:
-            logger.info("Success! Saving TSR...")
-            output_filename = f"TSR_{district}_{village}_{survey}.docx"
-            with open(output_filename, "wb") as f:
-                f.write(response.content)
-            logger.info(f"Saved to {output_filename}")
+            logger.info("Success! Processing response...")
+            
+            # Check if response is a ZIP file
+            content_type = response.headers.get('Content-Type', '')
+            if 'application/zip' in content_type:
+                import io
+                import zipfile
+                
+                try:
+                    with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+                        for filename in zf.namelist():
+                            if filename.endswith('.docx') and not filename.startswith('~'):
+                                docx_content = zf.read(filename)
+                                output_filename = f"TSR_{district}_{village}_{survey}.docx"
+                                with open(output_filename, "wb") as f:
+                                    f.write(docx_content)
+                                logger.info(f"Extracted and saved TSR to {output_filename}")
+                            elif filename.endswith('.pdf'):
+                                pdf_content = zf.read(filename)
+                                pdf_filename = f"Original_{district}_{village}_{survey}.pdf"
+                                with open(pdf_filename, "wb") as f:
+                                    f.write(pdf_content)
+                                logger.info(f"Extracted and saved PDF to {pdf_filename}")
+                except Exception as e:
+                    logger.error(f"Failed to process ZIP response: {e}")
+            else:
+                output_filename = f"TSR_{district}_{village}_{survey}.docx"
+                with open(output_filename, "wb") as f:
+                    f.write(response.content)
+                logger.info(f"Saved to {output_filename}")
         else:
             logger.error(f"Failed with status {response.status_code}: {response.text}")
             
