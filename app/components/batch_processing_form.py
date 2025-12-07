@@ -172,18 +172,20 @@ def _display_batch_results(api_client: TSRAPIClient) -> None:
         
         if files_to_zip:
             zip_data = file_service.create_zip(files_to_zip, "tsr_documents.zip")
+            # Use summary timestamp to make key unique per batch run
+            batch_id = st.session_state.get("batch_summary", {}).get("total", 0)
             st.download_button(
                 "📥 Download All TSR Documents (ZIP)",
                 data=zip_data,
                 file_name="tsr_documents.zip",
                 mime="application/zip",
-                key="batch_zip_download"
+                key=f"batch_zip_download_{batch_id}_{len(successful_results)}"
             )
     
     # Retry failed button
     failed_count = sum(1 for r in results if not r.get("success"))
     if failed_count > 0:
-        if st.button(f"🔄 Retry {failed_count} Failed Entries", type="primary", key="batch_retry_btn"):
+        if st.button(f"🔄 Retry {failed_count} Failed Entries", type="primary", key=f"batch_retry_btn_{failed_count}"):
             _retry_failed_entries(api_client, results)
 
 
