@@ -133,6 +133,20 @@ def process_record(
     """
     logger.info(f"Processing record: {request}")
     
+    # Validate required fields are not empty
+    validation_errors = []
+    if not request.district or not request.district.strip():
+        validation_errors.append("District is required")
+    if not request.taluka or not request.taluka.strip():
+        validation_errors.append("Taluka is required")
+    if not request.village or not request.village.strip():
+        validation_errors.append("Village is required")
+    if not request.survey_number or not str(request.survey_number).strip():
+        validation_errors.append("Survey number is required")
+    
+    if validation_errors:
+        raise HTTPException(status_code=400, detail="; ".join(validation_errors))
+    
     # Convert Pydantic model to core model
     try:
         core_request = CoreLandRecordRequest(
@@ -151,25 +165,33 @@ def process_record(
     
     # scraping_service is already initialized via Depends
     try:
-        # Translate to Gujarati for scraper
+        # Translate to Gujarati for scraper - reject if translation fails (invalid entry)
         try:
             district_guj = translation_service.translate_to_gujarati(request.district, context='district')
-            taluka_guj = translation_service.translate_to_gujarati(request.taluka, context='taluka')
-            village_guj = translation_service.translate_to_gujarati(request.village, context='village')
-            
-            # Log translations for debugging
-            logger.info(f"Translation results: district '{request.district}' -> '{district_guj}', "
-                       f"taluka '{request.taluka}' -> '{taluka_guj}', "
-                       f"village '{request.village}' -> '{village_guj}'")
-            
-            # Sanity check: district should not contain " - " (village code pattern)
-            if " - " in district_guj:
-                logger.error(f"SUSPICIOUS: District translation '{district_guj}' looks like a village code!")
         except Exception as e:
-            logger.warning(f"Translation to Gujarati failed: {e}. Using original inputs.")
-            district_guj = request.district
-            taluka_guj = request.taluka
-            village_guj = request.village
+            logger.warning(f"Invalid district '{request.district}': {e}")
+            raise HTTPException(status_code=400, detail=f"Invalid district: '{request.district}' is not in our database")
+        
+        try:
+            taluka_guj = translation_service.translate_to_gujarati(request.taluka, context='taluka')
+        except Exception as e:
+            logger.warning(f"Invalid taluka '{request.taluka}': {e}")
+            raise HTTPException(status_code=400, detail=f"Invalid taluka: '{request.taluka}' is not in our database")
+        
+        try:
+            village_guj = translation_service.translate_to_gujarati(request.village, context='village')
+        except Exception as e:
+            logger.warning(f"Invalid village '{request.village}': {e}")
+            raise HTTPException(status_code=400, detail=f"Invalid village: '{request.village}' is not in our database")
+        
+        # Log translations for debugging
+        logger.info(f"Translation results: district '{request.district}' -> '{district_guj}', "
+                   f"taluka '{request.taluka}' -> '{taluka_guj}', "
+                   f"village '{request.village}' -> '{village_guj}'")
+        
+        # Sanity check: district should not contain " - " (village code pattern)
+        if " - " in district_guj:
+            logger.error(f"SUSPICIOUS: District translation '{district_guj}' looks like a village code!")
 
         # Fetch land record
         logger.info(f"Calling scraper with: district='{district_guj}', taluka='{taluka_guj}', village='{village_guj}', survey='{request.survey_number}'")
