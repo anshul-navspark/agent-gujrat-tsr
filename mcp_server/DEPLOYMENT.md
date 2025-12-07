@@ -19,7 +19,7 @@ Complete guide for deploying the TSR Tools MCP Server in various environments.
 
 ### System Requirements
 
-- **Python**: 3.9 or higher
+- **Python**: 3.11 or higher
 - **Chrome/Chromium**: Latest version (for PDF fetching)
 - **RAM**: 4GB minimum, 8GB recommended
 - **Disk**: 2GB free space
@@ -729,7 +729,7 @@ sudo systemctl restart tsr-mcp-server
 
 ## Checklist for Production
 
-- [ ] Python 3.9+ installed
+- [ ] Python 3.11+ installed
 - [ ] Chrome/Chromium installed
 - [ ] API keys configured
 - [ ] Virtual environment created

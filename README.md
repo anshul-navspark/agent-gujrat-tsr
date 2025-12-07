@@ -1,203 +1,231 @@
-## Agentic Mode (beta)
+# Gujarat TSR Agent
 
-A new Agentic workflow can generate TSRs via an AI agent that orchestrates extraction tools.
+A comprehensive automation solution for fetching land records from the Gujarat AnyRoR portal and generating Title Search Reports (TSR) using AI-powered document processing.
 
-- In the Streamlit sidebar, toggle "Agentic Mode (beta)" to enable.
-- Preference is persisted locally and used across sessions.
-- On failures, it falls back to the legacy generator automatically.
+## 🚀 Features
 
-# Bhuj Solar Land Survey Processor
+- **Land Record Scraping**: Automated fetching of land records from the Gujarat AnyRoR website
+- **AI-Powered CAPTCHA Solving**: Uses Google Gemini AI to solve CAPTCHAs
+- **TSR Generation**: Generates professional Title Search Reports from land record PDFs
+- **Batch Processing**: Process multiple records from Excel files with parallel execution
+- **Multi-Language Support**: English to Gujarati translation for form inputs
+- **Cloud Deployment**: Deployable on Google Cloud Run for serverless operation
+- **Streamlit UI**: User-friendly web interface for record processing
 
-A comprehensive Python tool for processing land records from Gujarat government website, generating PDFs and Title Search Reports (TSR) for solar land surveys.
+## 📁 Project Structure
 
-## Overview
+```
+gujrat_tsr_agent/
+├── core/                      # Core domain models and interfaces
+│   ├── models.py              # Domain models (LandRecordRequest, APIResponse)
+│   ├── interfaces.py          # Service interfaces (ITranslationService, etc.)
+│   ├── config.py              # Centralized configuration management
+│   └── exceptions.py          # Custom exception hierarchy
+│
+├── services/                  # Business logic services
+│   ├── translation_service.py # English-Gujarati translation
+│   ├── file_service.py        # File operations (ZIP, temp files)
+│   ├── scraping_service.py    # Web scraping abstraction
+│   └── processing_service.py  # TSR processing coordination
+│
+├── app/                       # Streamlit application
+│   ├── streamlit_app_cloud.py # Main Streamlit entry point
+│   ├── api_client.py          # API client for backend communication
+│   ├── components/            # UI components
+│   │   ├── single_record_form.py
+│   │   ├── batch_processing_form.py
+│   │   └── results_display.py
+│   └── services/              # Streamlit-specific services
+│       └── streamlit_service.py
+│
+├── anyror/                    # AnyRoR scraping module
+│   ├── captcha_solver.py      # AI CAPTCHA solving
+│   ├── webdriver_manager.py   # Selenium WebDriver management
+│   └── scraper.py             # Main scraping logic
+│
+├── tsr_generator/             # TSR document generation
+│   ├── extractors/            # PDF data extraction
+│   ├── document/              # DOCX generation
+│   └── processors/            # Data processing
+│
+├── utils/                     # Utility modules
+│   ├── json_translations.py   # Translation dictionary management
+│   ├── survey_utils.py        # Survey number utilities
+│   ├── ai_column_detector.py  # AI column mapping
+│   └── logging_config.py      # Centralized logging
+│
+├── tests/                     # Test suite
+│   ├── conftest.py            # Pytest fixtures
+│   ├── test_services.py       # Service layer tests
+│   ├── test_api.py            # API endpoint tests
+│   └── utils/                 # Test utilities
+│
+├── api/
+│   ├── __init__.py
+│   ├── server.py              # FastAPI backend server
+│   ├── dependencies.py        # Dependency injection
+│   └── middleware.py          # Custom middleware
+├── Dockerfile                 # Container configuration
+├── requirements.txt           # Python dependencies
+└── README.md                  # This file
+```
 
-The Bhuj Solar Land Survey Processor automates the process of fetching land records from the Gujarat government's database and generating Title Search Reports. It processes an Excel file containing land survey details (district, taluka, village, and survey numbers), translates these details to Gujarati, and fetches the corresponding land records, saving them as PDFs. It can then generate Title Search Reports (TSR) from these PDFs.
-
-## Features
-
-- **Excel Processing**: Reads and processes land survey data from Excel files
-- **Language Translation**: Automatically translates district, taluka, village names from English to Gujarati
-- **Survey Number Conversion**: Converts survey numbers to the specific format required by the government website
-- **PDF Generation**: Fetches land records from the government website and saves them as PDFs
-- **TSR Generation**: Creates Title Search Reports in DOCX format from the fetched PDFs
-- **Parallel Processing**: Supports both sequential and parallel processing of records
-- **Robust Error Handling**: Implements retry mechanisms and comprehensive error reporting
-- **Detailed Logging**: Provides detailed logs of all operations
-- **Summary Reports**: Generates CSV summary files of processed records
-
-## Installation
+## 🛠️ Installation
 
 ### Prerequisites
 
-- Python 3.8 or higher
-- Chrome browser installed (for web scraping)
-- Required Python packages:
-  - pandas
-  - selenium
-  - webdriver_manager
-  - tqdm
-  - PyPDF2
-  - python-docx
+- Python 3.11+
+- Google Chrome (for web scraping)
+- ChromeDriver (automatically managed)
+- Google Gemini API key
 
-### Setup
+### Local Setup
 
-```bash
-# Clone the repository
-git clone <repository-url>
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd gujrat_tsr_agent
+   ```
 
-# Navigate to the project directory
-cd gujrat_tsr_agent
+2. **Create virtual environment**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
 
-# Install dependencies
-pip install -r requirements.txt
-```
+3. **Install dependencies**
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-### Streamlit Frontend (non-technical usage)
+4. **Set up environment variables**
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your GEMINI_API_KEY
+   ```
 
-You can run a simple web UI locally:
+5. **Run the API server**
+   ```bash
+   uvicorn api.server:app --host 0.0.0.0 --port 8000
+   ```
 
-```bash
-streamlit run app/streamlit_app.py
-```
+6. **Run the Streamlit app** (in a separate terminal)
+   ```bash
+   streamlit run app/streamlit_app_cloud.py
+   ```
 
-- Single Record tab: enter Gujarati District, Taluka, Village, Survey and click Fetch Record
-- Batch (Excel) tab: upload an Excel file, map columns, and process all rows
-- Outputs are saved to `output/pdfs` and `output/tsr` and downloadable from the UI
+## 🚀 Usage
 
-## Usage
+### Single Record Processing
 
-### AnyRoR Dropdown Hierarchy Export
+1. Open the Streamlit app in your browser
+2. Navigate to the "Single Record" tab
+3. Enter District, Taluka, Village, and Survey Number
+4. Click "Generate TSR"
+5. Download the generated DOCX and PDF files
 
-Use `anyror_hierarchy_scraper.py` to crawl the AnyRoR dropdowns and persist a nested dictionary of districts → talukas → villages (Gujarati + transliterated English variants):
+### Batch Processing
 
-```bash
-python anyror_hierarchy_scraper.py --headless --output anyror_hierarchy.json
-```
+1. Prepare an Excel file with columns: District, Taluka, Village, Survey Number
+2. Go to the "Batch (Excel)" tab
+3. Upload your Excel file
+4. Map the columns to the required fields
+5. Click "Start Batch Processing"
+6. Download results from the "Results" tab
 
-Flags:
-- `--district-limit` / `--taluka-limit`: Optional caps for test runs.
-- Omit `--headless` to watch the browser while debugging.
-
-The generated JSON uses Gujarati names as keys:
-
-```
-{
-  "પાટણ": {
-    "english_names": ["Patan"],
-    "talukas": {
-      "પાટણ": {
-        "english_names": ["Patan"],
-        "villages": {
-          "અનાવાડા - 091": ["Anavada", "Anawada"]
-        }
-      }
-    }
-  }
-}
-```
-
-### Basic Usage
+### API Usage
 
 ```bash
-python bhuj_solar_processor.py --excel-file "Bhuj Solar Land Survey List.xlsx" --output-dir "output"
+# Health check
+curl http://localhost:8000/health
+
+# Process a single record
+curl -X POST http://localhost:8000/process-record \
+  -H "Content-Type: application/json" \
+  -d '{"district": "Kutch", "taluka": "Bhuj", "village": "Trambo", "survey_number": "32"}'
 ```
 
-### Command-Line Options
+## 🧪 Testing
 
-```
---excel-file       Path to the Excel file (default: "Bhuj Solar Land Survey List Feb 24 2025.xlsx")
---output-dir       Base directory for output files (default: "output")
---no-sequential    Process records in parallel instead of sequentially
---max-workers      Maximum number of parallel workers (default: 4)
---start-row        Start processing from this row number (default: 0, first data row)
---end-row          Stop processing at this row number (default: process all)
---pdf-only         Only fetch PDFs, skip TSR generation
---verbose          Enable verbose logging
---test-conversion  Test survey number conversion without fetching records
---survey-numbers   List of survey numbers to test conversion or to process specifically
---process-survey-numbers  Process only specific survey numbers provided in --survey-numbers
---no-cleanup       Skip cleanup of chromedriver cache between runs
---regenerate       Regenerate PDFs even if they already exist
-```
-
-### Examples
-
-Process specific rows from the Excel file:
 ```bash
-python bhuj_solar_processor.py --start-row 10 --end-row 20
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=. --cov-report=html
+
+# Run only unit tests
+pytest -m "not integration"
+
+# Run integration tests
+pytest -m integration
 ```
 
-Process only specific survey numbers:
+## 🐳 Docker Deployment
+
 ```bash
-python bhuj_solar_processor.py --process-survey-numbers --survey-numbers "142" "143/પૈ" "145/1"
+# Build the Docker image
+docker build -t gujarat-tsr-agent .
+
+# Run the container
+docker run -p 8000:8000 -e GEMINI_API_KEY=your_key gujarat-tsr-agent
 ```
 
-Process in parallel with 8 workers:
+## ☁️ Cloud Run Deployment
+
 ```bash
-python bhuj_solar_processor.py --no-sequential --max-workers 8
+# Build and push to Container Registry
+gcloud builds submit --tag gcr.io/YOUR_PROJECT/gujarat-tsr-agent
+
+# Deploy to Cloud Run
+gcloud run deploy gujarat-tsr-agent \
+  --image gcr.io/YOUR_PROJECT/gujarat-tsr-agent \
+  --platform managed \
+  --region asia-south1 \
+  --memory 4Gi \
+  --timeout 1200 \
+  --set-env-vars GEMINI_API_KEY=your_key
 ```
 
-Only generate PDFs without TSR reports:
-```bash
-python bhuj_solar_processor.py --pdf-only
+## 📝 Configuration
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `GEMINI_API_KEY` | Google Gemini API key for AI features | Required |
+| `HEADLESS` | Run browser in headless mode | `true` |
+| `CAPTCHA_TIMEOUT` | CAPTCHA solving timeout (seconds) | `30` |
+| `CAPTCHA_MAX_RETRIES` | Max CAPTCHA retry attempts | `3` |
+| `MAX_WORKERS` | Parallel processing workers | `20` |
+
+### Streamlit Secrets
+
+For Streamlit Cloud deployment, add secrets to `.streamlit/secrets.toml`:
+
+```toml
+GEMINI_API_KEY = "your_key"
+API_URL = "https://your-cloud-run-url.run.app"
+API_TIMEOUT = 1200
+MAX_WORKERS = 20
 ```
 
-Test survey number conversion:
-```bash
-python bhuj_solar_processor.py --test-conversion --survey-numbers "145/1" "143/pa" "142/p1"
-```
+## 🏗️ Architecture
 
-## Excel File Format
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed architecture documentation.
 
-The Excel file should contain the following columns:
-- `District`: The district name in English (e.g., "Kutch", "Bhuj")
-- `Tehsil` or `Taluka`: The taluka/tehsil name in English (e.g., "Bhuj", "Anjar")
-- `Village`: The village name in English (e.g., "Trambo", "Edal")
-- `Survey Nos`: The survey number, which may include special notations (e.g., "142", "143/p1", "145/pa")
+## 📄 License
 
-## Output
+This project is licensed under the MIT License.
 
-The script generates the following outputs in the specified output directory:
-- `pdfs/`: Directory containing the fetched land record PDFs
-- `tsr/`: Directory containing the generated Title Search Reports (DOCX)
-- `summary_TIMESTAMP.csv`: CSV file summarizing the processed records
-- `logs/bhuj_solar_TIMESTAMP.log`: Detailed log file of the processing
+## 🤝 Contributing
 
-## Survey Number Conversion
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-The script handles various formats of survey numbers and converts them to the format required by the government website:
-- Simple numbers (e.g., "142", "143") remain unchanged
-- Numbers with paiki (પૈકી) are formatted as "number/પૈ" (e.g., "145/પૈ")
-- Numbers with paiki paiki (પૈકી પૈકી) are formatted as "number/પૈ/પૈ" (e.g., "144/પૈ/પૈ")
-- Numbers with special characters like 'q', 'r', 'e', etc. are properly converted to Gujarati
+## 📞 Support
 
-## Notes
-
-- The script uses Chrome browser automation to fetch land records, so Chrome must be installed on the system.
-- Processing might take time depending on the number of records and network conditions.
-- The script includes retry mechanisms for handling network issues and timeouts.
-- All processing is logged in detail for troubleshooting purposes.
-
-## Dependencies
-
-- `pandas`: For Excel file reading and data manipulation
-- `selenium`: For web browsing automation
-- `webdriver_manager`: For Chrome driver management
-- `tqdm`: For progress bar display
-- `PyPDF2`: For PDF processing
-- `python-docx`: For TSR document generation
-
-## TSR Generator
-
-The package includes a TSR Generator module for creating Title Search Reports from PDF land records. See the documentation in the `tsr_generator` package for more details.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Troubleshooting
-
-1. **ChromeDriver Issues**: If you encounter issues with ChromeDriver, try using the `--no-cleanup` option to preserve the ChromeDriver cache.
-2. **Timeouts**: The script includes retry mechanisms for timeouts. If timeouts persist, consider increasing the timeout value in the code.
-3. **Missing Translations**: If the script warns about missing translations, add the missing entries to the translation dictionaries in the code. 
+For questions or issues, please open a GitHub issue or contact the maintainers.

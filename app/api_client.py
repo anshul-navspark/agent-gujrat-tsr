@@ -8,21 +8,12 @@ API for PDF fetching and TSR generation.
 import requests
 import logging
 from typing import Optional, Dict, Any
-from dataclasses import dataclass
 import time
-
-
 import io
 import zipfile
 
-@dataclass
-class APIResponse:
-    """Response from API processing"""
-    success: bool
-    docx_content: Optional[bytes] = None
-    pdf_content: Optional[bytes] = None
-    error: Optional[str] = None
-    status_code: Optional[int] = None
+# Import from core models
+from core.models import APIResponse
 
 
 class TSRAPIClient:

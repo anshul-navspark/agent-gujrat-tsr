@@ -1,99 +1,122 @@
-import pandas as pd
 import requests
+import pandas as pd
 import concurrent.futures
 import time
-import os
 import sys
-import logging
+import os
 
-# Add current directory to path to import utils
-sys.path.append(os.getcwd())
+# Create output directory for downloaded files
+OUTPUT_DIR = "test_output"
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-from utils.json_translations import translate_to_gujarati
-from utils.survey_utils import convert_survey_number, sanitize_filename
-
-# Setup logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(threadName)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-def process_row(row):
-    district = row['District']
-    taluka = row['Tehsil']
-    village = row['Village']
-    survey = str(row['Survey Nos']).strip()
-    
-    # Skip if any required field is missing or invalid
-    if pd.isna(district) or pd.isna(taluka) or pd.isna(village) or pd.isna(survey) or survey.lower() == 'new':
-        logger.warning(f"Skipping invalid row: {district}, {taluka}, {village}, {survey}")
-        return
-
-    logger.info(f"Processing: {district}, {taluka}, {village}, {survey}")
-    
-    try:
-        guj_district = translate_to_gujarati(district, context='district')
-        guj_taluka = translate_to_gujarati(taluka, context='taluka')
-        guj_village = translate_to_gujarati(village, context='village')
-        guj_survey = convert_survey_number(survey)
-    except Exception as e:
-        logger.error(f"Translation failed for {survey}: {e}")
-        return
-
+def process_record(record):
     url = "http://localhost:8000/process-record"
     payload = {
-        "district": guj_district,
-        "taluka": guj_taluka,
-        "village": guj_village,
-        "survey_number": guj_survey
+        "district": record['District'],
+        "taluka": record['Taluka'],
+        "village": record['Village'],
+        "survey_number": str(record['Survey No'])
     }
     
-    start_time = time.time()
     try:
-        # Increased timeout to 10 minutes as scraping can be slow, especially with retries
-        response = requests.post(url, json=payload, timeout=600)
-        duration = time.time() - start_time
+        start_t = time.time()
+        response = requests.post(url, json=payload)
+        duration = time.time() - start_t
         
         if response.status_code == 200:
-            safe_survey = sanitize_filename(survey)
-            output_filename = f"TSR_{district}_{village}_{safe_survey}.docx"
-            with open(output_filename, "wb") as f:
-                f.write(response.content)
-            logger.info(f"Success for {survey} in {duration:.2f}s. Saved to {output_filename}")
-        else:
-            logger.error(f"Failed for {survey} with status {response.status_code}: {response.text}")
+            # Success - API returns a ZIP file with DOCX and PDF
+            content_type = response.headers.get('Content-Type', '')
             
+            if 'application/zip' in content_type:
+                # Save the ZIP file
+                survey_number = str(record['Survey No'])
+                filename = f"TSR_{record['District']}_{record['Taluka']}_{record['Village']}_{survey_number}.zip"
+                filepath = os.path.join(OUTPUT_DIR, filename)
+                
+                with open(filepath, 'wb') as f:
+                    f.write(response.content)
+                
+                file_size = len(response.content)
+                return {
+                    "status": response.status_code,
+                    "data": {"message": "Success", "file": filepath, "size_bytes": file_size},
+                    "duration": duration,
+                    "record": payload
+                }
+            else:
+                # Unexpected content type - try to parse as JSON
+                try:
+                    data = response.json()
+                except:
+                    data = {"raw_response": response.text[:500]}
+                return {
+                    "status": response.status_code,
+                    "data": data,
+                    "duration": duration,
+                    "record": payload
+                }
+        else:
+            # Error response - try to get error message
+            try:
+                error_data = response.json()
+            except:
+                error_data = response.text[:500]
+            return {
+                "status": response.status_code,
+                "data": error_data,
+                "duration": duration,
+                "record": payload
+            }
     except Exception as e:
-        logger.error(f"Request failed for {survey}: {e}")
+        error_details = str(e)
+        if 'response' in locals():
+            error_details += f" | Status: {response.status_code}"
+        return {
+            "status": "Error",
+            "error": error_details,
+            "record": payload
+        }
 
 def main():
     try:
-        df = pd.read_excel('Bhuj Solar Land Survey List.xlsx')
-        
-        # Filter valid rows
-        # Ensure columns exist
-        required_columns = ['District', 'Tehsil', 'Village', 'Survey Nos']
-        if not all(col in df.columns for col in required_columns):
-            logger.error(f"Missing columns. Found: {df.columns.tolist()}")
-            return
-
-        # Drop rows with NaN in required columns
-        df_clean = df.dropna(subset=required_columns)
-        
-        rows = [row for _, row in df_clean.iterrows()]
-        
-        # Max workers for 8GB M1 Mac - now safe at 2 with port conflict fix
-        # Each Chrome instance takes ~300-500MB. 2 instances = ~600MB-1GB.
-        # Port conflicts are now prevented by random port allocation.
-        max_workers = 4
-        logger.info(f"Starting parallel processing of {len(rows)} records with {max_workers} workers")
-        start_total = time.time()
-        
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            executor.map(process_row, rows)
-            
-        total_duration = time.time() - start_total
-        logger.info(f"All done in {total_duration:.2f}s")
+        df = pd.read_excel("test.xlsx")
+        # limit to 5 records as requested previously
+        records = df.head(5).to_dict('records')
     except Exception as e:
-        logger.error(f"Main execution failed: {e}")
+        print(f"Error reading excel: {e}")
+        return
+
+    print(f"Processing {len(records)} records in parallel...")
+    start_total = time.time()
+    
+    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [executor.submit(process_record, r) for r in records]
+        
+        success_count = 0
+        fail_count = 0
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            if result['status'] == "Error":
+                print(f"❌ FAILED | Survey: {result['record']['survey_number']} | Error: {result.get('error')}")
+                fail_count += 1
+            elif result['status'] == 200:
+                data = result.get('data', {})
+                if 'file' in data:
+                    print(f"✅ SUCCESS | Survey: {result['record']['survey_number']} | Time: {result.get('duration', 0):.2f}s | File: {data['file']} ({data['size_bytes']/1024:.1f} KB)")
+                    success_count += 1
+                else:
+                    print(f"⚠️ WARNING | Survey: {result['record']['survey_number']} | Time: {result.get('duration', 0):.2f}s | Response: {data}")
+                    fail_count += 1
+            else:
+                print(f"❌ FAILED | Survey: {result['record']['survey_number']} | Status: {result['status']} | Response: {result.get('data')}")
+                fail_count += 1
+        
+        print(f"\n{'='*60}")
+        print(f"Summary: {success_count} succeeded, {fail_count} failed")
+            
+    print(f"Total time: {time.time() - start_total:.2f}s")
 
 if __name__ == "__main__":
+    # Wait for server to start if needed
+    time.sleep(2) 
     main()

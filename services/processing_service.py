@@ -19,7 +19,8 @@ import pandas as pd
 from anyror import AnyRoRScraper
 from selenium.common.exceptions import InvalidSessionIdException, TimeoutException, WebDriverException
 from tsr_generator import generate_tsr_from_pdf
-from utils.json_translations import translate_to_gujarati, TranslationNotFoundError
+from services.translation_service import get_translation_service
+from core.exceptions import TranslationException
 from utils.survey_utils import convert_survey_number
 
 
@@ -47,6 +48,8 @@ class LandRecordProcessor:
         ensure_dir(self.tsr_dir)
         self.logger = logger or logging.getLogger(__name__)
         self.headless = headless
+        # Initialize translation service
+        self.translation_service = get_translation_service(logger=self.logger)
 
     def _build_paths(self, survey_number: str) -> Dict[str, str]:
         # Sanitize filename
@@ -181,11 +184,11 @@ class LandRecordProcessor:
 
             # Auto-translate common English names to Gujarati for batch inputs
             try:
-                district_guj = translate_to_gujarati(district_guj, context='district')
-                taluka_guj = translate_to_gujarati(taluka_guj, context='taluka')
-                village_guj = translate_to_gujarati(village_guj, context='village')
+                district_guj = self.translation_service.translate_to_gujarati(district_guj, context='district')
+                taluka_guj = self.translation_service.translate_to_gujarati(taluka_guj, context='taluka')
+                village_guj = self.translation_service.translate_to_gujarati(village_guj, context='village')
                 survey_guj = convert_survey_number(survey_guj)
-            except TranslationNotFoundError as e:
+            except TranslationException as e:
                 results.append(ProcessResult(success=False, error=f"Row {idx}: {str(e)}"))
                 continue
             except Exception:
@@ -210,3 +213,7 @@ class LandRecordProcessor:
 
 
 
+
+def get_processing_service(output_base_dir: str = "output", headless: bool = True, logger: Optional[logging.Logger] = None) -> LandRecordProcessor:
+    """Factory function to get a LandRecordProcessor instance."""
+    return LandRecordProcessor(output_base_dir=output_base_dir, headless=headless, logger=logger)

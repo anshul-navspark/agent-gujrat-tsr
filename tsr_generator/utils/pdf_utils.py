@@ -1,4 +1,4 @@
-import PyPDF2
+import pypdf
 import logging
 
 def extract_text_from_pdf(pdf_path):
@@ -14,7 +14,7 @@ def extract_text_from_pdf(pdf_path):
     logger = logging.getLogger(__name__)
     try:
         with open(pdf_path, 'rb') as file:
-            pdf_reader = PyPDF2.PdfReader(file)
+            pdf_reader = pypdf.PdfReader(file)
             text = ""
             for page in pdf_reader.pages:
                 text += page.extract_text() + "\n"

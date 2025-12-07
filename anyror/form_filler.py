@@ -14,7 +14,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait, Select
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, StaleElementReferenceException
-from anyror_village_matcher import VillageNameMatcher
+from .village_matcher import VillageNameMatcher
 from .config import CONFIG
 
 
@@ -360,6 +360,21 @@ class FormFiller:
             True if the taluka was found and selected, False otherwise.
         """
         self.logger.debug(f"Selecting Taluka: {taluka_name}")
+        
+        # Wait for dropdown to be populated with options
+        try:
+            def dropdown_has_options(driver):
+                try:
+                    element = driver.find_element(By.ID, CONFIG['TALUKA_DROPDOWN_ID'])
+                    s = Select(element)
+                    return len(s.options) > 1
+                except (StaleElementReferenceException, Exception):
+                    return False
+
+            WebDriverWait(self.driver, 10).until(dropdown_has_options)
+        except TimeoutException:
+            self.logger.warning("Taluka dropdown options did not populate in time")
+
         result = self.select_dropdown_option(CONFIG['TALUKA_DROPDOWN_ID'], taluka_name, partial_match=True)
         if result:
             self.logger.debug("Taluka selected successfully")
@@ -386,11 +401,48 @@ class FormFiller:
             # If failed, try some common village name variations and debug
             self.logger.warning(f"Initial village selection failed for: {village_name}")
             
+            # Wait for dropdown to be populated with options (more than just the default "Select" option)
+            # This is critical because the dropdown might still be loading after Taluka selection
+            try:
+                def dropdown_has_options(driver):
+                    try:
+                        element = driver.find_element(By.ID, CONFIG['VILLAGE_DROPDOWN_ID'])
+                        s = Select(element)
+                        # Log options count for debugging
+                        options_count = len(s.options)
+                        if options_count <= 1:
+                            return False
+                        return True
+                    except (StaleElementReferenceException, Exception):
+                        return False
+
+                # Wait specifically for options to populate
+                WebDriverWait(self.driver, 10).until(dropdown_has_options)
+                
+                # Retry selection after waiting
+                self.logger.debug("Village dropdown options populated, retrying selection...")
+                result = self.select_dropdown_option(CONFIG['VILLAGE_DROPDOWN_ID'], village_name, partial_match=True)
+                if result:
+                    self.logger.info(f"Successfully selected village after waiting for options: {village_name}")
+                    return True
+            except TimeoutException:
+                self.logger.warning("Village dropdown options did not populate in time or only contained default option")
+
             # Enhanced village matching using the VillageNameMatcher
             try:
-                dropdown = self.wait.until(EC.element_to_be_clickable((By.ID, CONFIG['VILLAGE_DROPDOWN_ID'])))
-                select = Select(dropdown)
-                available_options = [opt.text.strip() for opt in select.options if opt.text.strip()]
+                # Optimized way to get all options using JavaScript
+                # accessing select.options one by one is very slow and can cause timeouts
+                available_options = self.driver.execute_script("""
+                    var select = document.getElementById(arguments[0]);
+                    var options = [];
+                    for (var i = 0; i < select.options.length; i++) {
+                        var text = select.options[i].text;
+                        if (text && text.trim().length > 0) {
+                            options.push(text.trim());
+                        }
+                    }
+                    return options;
+                """, CONFIG['VILLAGE_DROPDOWN_ID'])
                 
                 self.logger.debug(f"Available village options (first 10): {available_options[:10]}")
                 
@@ -433,9 +485,21 @@ class FormFiller:
         
         self.logger.debug(f"Selecting Survey/Block Number: {survey_block_number}")
         
-        # Wait a bit for the dropdown to be populated
-        time.sleep(1)
-        
+        # Wait for dropdown to be populated with options (replacing fixed sleep)
+        try:
+            def dropdown_has_options(driver):
+                try:
+                    element = driver.find_element(By.ID, CONFIG['SURVEY_DROPDOWN_ID'])
+                    s = Select(element)
+                    return len(s.options) > 1
+                except (StaleElementReferenceException, Exception):
+                    return False
+
+            # Use a slightly longer timeout for survey numbers as there can be many
+            WebDriverWait(self.driver, 15).until(dropdown_has_options)
+        except TimeoutException:
+            self.logger.warning("Survey dropdown options did not populate in time")
+            
         try:
             result = self.select_dropdown_option(CONFIG['SURVEY_DROPDOWN_ID'], survey_block_number, partial_match=True)
             if result:

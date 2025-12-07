@@ -1,47 +1,65 @@
+
+"""
+FastAPI Backend Server for Gujarat TSR Agent.
+"""
+
 import os
 import shutil
 import tempfile
 import logging
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
-from fastapi.responses import FileResponse, Response
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Depends
+from fastapi.responses import Response
 from pydantic import BaseModel
 from urllib.parse import quote
+
+# Import core models and services
+from core.models import LandRecordRequest as CoreLandRecordRequest
+from core.config import get_config
+from services.file_service import get_file_service
+from services.translation_service import get_translation_service
+from services.scraping_service import get_scraping_service
 from tsr_generator.api.tsr_generator import generate_tsr_from_pdf
-from anyror import AnyRoRScraper, WebDriverManager
-from utils.json_translations import translate_to_gujarati
-from utils.survey_utils import sanitize_filename
+
+
+# Import dependencies and middleware
+from api.dependencies import (
+    get_file_service_dependency,
+    get_translation_service_dependency, 
+    get_scraping_service_dependency
+)
+from api.middleware import TimingMiddleware
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Gujarat TSR Agent API")
+app.add_middleware(TimingMiddleware)
+
+# Initialize configuration
+config = get_config()
+
 
 class LandRecordRequest(BaseModel):
+    """Pydantic model for API request validation."""
     district: str
     taluka: str
     village: str
     survey_number: str
 
-def cleanup_temp_file(path: str):
-    try:
-        if os.path.exists(path):
-            os.remove(path)
-            logger.info(f"Cleaned up temporary file: {path}")
-    except Exception as e:
-        logger.error(f"Error cleaning up file {path}: {e}")
 
 @app.post("/generate-tsr")
-def generate_tsr(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+def generate_tsr(
+    background_tasks: BackgroundTasks, 
+    file: UploadFile = File(...),
+    file_service = Depends(get_file_service_dependency)
+):
     """
     Generate a TSR DOCX document from an uploaded PDF land record.
     """
     if not file.filename.endswith('.pdf'):
         raise HTTPException(status_code=400, detail="File must be a PDF")
 
-    # Create a temporary directory for processing
-    # Note: We can't use TemporaryDirectory context manager because we need to return the file
-    # and then clean up. We'll use a unique temp file path.
     temp_dir = tempfile.gettempdir()
     input_filename = f"input_{os.urandom(8).hex()}.pdf"
     input_path = os.path.join(temp_dir, input_filename)
@@ -62,23 +80,22 @@ def generate_tsr(background_tasks: BackgroundTasks, file: UploadFile = File(...)
 
         if not result['success']:
             logger.error(f"Generation failed: {result.get('error')}")
-            # Clean up input file
-            cleanup_temp_file(input_path)
+            file_service.cleanup_temp_file(input_path)
             raise HTTPException(status_code=500, detail=f"Generation failed: {result.get('error')}")
 
-        # Read file into memory before cleanup to avoid race conditions
+        # Read file into memory before cleanup
         try:
             with open(output_path, 'rb') as f:
                 docx_content = f.read()
         except Exception as e:
             logger.error(f"Failed to read generated DOCX: {e}")
-            cleanup_temp_file(input_path)
-            cleanup_temp_file(output_path)
+            file_service.cleanup_temp_file(input_path)
+            file_service.cleanup_temp_file(output_path)
             raise HTTPException(status_code=500, detail=f"Failed to read generated file: {e}")
         
-        # Clean up immediately since we have the content in memory
-        cleanup_temp_file(input_path)
-        cleanup_temp_file(output_path)
+        # Clean up immediately
+        file_service.cleanup_temp_file(input_path)
+        file_service.cleanup_temp_file(output_path)
         
         # Prepare filename for header
         encoded_filename = quote(output_filename)
@@ -92,36 +109,53 @@ def generate_tsr(background_tasks: BackgroundTasks, file: UploadFile = File(...)
         )
 
     except HTTPException:
-        cleanup_temp_file(input_path)
+        file_service.cleanup_temp_file(input_path)
         raise
     except Exception as e:
-        cleanup_temp_file(input_path)
+        file_service.cleanup_temp_file(input_path)
         logger.error(f"Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.post("/process-record")
-def process_record(request: LandRecordRequest, background_tasks: BackgroundTasks):
+def process_record(
+    request: LandRecordRequest, 
+    background_tasks: BackgroundTasks,
+    file_service = Depends(get_file_service_dependency),
+    translation_service = Depends(get_translation_service_dependency),
+    # For now we use direct retrieval inside loop or here. 
+    # With Depends, it's created per request which is good.
+    # Note: scraping_service depends on being closed. 
+    scraping_service = Depends(get_scraping_service_dependency)
+):
     """
     Scrape land record PDF from AnyRoR and generate TSR DOCX.
     """
     logger.info(f"Processing record: {request}")
+    
+    # Convert Pydantic model to core model
+    try:
+        core_request = CoreLandRecordRequest(
+            district=request.district,
+            taluka=request.taluka,
+            village=request.village,
+            survey_number=request.survey_number
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     
     temp_dir = tempfile.gettempdir()
     unique_id = os.urandom(8).hex()
     pdf_path = os.path.join(temp_dir, f"scraped_{unique_id}.pdf")
     docx_path = os.path.join(temp_dir, f"TSR_{unique_id}.docx")
     
-    scraper = None
+    # scraping_service is already initialized via Depends
     try:
-        # Initialize scraper
-        # Note: In Cloud Run, we might want to be careful with headless mode and resources
-        scraper = AnyRoRScraper(headless=True, logger=logger)
-        
         # Translate to Gujarati for scraper
         try:
-            district_guj = translate_to_gujarati(request.district, context='district')
-            taluka_guj = translate_to_gujarati(request.taluka, context='taluka')
-            village_guj = translate_to_gujarati(request.village, context='village')
+            district_guj = translation_service.translate_to_gujarati(request.district, context='district')
+            taluka_guj = translation_service.translate_to_gujarati(request.taluka, context='taluka')
+            village_guj = translation_service.translate_to_gujarati(request.village, context='village')
         except Exception as e:
             logger.warning(f"Translation to Gujarati failed: {e}. Using original inputs.")
             district_guj = request.district
@@ -129,11 +163,11 @@ def process_record(request: LandRecordRequest, background_tasks: BackgroundTasks
             village_guj = request.village
 
         # Fetch land record
-        result = scraper.fetch_land_record(
-            district_name=district_guj,
-            taluka_name=taluka_guj,
-            village_name=village_guj,
-            survey_block_number=request.survey_number,
+        result = scraping_service.fetch_land_record(
+            district=district_guj,
+            taluka=taluka_guj,
+            village=village_guj,
+            survey_number=request.survey_number,
             output_path=pdf_path
         )
         
@@ -151,13 +185,12 @@ def process_record(request: LandRecordRequest, background_tasks: BackgroundTasks
             
             # Try to get PDF page count
             try:
-                import PyPDF2
+                import pypdf
                 with open(pdf_path, 'rb') as f:
-                    pdf_reader = PyPDF2.PdfReader(f)
+                    pdf_reader = pypdf.PdfReader(f)
                     page_count = len(pdf_reader.pages)
                     logger.info(f"Scraped PDF has {page_count} pages")
                     
-                    # Log first 200 chars of first page text
                     if page_count > 0:
                         first_page_text = pdf_reader.pages[0].extract_text()[:200]
                         logger.info(f"First page preview: {first_page_text}")
@@ -182,7 +215,6 @@ def process_record(request: LandRecordRequest, background_tasks: BackgroundTasks
             with open(docx_path, 'rb') as f:
                 docx_content = f.read()
             
-            # Read PDF content if it exists
             pdf_content = None
             if os.path.exists(pdf_path):
                 with open(pdf_path, 'rb') as f:
@@ -194,63 +226,27 @@ def process_record(request: LandRecordRequest, background_tasks: BackgroundTasks
             logger.error(f"Failed to read generated files: {e}")
             raise HTTPException(status_code=500, detail=f"Failed to read generated files: {e}")
         
-        # Clean up immediately since we have the content in memory
-        cleanup_temp_file(pdf_path)
-        cleanup_temp_file(docx_path)
+        # Clean up immediately
+        file_service.cleanup_temp_file(pdf_path)
+        file_service.cleanup_temp_file(docx_path)
         
-        # Prepare filename
-        try:
-            # We want to try to keep english names if possible, but if input is Gujarati, 
-            # we need to be careful.
-            
-            # Helper to ensure ASCII filename for headers
-            def to_ascii_filename(s):
-                # Remove non-ASCII characters
-                return "".join(c for c in str(s) if ord(c) < 128).replace(' ', '_')
-
-            # Create base filename (might contain Unicode)
-            district_safe = sanitize_filename(request.district)
-            taluka_safe = sanitize_filename(request.taluka)
-            village_safe = sanitize_filename(request.village)
-            survey_safe = sanitize_filename(request.survey_number)
-            
-            base_filename = f"{district_safe}_{taluka_safe}_{village_safe}_{survey_safe}"
-            
-            # Create ASCII version for header (fallback)
-            # If all chars are non-ASCII (e.g. fully Gujarati), this might be empty/underscores.
-            # In that case use a generic name.
-            base_filename_ascii = f"{to_ascii_filename(request.district)}_{to_ascii_filename(request.taluka)}_{to_ascii_filename(request.village)}_{to_ascii_filename(request.survey_number)}"
-            if len(base_filename_ascii.replace('_', '')) < 3:
-                base_filename_ascii = f"Record_{os.urandom(4).hex()}"
-            
-            docx_filename = f"TSR_{base_filename}.docx"
-            pdf_filename = f"Original_{base_filename}.pdf"
-            zip_filename = f"TSR_Package_{base_filename}.zip"
-            
-            zip_filename_ascii = f"TSR_Package_{base_filename_ascii}.zip"
-            
-        except Exception as e:
-            logger.warning(f"Failed to generate filename: {e}")
-            docx_filename = "TSR_Report.docx"
-            pdf_filename = "Original_Record.pdf"
-            zip_filename = "TSR_Package.zip"
-            zip_filename_ascii = "TSR_Package.zip"
+        # Generate filenames using file service
+        docx_filename = file_service.generate_filename(core_request, file_type='docx', prefix='TSR')
+        pdf_filename = file_service.generate_filename(core_request, file_type='pdf', prefix='Original')
+        zip_filename = file_service.generate_filename(core_request, file_type='zip', prefix='TSR_Package')
         
-        # Create ZIP file in memory
-        import io
-        import zipfile
-        zip_buffer = io.BytesIO()
-        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
-            # We can use Unicode filenames inside ZIP
-            zf.writestr(docx_filename, docx_content)
-            if pdf_content:
-                zf.writestr(pdf_filename, pdf_content)
+        # Create ZIP file using file service
+        files_to_zip = {docx_filename: docx_content}
+        if pdf_content:
+            files_to_zip[pdf_filename] = pdf_content
         
-        # Get ZIP content
-        zip_content = zip_buffer.getvalue()
-
+        zip_content = file_service.create_zip(files_to_zip, zip_filename)
+        
         # Prepare filename for header
         encoded_filename = quote(zip_filename)
+        
+        # Create ASCII-safe fallback filename
+        zip_filename_ascii = f"TSR_Package_{os.urandom(4).hex()}.zip"
         
         return Response(
             content=zip_content,
@@ -261,24 +257,21 @@ def process_record(request: LandRecordRequest, background_tasks: BackgroundTasks
         )
         
     except HTTPException:
-        cleanup_temp_file(pdf_path)
-        cleanup_temp_file(docx_path)
+        file_service.cleanup_temp_file(pdf_path)
+        file_service.cleanup_temp_file(docx_path)
         raise
     except Exception as e:
-        cleanup_temp_file(pdf_path)
-        cleanup_temp_file(docx_path)
+        file_service.cleanup_temp_file(pdf_path)
+        file_service.cleanup_temp_file(docx_path)
         logger.error(f"Unexpected error in process-record: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
-    finally:
-        if scraper:
-            try:
-                scraper.web_driver_manager.close()
-            except:
-                pass
+    # Finally block for scraping_service close is now handled by dependency generator!
+
 
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
+
 
 @app.get("/debug-env")
 def debug_environment():
@@ -287,7 +280,6 @@ def debug_environment():
     Returns information about the environment setup.
     """
     import platform
-    import subprocess
     
     debug_info = {
         "platform": platform.system(),
@@ -329,4 +321,3 @@ def debug_environment():
             break
     
     return debug_info
-

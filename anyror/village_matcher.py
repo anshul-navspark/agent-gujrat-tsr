@@ -7,6 +7,17 @@ import logging
 from typing import List, Optional, Tuple
 import difflib
 import re
+import unicodedata
+
+def normalize_text(text: str) -> str:
+    """Normalize text using NFKC form and remove common invisible characters."""
+    if not text:
+        return ""
+    # Normalize unicode characters
+    text = unicodedata.normalize('NFKC', text)
+    # Remove zero-width spaces and other common invisible characters
+    text = text.replace('\u200b', '').replace('\ufeff', '')
+    return text.strip()
 
 
 class VillageNameMatcher:
@@ -29,37 +40,44 @@ class VillageNameMatcher:
         if not target_village or not available_options:
             return None
         
-        target_clean = target_village.strip()
+        # Normalize target
+        target_clean = normalize_text(target_village)
+        target_lower = target_clean.lower()
         
-        # Strategy 1: Exact match
+        self.logger.debug(f"Matching village: '{target_clean}' (original: '{target_village}')")
+        
+        # Strategy 1: Exact match with normalization
         for option in available_options:
-            if option.strip() == target_clean:
+            option_clean = normalize_text(option)
+            if option_clean == target_clean:
                 self.logger.debug(f"Found exact match: {option}")
                 return option
         
         # Strategy 2: Case-insensitive exact match
-        target_lower = target_clean.lower()
         for option in available_options:
-            if option.strip().lower() == target_lower:
+            option_clean = normalize_text(option)
+            if option_clean.lower() == target_lower:
                 self.logger.debug(f"Found case-insensitive match: {option}")
                 return option
         
         # Strategy 3: Partial match (target in option)
         for option in available_options:
-            if target_clean in option.strip():
+            option_clean = normalize_text(option)
+            if target_clean in option_clean:
                 self.logger.debug(f"Found partial match (target in option): {option}")
                 return option
         
         # Strategy 4: Reverse partial match (option in target)
         for option in available_options:
-            option_clean = option.strip()
+            option_clean = normalize_text(option)
             if option_clean and option_clean in target_clean:
                 self.logger.debug(f"Found reverse partial match (option in target): {option}")
                 return option
         
         # Strategy 5: Case-insensitive partial matching
         for option in available_options:
-            option_lower = option.strip().lower()
+            option_clean = normalize_text(option)
+            option_lower = option_clean.lower()
             if target_lower in option_lower or option_lower in target_lower:
                 self.logger.debug(f"Found case-insensitive partial match: {option}")
                 return option
@@ -90,6 +108,28 @@ class VillageNameMatcher:
         if best_option:
             self.logger.debug(f"Found word-based match with score {best_score:.2f}: {best_option}")
             return best_option
+
+        # Strategy 7.5: Split by " - " or "-" to handle Name-Code mismatch
+        # E.g Target: "Village - 001", Option: "Village" 
+        # Or Target: "Village", Option: "Village - 001"
+        target_parts = re.split(r'\s*-\s*', target_clean)
+        target_name_only = target_parts[0].strip() if target_parts else target_clean
+        
+        if len(target_name_only) > 1:
+            for option in available_options:
+                option_clean = normalize_text(option)
+                option_parts = re.split(r'\s*-\s*', option_clean)
+                option_name_only = option_parts[0].strip() if option_parts else option_clean
+                
+                # Compare name parts
+                if target_name_only == option_name_only:
+                     self.logger.debug(f"Found match by name part splitting: {option}")
+                     return option
+                
+                if target_name_only.lower() == option_name_only.lower():
+                     self.logger.debug(f"Found match by name part splitting (case-insensitive): {option}")
+                     return option
+
         
         # Strategy 8: Enhanced Gujarati-English transliteration matching
         # Common transliteration mappings

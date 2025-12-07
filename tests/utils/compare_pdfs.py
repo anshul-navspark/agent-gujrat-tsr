@@ -2,7 +2,7 @@ import requests
 import sys
 import os
 import json
-from PyPDF2 import PdfReader
+from pypdf import PdfReader
 import io
 
 def fetch_pdf_from_api(api_url, payload, output_filename):

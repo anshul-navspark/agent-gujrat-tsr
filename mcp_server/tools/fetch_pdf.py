@@ -86,7 +86,7 @@ def execute(
         # Try to get page count
         page_count = None
         try:
-            from PyPDF2 import PdfReader
+            from pypdf import PdfReader
             if pdf_path and os.path.exists(pdf_path):
                 with open(pdf_path, 'rb') as f:
                     reader = PdfReader(f)

@@ -54,3 +54,5 @@ deprecated
 *.log
 
 *.docx
+*.zip
+*.pdf
