@@ -44,6 +44,15 @@ if "api_client" not in st.session_state:
     st.session_state.api_client = None
 
 # Logging setup
+# Configure logging to use IST (UTC+05:30)
+from datetime import datetime, timedelta, timezone
+
+def ist_converter(*args):
+    """Convert time to IST (Indian Standard Time) for logging."""
+    return datetime.now(timezone(timedelta(hours=5, minutes=30))).timetuple()
+
+logging.Formatter.converter = ist_converter
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
