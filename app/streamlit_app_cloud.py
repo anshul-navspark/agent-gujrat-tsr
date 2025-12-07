@@ -200,25 +200,11 @@ with tab1:
             st.error("⚠️ Please fill in all fields")
         else:
             with st.spinner(f"Processing via API... (this may take up to {api_timeout} seconds)"):
-                # Translate inputs
-                try:
-                    with st.status("Translating inputs...", expanded=True) as status:
-                        st.write(f"Translating: {district}, {taluka}, {village}...")
-                        guj_district = translate_to_gujarati(district, context='district')
-                        guj_taluka = translate_to_gujarati(taluka, context='taluka')
-                        guj_village = translate_to_gujarati(village, context='village')
-                        guj_survey = convert_survey_number(survey)
-                        status.update(label="Translation complete!", state="complete", expanded=False)
-                    
-                    st.info(f"Translated: {guj_district}, {guj_taluka}, {guj_village}, {guj_survey}")
-                except Exception as e:
-                    st.error(f"Translation failed: {e}")
-                    st.stop()
-
                 start_time = datetime.now()
+                # Use raw inputs directly - API handles translation if needed
                 result = process_single_record_api(
                     st.session_state.api_client,
-                    guj_district, guj_taluka, guj_village, guj_survey
+                    district, taluka, village, survey
                 )
                 end_time = datetime.now()
                 duration = end_time - start_time
@@ -318,35 +304,14 @@ with tab2:
                     s = row.get(col_survey, "").strip()
                     
                     if all([d, t, v, s]):
-                        # Translate inputs
-                        try:
-                            # We'll do translation inside the thread pool if possible, but for now let's do it here
-                            # or better, just pass raw values and let process_single_record_api handle it?
-                            # No, process_single_record_api is just a wrapper around client.
-                            # Doing translation sequentially here might be slow.
-                            # But for now let's do it here to be safe and simple.
-                            # Actually, for batch, let's use the original values if translation fails?
-                            # Or we can move translation into the worker function?
-                            # Let's keep it simple: translate here.
-                            
-                            guj_d = translate_to_gujarati(d, context='district')
-                            guj_t = translate_to_gujarati(t, context='taluka')
-                            guj_v = translate_to_gujarati(v, context='village')
-                            guj_s = convert_survey_number(s)
-                        except Exception as e:
-                            # If translation fails, use original (might fail on API but at least we try)
-                            guj_d, guj_t, guj_v, guj_s = d, t, v, s
-                            
+                        # Use raw inputs directly (API handles translation if needed)
+                        # This ensures filenames remain in the original language (e.g. English)
                         records_to_process.append({
                             'row_idx': idx,
-                            'district': guj_d,
-                            'taluka': guj_t,
-                            'village': guj_v,
-                            'survey': guj_s,
-                            'original_district': d,
-                            'original_taluka': t,
-                            'original_village': v,
-                            'original_survey': s
+                            'district': d,
+                            'taluka': t,
+                            'village': v,
+                            'survey': s
                         })
                 
                 if not records_to_process:
