@@ -119,6 +119,113 @@ def batch_processing_form(api_client: TSRAPIClient) -> None:
 
         except Exception as e:
             st.error(f"❌ Error reading Excel file: {str(e)}")
+    
+    # Display persistent batch results (outside the file upload block)
+    _display_batch_results(api_client)
+
+
+def _display_batch_results(api_client: TSRAPIClient) -> None:
+    """Display batch results with Download ZIP and Retry buttons."""
+    if "batch_results" not in st.session_state or not st.session_state.batch_results:
+        return
+    
+    results = st.session_state.batch_results
+    summary = st.session_state.get("batch_summary", {})
+    
+    st.divider()
+    st.subheader("📦 Batch Results")
+    
+    # Summary metrics
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("Total", summary.get("total", len(results)))
+    with col2:
+        st.metric("✅ Successful", summary.get("successful", sum(1 for r in results if r.get("success"))))
+    with col3:
+        st.metric("❌ Failed", summary.get("failed", sum(1 for r in results if not r.get("success"))))
+    
+    if "duration" in summary:
+        st.info(f"⏱️ Total time: {_format_duration(summary['duration'])}")
+    
+    # Download ZIP button
+    successful_results = [r for r in results if r.get("success")]
+    if successful_results:
+        from services.file_service import get_file_service
+        from core.models import LandRecordRequest as CoreLandRecordRequest
+        
+        file_service = get_file_service()
+        files_to_zip = {}
+        
+        for result in successful_results:
+            core_req = CoreLandRecordRequest(
+                district=result['district'],
+                taluka=result['taluka'],
+                village=result['village'],
+                survey_number=result['survey']
+            )
+            if result.get('docx_content'):
+                filename = file_service.generate_filename(core_req, file_type='docx', prefix='TSR')
+                files_to_zip[filename] = result['docx_content']
+            if result.get('pdf_content'):
+                filename = file_service.generate_filename(core_req, file_type='pdf', prefix='Original')
+                files_to_zip[filename] = result['pdf_content']
+        
+        if files_to_zip:
+            zip_data = file_service.create_zip(files_to_zip, "tsr_documents.zip")
+            st.download_button(
+                "📥 Download All TSR Documents (ZIP)",
+                data=zip_data,
+                file_name="tsr_documents.zip",
+                mime="application/zip",
+                key="batch_zip_download"
+            )
+    
+    # Retry failed button
+    failed_count = sum(1 for r in results if not r.get("success"))
+    if failed_count > 0:
+        if st.button(f"🔄 Retry {failed_count} Failed Entries", type="primary", key="batch_retry_btn"):
+            _retry_failed_entries(api_client, results)
+
+
+def _retry_failed_entries(api_client: TSRAPIClient, results: List[Dict[str, Any]]) -> None:
+    """Retry all failed entries."""
+    failed_indices = [i for i, r in enumerate(results) if not r.get("success")]
+    if not failed_indices:
+        return
+    
+    progress = st.progress(0)
+    status = st.empty()
+    
+    with ThreadPoolExecutor(max_workers=20) as executor:
+        future_to_idx = {
+            executor.submit(
+                _process_single_record,
+                api_client,
+                results[i]['district'],
+                results[i]['taluka'],
+                results[i]['village'],
+                results[i]['survey'],
+                results[i].get('row_idx', i)
+            ): i for i in failed_indices
+        }
+        
+        for completed, future in enumerate(as_completed(future_to_idx), start=1):
+            idx = future_to_idx[future]
+            try:
+                new_result = future.result()
+                st.session_state.batch_results[idx] = new_result
+            except Exception as e:
+                st.error(f"Error retrying item {idx}: {e}")
+            progress.progress(completed / len(failed_indices))
+            status.text(f"Retried {completed}/{len(failed_indices)} records")
+    
+    # Update summary
+    results = st.session_state.batch_results
+    st.session_state.batch_summary["successful"] = sum(1 for r in results if r.get("success"))
+    st.session_state.batch_summary["failed"] = sum(1 for r in results if not r.get("success"))
+    
+    st.success("Retry complete!")
+    st.rerun()
 
 
 def _process_batch(
@@ -219,31 +326,35 @@ def _process_batch(
     elapsed_time = datetime.now() - start_time
     progress_bar.progress(1.0)
 
-    # Store results in session state
-    st.session_state.processing_results.extend(results)
+    # Store results in session state (for batch section, not results tab)
+    st.session_state.batch_results = results
+    st.session_state.batch_summary = {
+        "total": total_records,
+        "successful": successful,
+        "failed": failed,
+        "duration": elapsed_time
+    }
 
     # Display summary
     st.divider()
     st.subheader("📊 Batch Processing Complete")
 
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("Total Processed", total_records)
     with col2:
         st.metric("✅ Successful", successful)
     with col3:
         st.metric("❌ Failed", failed)
-    with col4:
-        st.metric("⏱️ Duration", _format_duration(elapsed_time))
+    
+    st.info(f"⏱️ Total time: {_format_duration(elapsed_time)}")
 
     if successful == total_records:
         st.success("🎉 All records processed successfully!")
     elif successful > 0:
-        st.warning(f"⚠️ {failed} records failed. Check the Results tab for details and retry options.")
+        st.warning(f"⚠️ {failed} records failed.")
     else:
         st.error("❌ All records failed. Please check your inputs and API status.")
-
-    st.info("💡 Go to the **Results** tab to download documents and retry failed entries.")
 
 
 def _process_single_record(
