@@ -5,12 +5,21 @@ This service provides a clean interface for web scraping operations,
 wrapping the existing AnyRoR scraper with better error handling.
 """
 
+import sys
+from pathlib import Path
+
+# Ensure project root is in sys.path for imports
+_project_root = str(Path(__file__).resolve().parents[1])
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import logging
 from typing import Optional, Dict, Any
 
 from core.interfaces import IScrapingService
 from core.exceptions import ScrapingException
 from anyror import AnyRoRScraper
+
 
 
 class ScrapingService(IScrapingService):

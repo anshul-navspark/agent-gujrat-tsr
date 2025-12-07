@@ -5,18 +5,26 @@ This service consolidates all file-related operations including ZIP creation,
 filename generation, and temporary file management.
 """
 
+import sys
+from pathlib import Path
+
+# Ensure project root is in sys.path for imports
+_project_root = str(Path(__file__).resolve().parents[1])
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import os
 import io
 import zipfile
 import tempfile
 import logging
 from typing import Dict, Optional
-from pathlib import Path
 
 from core.interfaces import IFileService
 from core.models import LandRecordRequest
 from core.exceptions import FileOperationException
 from utils.survey_utils import sanitize_filename
+
 
 
 class FileService(IFileService):

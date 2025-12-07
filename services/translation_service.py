@@ -6,12 +6,21 @@ wrapping the existing JSONTranslationSystem with better error handling
 and dependency injection support.
 """
 
+import sys
+from pathlib import Path
+
+# Ensure project root is in sys.path for imports
+_project_root = str(Path(__file__).resolve().parents[1])
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import logging
 from typing import Optional
 
 from core.interfaces import ITranslationService
 from core.exceptions import TranslationException
 from utils.json_translations import JSONTranslationSystem, TranslationNotFoundError
+
 
 
 class TranslationService(ITranslationService):
