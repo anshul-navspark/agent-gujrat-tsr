@@ -174,24 +174,20 @@ with tab1:
     col1, col2 = st.columns(2)
     with col1:
         district = st.text_input(
-            "District (Gujarati)",
-            placeholder="કચ્છ",
+            "District",
             key="single_district"
         )
         taluka = st.text_input(
-            "Taluka (Gujarati)",
-            placeholder="ભુજ",
+            "Taluka",
             key="single_taluka"
         )
     with col2:
         village = st.text_input(
-            "Village (Gujarati)",
-            placeholder="ત્રંબો - 061",
+            "Village",
             key="single_village"
         )
         survey = st.text_input(
             "Survey Number",
-            placeholder="32",
             key="single_survey"
         )
     
