@@ -92,10 +92,14 @@ class JSONTranslationSystem:
         # Try exact match in cache
         gujarati = self.english_to_gujarati.get(normalized)
         if gujarati:
-            return gujarati
+            # Validate the result matches the expected context
+            if self._validate_context(gujarati, context):
+                return gujarati
+            else:
+                self.logger.warning(f"Cache match '{gujarati}' for '{english_text}' does not match context '{context}'")
         
-        # Try fuzzy match in cache (before AI)
-        self.logger.debug(f"No exact match for '{english_text}', trying fuzzy match")
+        # Try fuzzy match in cache (before AI) - only within the correct context
+        self.logger.debug(f"No exact match for '{english_text}', trying fuzzy match in context '{context}'")
         gujarati = self._fuzzy_match(english_text, context)
         if gujarati:
             self.logger.info(f"Fuzzy matched '{english_text}' → '{gujarati}'")
@@ -116,6 +120,23 @@ class JSONTranslationSystem:
         self.logger.error(error_msg)
         raise TranslationNotFoundError(error_msg)
     
+    def _validate_context(self, gujarati_name: str, context: str) -> bool:
+        """Validate that a Gujarati name exists in the expected context."""
+        if context == 'district':
+            return gujarati_name in self.hierarchy
+        elif context == 'taluka':
+            for district_data in self.hierarchy.values():
+                if gujarati_name in district_data.get('talukas', {}):
+                    return True
+            return False
+        elif context == 'village':
+            for district_data in self.hierarchy.values():
+                for taluka_data in district_data.get('talukas', {}).values():
+                    if gujarati_name in taluka_data.get('villages', {}):
+                        return True
+            return False
+        return False
+    
     def _fuzzy_match(self, english_text: str, context: str, threshold: float = 0.85) -> Optional[str]:
         """
         Try fuzzy string matching against cached English names
@@ -133,6 +154,10 @@ class JSONTranslationSystem:
         normalized_input = english_text.lower().strip()
         
         for eng_key, guj_value in self.english_to_gujarati.items():
+            # Skip if the gujarati value doesn't match the expected context
+            if not self._validate_context(guj_value, context):
+                continue
+            
             # Calculate similarity ratio
             similarity = SequenceMatcher(None, normalized_input, eng_key).ratio()
             

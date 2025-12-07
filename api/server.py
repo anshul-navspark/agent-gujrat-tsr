@@ -156,6 +156,15 @@ def process_record(
             district_guj = translation_service.translate_to_gujarati(request.district, context='district')
             taluka_guj = translation_service.translate_to_gujarati(request.taluka, context='taluka')
             village_guj = translation_service.translate_to_gujarati(request.village, context='village')
+            
+            # Log translations for debugging
+            logger.info(f"Translation results: district '{request.district}' -> '{district_guj}', "
+                       f"taluka '{request.taluka}' -> '{taluka_guj}', "
+                       f"village '{request.village}' -> '{village_guj}'")
+            
+            # Sanity check: district should not contain " - " (village code pattern)
+            if " - " in district_guj:
+                logger.error(f"SUSPICIOUS: District translation '{district_guj}' looks like a village code!")
         except Exception as e:
             logger.warning(f"Translation to Gujarati failed: {e}. Using original inputs.")
             district_guj = request.district
@@ -163,6 +172,7 @@ def process_record(
             village_guj = request.village
 
         # Fetch land record
+        logger.info(f"Calling scraper with: district='{district_guj}', taluka='{taluka_guj}', village='{village_guj}', survey='{request.survey_number}'")
         result = scraping_service.fetch_land_record(
             district=district_guj,
             taluka=taluka_guj,
