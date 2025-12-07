@@ -6,6 +6,14 @@ This service encapsulates the core business logic used by the Streamlit UI,
 providing a clean separation between the presentation layer and business logic.
 """
 
+import sys
+from pathlib import Path
+
+# Ensure project root is in sys.path for imports
+_project_root = str(Path(__file__).resolve().parents[2])
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import logging
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
@@ -14,6 +22,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from core.models import LandRecordRequest, APIResponse
 from core.exceptions import TSRAgentException, ValidationException
 from services.file_service import FileService, get_file_service
+
 
 
 class StreamlitService:

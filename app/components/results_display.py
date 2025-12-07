@@ -3,6 +3,14 @@
 Component for displaying processing results in the Streamlit app.
 """
 
+import sys
+from pathlib import Path
+
+# Ensure project root is in sys.path for imports
+_project_root = str(Path(__file__).resolve().parents[2])
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import streamlit as st
 import pandas as pd
 from datetime import datetime

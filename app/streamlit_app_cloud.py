@@ -9,17 +9,20 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
+# CRITICAL: Add project root to sys.path BEFORE any project imports
+# This must happen before importing any project modules
+_project_root = str(Path(__file__).resolve().parents[1])
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import streamlit as st
 import pandas as pd
-
-# Ensure project root is in sys.path for imports
-sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 # Set up environment variables for translation utils if needed
 if "GEMINI_API_KEY" in st.secrets:
     os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
 
-# Import core services and components
+# Import core services and components (AFTER sys.path is set up)
 from core.models import LandRecordRequest as CoreLandRecordRequest
 from app.api_client import TSRAPIClient, APIResponse
 from services.file_service import get_file_service

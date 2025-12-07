@@ -5,6 +5,14 @@ This module provides a client interface to communicate with the serverless
 API for PDF fetching and TSR generation.
 """
 
+import sys
+from pathlib import Path
+
+# Ensure project root is in sys.path for imports
+_project_root = str(Path(__file__).resolve().parents[1])
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import requests
 import logging
 from typing import Optional, Dict, Any
@@ -14,6 +22,7 @@ import zipfile
 
 # Import from core models
 from core.models import APIResponse
+
 
 
 class TSRAPIClient:

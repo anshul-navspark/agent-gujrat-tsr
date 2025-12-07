@@ -3,10 +3,19 @@
 Component for processing a single land record in the Streamlit app.
 """
 
+import sys
+from pathlib import Path
+
+# Ensure project root is in sys.path for imports
+_project_root = str(Path(__file__).resolve().parents[2])
+if _project_root not in sys.path:
+    sys.path.insert(0, _project_root)
+
 import streamlit as st
 from datetime import datetime
 from core.models import LandRecordRequest as CoreLandRecordRequest
 from app.api_client import TSRAPIClient, APIResponse
+
 
 def single_record_form(api_client: TSRAPIClient) -> None:
     """Render the single record processing UI.
