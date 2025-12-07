@@ -17,6 +17,26 @@ from core.models import LandRecordRequest as CoreLandRecordRequest
 from app.api_client import TSRAPIClient, APIResponse
 
 
+def _format_duration(delta) -> str:
+    """Format a timedelta into a human-readable string."""
+    total_seconds = int(delta.total_seconds())
+    hours = total_seconds // 3600
+    minutes = (total_seconds % 3600) // 60
+    seconds = total_seconds % 60
+
+    parts = []
+    if hours > 0:
+        parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+    if minutes > 0:
+        parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+    if seconds > 0 or not parts:
+        parts.append(f"{seconds} second{'s' if seconds != 1 else ''}")
+    
+    if len(parts) > 1:
+        return ", ".join(parts[:-1]) + f" and {parts[-1]}"
+    return parts[0]
+
+
 def single_record_form(api_client: TSRAPIClient) -> None:
     """Render the single record processing UI.
 
@@ -44,7 +64,7 @@ def single_record_form(api_client: TSRAPIClient) -> None:
             duration = datetime.now() - start_time
             st.session_state.processing_results.append(result)
             if result["success"]:
-                st.success(f"✅ TSR generated successfully in {duration}!\n")
+                st.success(f"✅ TSR generated successfully in {_format_duration(duration)}!")
                 if result.get("docx_content"):
                     st.download_button(
                         "📥 Download TSR (DOCX)",

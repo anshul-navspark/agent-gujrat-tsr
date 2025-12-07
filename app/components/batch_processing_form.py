@@ -349,16 +349,22 @@ def _format_duration(delta) -> str:
         delta: timedelta object.
 
     Returns:
-        Formatted duration string.
+        Formatted duration string like "x hours, y minutes and z seconds".
     """
     total_seconds = int(delta.total_seconds())
     hours = total_seconds // 3600
     minutes = (total_seconds % 3600) // 60
     seconds = total_seconds % 60
 
+    parts = []
     if hours > 0:
-        return f"{hours}h {minutes}m {seconds}s"
-    elif minutes > 0:
-        return f"{minutes}m {seconds}s"
-    else:
-        return f"{seconds}s"
+        parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+    if minutes > 0:
+        parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+    if seconds > 0 or not parts:
+        parts.append(f"{seconds} second{'s' if seconds != 1 else ''}")
+    
+    if len(parts) > 1:
+        return ", ".join(parts[:-1]) + f" and {parts[-1]}"
+    return parts[0]
+
