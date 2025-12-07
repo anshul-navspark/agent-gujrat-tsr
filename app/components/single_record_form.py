@@ -62,25 +62,50 @@ def single_record_form(api_client: TSRAPIClient) -> None:
                 api_client, district, taluka, village, survey
             )
             duration = datetime.now() - start_time
-            st.session_state.processing_results.append(result)
-            if result["success"]:
-                st.success(f"✅ TSR generated successfully in {_format_duration(duration)}!")
+            # Store result in session state for persistence (not in processing_results)
+            st.session_state.single_record_result = {
+                "result": result,
+                "duration": duration,
+                "district": district,
+                "taluka": taluka,
+                "village": village,
+                "survey": survey
+            }
+    
+    # Display result from session state (persists until next Generate TSR)
+    if "single_record_result" in st.session_state:
+        stored = st.session_state.single_record_result
+        result = stored["result"]
+        duration = stored["duration"]
+        district = stored["district"]
+        taluka = stored["taluka"]
+        village = stored["village"]
+        survey = stored["survey"]
+        
+        if result["success"]:
+            st.success(f"✅ TSR generated successfully in {_format_duration(duration)}!")
+            
+            col1, col2 = st.columns(2)
+            with col1:
                 if result.get("docx_content"):
                     st.download_button(
                         "📥 Download TSR (DOCX)",
                         data=result["docx_content"],
                         file_name=f"{district}_{taluka}_{village}_{survey}_TSR.docx",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        key="single_docx_download"
                     )
+            with col2:
                 if result.get("pdf_content"):
                     st.download_button(
-                        "📥 Download Original Record (PDF)",
+                        "📥 Download Original (PDF)",
                         data=result["pdf_content"],
                         file_name=f"{district}_{taluka}_{village}_{survey}_Original.pdf",
                         mime="application/pdf",
+                        key="single_pdf_download"
                     )
-            else:
-                st.error(f"❌ Failed: {result['error']}")
+        else:
+            st.error(f"❌ Failed: {result['error']}")
 
 def process_single_record_api(
     client: TSRAPIClient,
