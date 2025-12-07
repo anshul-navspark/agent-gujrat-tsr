@@ -108,6 +108,7 @@ def results_display(api_client, processing_results):
                     data=result['docx_content'],
                     file_name=f"{result['district']}_{result['taluka']}_{result['village']}_{result['survey']}_TSR.docx",
                     mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    key=f"download_docx_{idx}_{result.get('row_idx', idx)}"
                 )
         if result.get('success') and result.get('pdf_content'):
             with st.expander(f"Original PDF: {result['district']}, {result['taluka']}, {result['village']}, {result['survey']}"):
@@ -116,6 +117,7 @@ def results_display(api_client, processing_results):
                     data=result['pdf_content'],
                     file_name=f"{result['district']}_{result['taluka']}_{result['village']}_{result['survey']}_Original.pdf",
                     mime="application/pdf",
+                    key=f"download_pdf_{idx}_{result.get('row_idx', idx)}"
                 )
 
 

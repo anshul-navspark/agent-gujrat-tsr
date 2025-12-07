@@ -151,7 +151,7 @@ def _process_batch(
         st.warning("No records to process.")
         return
 
-    st.info(f"🔄 Processing {total_records} records with {max_workers} parallel workers...")
+    st.info(f"🔄 Processing {total_records} records")
 
     # Progress tracking
     progress_bar = st.progress(0)
