@@ -17,7 +17,7 @@ import logging
 import traceback
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Any
-from langchain_google_genai import ChatGoogleGenerativeAI
+
 from dotenv import load_dotenv
 
 # Use relative imports to avoid circular import with tsr_generator.__init__
@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 # Model configuration
 MODEL_NAME = os.getenv('GEMINI_MODEL_NAME', 'gemini-2.5-flash')
+
 
 # =============================================================================
 # STATIC PROMPT CONSTANTS - These are separated to visualize token overhead
@@ -62,9 +63,12 @@ Formatting Rules:
 2. Use titles: Thakor, Patel, Kanbi, Choudhary, Rabari, Vadher, Solanki
 3. Measurements: "Acre/Guntha" or "Hectare"
 4. Amounts: "Rs. X/-" or "Rs. X,XXX/-"
-5. Lists: "which are as follows:-" + bullet points
+5. Lists: "which are as follows:-" + bullet points (Use "•" not "*")
 6. Documents: "document no. X dated DD/MM/YYYY"
 7. ALWAYS use "Survey No." instead of "Khata No." or "Account No."
+8. Translate "Paiki" or "p" or "pk" as "Part" in survey numbers (e.g. "150 / Part 1" with spaces around slash)
+9. Translate "bhen" or "ben" suffix as "ben" (e.g. "Shantiben")
+10. OMIT sentences like "This entry was made based on..." or "This inheritance entry was made...". Keep descriptions concise.
 """
 
 # Certification patterns (~50 tokens)
@@ -141,6 +145,8 @@ OUTPUT FORMAT - Return ONLY valid JSON with this exact structure:
 EXTRACTION INSTRUCTIONS:
 
 1. LAND DETAILS: Extract from the "Land Details" section. Translate ALL Gujarati to English.
+   - For "nature_of_land", include BOTH tenure (Old/New) and use (Agricultural/Non-Agri), separated by comma (e.g. "Old Tenure, Agricultural Use").
+   - For "survey_number", translate "Paiki" to "Part" and use spaces (e.g. "150 / Part 1").
 
 2. ENTRY NUMBERS: Extract from "Entry Details" table. Output as array of number strings.
    - Remove asterisks (*) and trailing Gujarati text
@@ -220,6 +226,7 @@ def extract_all_unified(pdf_text: str) -> UnifiedExtractionResult:
 
         # Initialize LLM
         load_dotenv()
+        from langchain_google_genai import ChatGoogleGenerativeAI
         llm = ChatGoogleGenerativeAI(
             model=MODEL_NAME,
             google_api_key=os.getenv('GEMINI_API_KEY', ''),
@@ -252,7 +259,8 @@ def extract_all_unified(pdf_text: str) -> UnifiedExtractionResult:
             result.mutation_entries = parsed_data.get('mutation_entries', [])
 
             # Ensure all pre-detected entry numbers are included
-            _ensure_all_entries_included(result, entry_numbers_hint)
+            # NO: Do not force include hints as they might be years/survey numbers (false positives)
+            # _ensure_all_entries_included(result, entry_numbers_hint)
 
             result.success = True
             logger.info(f"Unified extraction successful: {len(result.entry_numbers)} entries, ~{result.input_tokens + result.output_tokens} total tokens")
@@ -308,7 +316,14 @@ def _identify_entry_numbers_fast(pdf_text: str) -> List[str]:
             # Filter out obvious non-entries
             context = section[max(0, match.start()-30):min(len(section), match.end()+30)].lower()
             if not any(kw in context for kw in ['khata', 'survey', 'form', 'vf', 'page', 'sr']):
-                entry_numbers.add(num)
+                # Filter out years (1900-2099) unless we are very sure
+                try:
+                    val = int(num)
+                    if not (1900 <= val <= 2099):
+                        entry_numbers.add(num)
+                except ValueError:
+                    # Should not happen due to regex \d+
+                    pass
 
         # Pattern: "Entry No. X" explicit mentions
         for match in re.finditer(r'Entry\s+(?:No\.?|Number)\s*[:#]?\s*(\d{1,4})', section, re.IGNORECASE):
@@ -407,26 +422,7 @@ def _normalize_land_details(land_details: Dict[str, str]):
         land_details['old_survey_number'] = 'Not Available'
 
 
-def _ensure_all_entries_included(result: UnifiedExtractionResult, hints: List[str]):
-    """Ensure all hinted entry numbers are in the result."""
-    if not hints:
-        return
 
-    extracted_numbers = set(result.entry_numbers)
-    for entry in result.mutation_entries:
-        extracted_numbers.add(str(entry.get('entry_number', '')))
-
-    # Add missing entries as placeholders
-    for num in hints:
-        if num not in extracted_numbers:
-            result.entry_numbers.append(num)
-            result.mutation_entries.append({
-                'entry_number': num,
-                'date': '',
-                'type': '',
-                'description': '',
-                'certification': ''
-            })
 
 
 # =============================================================================

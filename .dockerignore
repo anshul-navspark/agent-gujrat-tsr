@@ -1,0 +1,14 @@
+.git
+.gitignore
+.cursorignore
+venv
+__pycache__
+output
+*.pyc
+.env
+.DS_Store
+tmp
+test1_datasets_*.jsonl
+*.docx
+*.pdf
+.gemini

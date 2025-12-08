@@ -17,6 +17,8 @@ RUN apt-get update && apt-get install -y \
 ENV PYTHONUNBUFFERED=1
 ENV CHROME_BIN=/usr/bin/chromium
 ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
+ENV USE_OPTIMIZED_EXTRACTION=true
+ENV GEMINI_MODEL_NAME=gemini-2.5-flash
 
 WORKDIR /app
 

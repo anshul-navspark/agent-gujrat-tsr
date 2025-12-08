@@ -59,7 +59,7 @@ logging.basicConfig(
 )
 
 # Configuration from secrets
-api_url = st.secrets.get("API_URL", "https://gujrat-tsr-agent-5vu5tfjlga-el.a.run.app")
+api_url = st.secrets.get("API_URL", "https://agent-gujrat-tsr-642363716512.us-central1.run.app")
 api_timeout = int(st.secrets.get("API_TIMEOUT", 1200))
 max_retries = int(st.secrets.get("API_MAX_RETRIES", 2))
 max_workers = int(st.secrets.get("MAX_WORKERS", 20))
