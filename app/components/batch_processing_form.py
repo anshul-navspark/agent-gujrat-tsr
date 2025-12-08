@@ -197,7 +197,10 @@ def _display_batch_results(api_client: TSRAPIClient) -> None:
                 files_to_zip[filename] = result['pdf_content']
         
         if files_to_zip:
-            zip_data = file_service.create_zip(files_to_zip, "tsr_documents.zip")
+            if "batch_zip_data" not in st.session_state:
+                st.session_state.batch_zip_data = file_service.create_zip(files_to_zip, "tsr_documents.zip")
+            
+            zip_data = st.session_state.batch_zip_data
             # Use summary timestamp to make key unique per batch run
             batch_id = st.session_state.get("batch_summary", {}).get("total", 0)
             st.download_button(
@@ -253,6 +256,11 @@ def _retry_failed_entries(api_client: TSRAPIClient, results: List[Dict[str, Any]
     st.session_state.batch_summary["failed"] = sum(1 for r in results if not r.get("success"))
     
     st.success("Retry complete!")
+    
+    # Invalidate zip cache since results changed
+    if "batch_zip_data" in st.session_state:
+        del st.session_state.batch_zip_data
+        
     st.rerun()
 
 
@@ -356,6 +364,10 @@ def _process_batch(
 
     # Store results in session state (for batch section, not results tab)
     st.session_state.batch_results = results
+    
+    # Clear any previous zip cache
+    if "batch_zip_data" in st.session_state:
+        del st.session_state.batch_zip_data
     st.session_state.batch_summary = {
         "total": total_records,
         "successful": successful,
