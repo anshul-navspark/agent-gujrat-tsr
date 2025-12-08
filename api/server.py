@@ -18,7 +18,8 @@ from core.config import get_config
 from services.file_service import get_file_service
 from services.translation_service import get_translation_service
 from services.scraping_service import get_scraping_service
-from tsr_generator.api.tsr_generator import generate_tsr_from_pdf
+# Use package-level import to respect USE_OPTIMIZED_EXTRACTION env var (50-70% token savings)
+from tsr_generator import generate_tsr_from_pdf
 
 
 # Import dependencies and middleware

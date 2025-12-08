@@ -6,6 +6,7 @@ with AI assistance to find matches for unknown spelling variations.
 """
 import json
 import logging
+from functools import lru_cache
 from typing import Optional, Dict, List, Tuple
 from langchain_google_genai import ChatGoogleGenerativeAI
 import os
@@ -26,8 +27,12 @@ class JSONTranslationSystem:
     def __init__(self, json_path='anyror_hierarchy.json'):
         self.json_path = json_path
         self.hierarchy = self._load_json()
+        # Use a cheaper/faster model for simple translation matching tasks
+        # Falls back to the main model if not set
+        translation_model = os.getenv('GEMINI_TRANSLATION_MODEL', 
+                                       os.getenv('GEMINI_MODEL_NAME', 'gemini-2.0-flash-lite'))
         self.llm = ChatGoogleGenerativeAI(
-            model=os.getenv('GEMINI_MODEL_NAME', 'gemini-2.5-flash'),
+            model=translation_model,
             google_api_key=os.getenv('GEMINI_API_KEY'),
             temperature=0.0  # Deterministic for matching
         )
@@ -88,12 +93,21 @@ class JSONTranslationSystem:
             return english_text
         
         normalized = english_text.lower().strip()
+        cache_key = (normalized, context)
+        
+        # Check translation result cache first (avoids repeated fuzzy/AI lookups)
+        if not hasattr(self, '_translation_cache'):
+            self._translation_cache = {}
+        
+        if cache_key in self._translation_cache:
+            return self._translation_cache[cache_key]
         
         # Try exact match in cache
         gujarati = self.english_to_gujarati.get(normalized)
         if gujarati:
             # Validate the result matches the expected context
             if self._validate_context(gujarati, context):
+                self._translation_cache[cache_key] = gujarati
                 return gujarati
             else:
                 self.logger.warning(f"Cache match '{gujarati}' for '{english_text}' does not match context '{context}'")
@@ -104,6 +118,7 @@ class JSONTranslationSystem:
         if gujarati:
             self.logger.info(f"Fuzzy matched '{english_text}' → '{gujarati}'")
             self._add_spelling_variation(english_text, gujarati, context)
+            self._translation_cache[cache_key] = gujarati
             return gujarati
         
         # Try AI-assisted dictionary search
@@ -113,6 +128,7 @@ class JSONTranslationSystem:
         if gujarati:
             # Add this spelling variation to JSON
             self._add_spelling_variation(english_text, gujarati, context)
+            self._translation_cache[cache_key] = gujarati
             return gujarati
         
         # No match found - Raise exception instead of returning original
