@@ -26,7 +26,8 @@ from tsr_generator import generate_tsr_from_pdf
 from api.dependencies import (
     get_file_service_dependency,
     get_translation_service_dependency, 
-    get_scraping_service_dependency
+    get_scraping_service_dependency,
+    get_cache_service_dependency
 )
 from api.middleware import TimingMiddleware
 
@@ -127,10 +128,14 @@ def process_record(
     # For now we use direct retrieval inside loop or here. 
     # With Depends, it's created per request which is good.
     # Note: scraping_service depends on being closed. 
-    scraping_service = Depends(get_scraping_service_dependency)
+    scraping_service = Depends(get_scraping_service_dependency),
+    cache_service = Depends(get_cache_service_dependency)
 ):
     """
     Scrape land record PDF from AnyRoR and generate TSR DOCX.
+    
+    Implements caching: if a record was fetched within the last week,
+    returns the cached version instead of re-fetching.
     """
     logger.info(f"Processing record: {request}")
     
@@ -159,6 +164,48 @@ def process_record(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
+    # ===== CACHE CHECK =====
+    # Check if this record is already cached (within the last week)
+    if cache_service is not None:
+        try:
+            cached_result = cache_service.get_cached_record(core_request)
+            if cached_result is not None:
+                docx_content, pdf_content, cache_metadata = cached_result
+                logger.info(
+                    f"Cache hit for {request.district}/{request.taluka}/{request.village}/{request.survey_number} "
+                    f"- cached on {cache_metadata.get('timestamp', 'unknown')}"
+                )
+                
+                # Generate filenames using file service
+                docx_filename = file_service.generate_filename(core_request, file_type='docx', prefix='TSR')
+                pdf_filename = file_service.generate_filename(core_request, file_type='pdf', prefix='Original')
+                zip_filename = file_service.generate_filename(core_request, file_type='zip', prefix='TSR_Package')
+                
+                # Create ZIP file using file service
+                files_to_zip = {docx_filename: docx_content}
+                if pdf_content:
+                    files_to_zip[pdf_filename] = pdf_content
+                
+                zip_content = file_service.create_zip(files_to_zip, zip_filename)
+                
+                # Prepare filename for header
+                encoded_filename = quote(zip_filename)
+                zip_filename_ascii = f"TSR_Package_{os.urandom(4).hex()}.zip"
+                
+                return Response(
+                    content=zip_content,
+                    media_type='application/zip',
+                    headers={
+                        'Content-Disposition': f"attachment; filename=\"{zip_filename_ascii}\"; filename*=UTF-8''{encoded_filename}",
+                        'X-Cache-Status': 'HIT',
+                        'X-Cache-Timestamp': cache_metadata.get('timestamp', '')
+                    }
+                )
+        except Exception as e:
+            # Log cache error but continue with normal processing
+            logger.warning(f"Cache check failed, proceeding without cache: {e}")
+    
+    # ===== CACHE MISS - PROCEED WITH SCRAPING =====
     temp_dir = tempfile.gettempdir()
     unique_id = os.urandom(8).hex()
     pdf_path = os.path.join(temp_dir, f"scraped_{unique_id}.pdf")
@@ -263,6 +310,22 @@ def process_record(
         file_service.cleanup_temp_file(pdf_path)
         file_service.cleanup_temp_file(docx_path)
         
+        # ===== CACHE STORE =====
+        # Store the result in cache for future requests
+        if cache_service is not None:
+            try:
+                cache_service.cache_record(
+                    request=core_request,
+                    docx_content=docx_content,
+                    pdf_content=pdf_content
+                )
+                logger.info(
+                    f"Cached record for {request.district}/{request.taluka}/{request.village}/{request.survey_number}"
+                )
+            except Exception as e:
+                # Log cache error but don't fail the request
+                logger.warning(f"Failed to cache record: {e}")
+        
         # Generate filenames using file service
         docx_filename = file_service.generate_filename(core_request, file_type='docx', prefix='TSR')
         pdf_filename = file_service.generate_filename(core_request, file_type='pdf', prefix='Original')
@@ -285,7 +348,8 @@ def process_record(
             content=zip_content,
             media_type='application/zip',
             headers={
-                'Content-Disposition': f"attachment; filename=\"{zip_filename_ascii}\"; filename*=UTF-8''{encoded_filename}"
+                'Content-Disposition': f"attachment; filename=\"{zip_filename_ascii}\"; filename*=UTF-8''{encoded_filename}",
+                'X-Cache-Status': 'MISS'
             }
         )
         
@@ -322,6 +386,7 @@ def debug_environment():
             "GEMINI_MODEL_NAME": os.getenv("GEMINI_MODEL_NAME", "default: gemini-2.5-flash"),
             "CHROME_BIN": os.getenv("CHROME_BIN", "NOT SET"),
             "CHROMEDRIVER_PATH": os.getenv("CHROMEDRIVER_PATH", "NOT SET"),
+            "GCS_CACHE_BUCKET": os.getenv("GCS_CACHE_BUCKET", "NOT SET"),
         },
         "chrome_available": False,
         "chromedriver_available": False
@@ -354,3 +419,31 @@ def debug_environment():
             break
     
     return debug_info
+
+
+@app.get("/cache-stats")
+def cache_stats(cache_service = Depends(get_cache_service_dependency)):
+    """
+    Get statistics about the record cache.
+    
+    Returns cache statistics including number of cached records,
+    total size, and TTL configuration.
+    """
+    if cache_service is None:
+        return {
+            "status": "disabled",
+            "message": "Cache not configured. Set GCS_CACHE_BUCKET environment variable to enable."
+        }
+    
+    try:
+        stats = cache_service.get_cache_stats()
+        return {
+            "status": "enabled",
+            **stats
+        }
+    except Exception as e:
+        logger.error(f"Failed to get cache stats: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
