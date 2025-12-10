@@ -18,8 +18,17 @@ from core.config import get_config
 from services.file_service import get_file_service
 from services.translation_service import get_translation_service
 from services.scraping_service import get_scraping_service
-# Use package-level import to respect USE_OPTIMIZED_EXTRACTION env var (50-70% token savings)
-from tsr_generator import generate_tsr_from_pdf
+# Lazy import for TSR generator (heavy langchain dependencies)
+# This significantly improves startup time
+_tsr_generator = None
+
+def get_tsr_generator():
+    """Lazy load TSR generator to improve startup time."""
+    global _tsr_generator
+    if _tsr_generator is None:
+        from tsr_generator import generate_tsr_from_pdf
+        _tsr_generator = generate_tsr_from_pdf
+    return _tsr_generator
 
 
 # Import dependencies and middleware
@@ -38,8 +47,16 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Gujarat TSR Agent API")
 app.add_middleware(TimingMiddleware)
 
-# Initialize configuration
-config = get_config()
+# Lazy configuration loading - improves startup time
+# Config is loaded on first request, not at module import
+_config = None
+
+def get_lazy_config():
+    """Lazy load configuration on first use."""
+    global _config
+    if _config is None:
+        _config = get_config()
+    return _config
 
 
 class LandRecordRequest(BaseModel):
@@ -77,8 +94,9 @@ def generate_tsr(
         output_filename = f"TSR_{os.path.splitext(file.filename)[0]}.docx"
         output_path = os.path.join(temp_dir, f"output_{os.urandom(8).hex()}.docx")
 
-        # Generate TSR
-        result = generate_tsr_from_pdf(input_path, output_path, logger)
+        # Generate TSR (lazy load to improve startup time)
+        generate_tsr = get_tsr_generator()
+        result = generate_tsr(input_path, output_path, logger)
 
         if not result['success']:
             logger.error(f"Generation failed: {result.get('error')}")
@@ -164,11 +182,48 @@ def process_record(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
+    # ===== TRANSLATE FIRST (needed for cache key) =====
+    # Translate to Gujarati early so we can use it for cache lookup
+    # This ensures different English spellings that map to same Gujarati location
+    # will share the same cache entry (e.g., "Kutch" and "Kuchh" -> "કચ્છ")
+    try:
+        district_guj = translation_service.translate_to_gujarati(request.district, context='district')
+    except Exception as e:
+        logger.warning(f"Invalid district '{request.district}': {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid district: '{request.district}' is not in our database")
+    
+    try:
+        taluka_guj = translation_service.translate_to_gujarati(request.taluka, context='taluka')
+    except Exception as e:
+        logger.warning(f"Invalid taluka '{request.taluka}': {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid taluka: '{request.taluka}' is not in our database")
+    
+    try:
+        village_guj = translation_service.translate_to_gujarati(request.village, context='village')
+    except Exception as e:
+        logger.warning(f"Invalid village '{request.village}': {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid village: '{request.village}' is not in our database")
+    
+    # Log translations for debugging
+    logger.info(f"Translation results: district '{request.district}' -> '{district_guj}', "
+               f"taluka '{request.taluka}' -> '{taluka_guj}', "
+               f"village '{request.village}' -> '{village_guj}'")
+    
     # ===== CACHE CHECK =====
-    # Check if this record is already cached (within the last week)
+    # Check cache using translated (Gujarati) values for the cache key
+    # This ensures cache hits work correctly regardless of English spelling variations
     if cache_service is not None:
         try:
-            cached_result = cache_service.get_cached_record(core_request)
+            # Generate cache key from translated Gujarati values
+            cache_key = cache_service.generate_cache_key_from_translated(
+                translated_district=district_guj,
+                translated_taluka=taluka_guj,
+                translated_village=village_guj,
+                survey_number=request.survey_number
+            )
+            
+            # Check cache using the pre-computed key
+            cached_result = cache_service.get_cached_record_by_key(cache_key)
             if cached_result is not None:
                 docx_content, pdf_content, cache_metadata = cached_result
                 logger.info(
@@ -213,35 +268,11 @@ def process_record(
     
     # scraping_service is already initialized via Depends
     try:
-        # Translate to Gujarati for scraper - reject if translation fails (invalid entry)
-        try:
-            district_guj = translation_service.translate_to_gujarati(request.district, context='district')
-        except Exception as e:
-            logger.warning(f"Invalid district '{request.district}': {e}")
-            raise HTTPException(status_code=400, detail=f"Invalid district: '{request.district}' is not in our database")
-        
-        try:
-            taluka_guj = translation_service.translate_to_gujarati(request.taluka, context='taluka')
-        except Exception as e:
-            logger.warning(f"Invalid taluka '{request.taluka}': {e}")
-            raise HTTPException(status_code=400, detail=f"Invalid taluka: '{request.taluka}' is not in our database")
-        
-        try:
-            village_guj = translation_service.translate_to_gujarati(request.village, context='village')
-        except Exception as e:
-            logger.warning(f"Invalid village '{request.village}': {e}")
-            raise HTTPException(status_code=400, detail=f"Invalid village: '{request.village}' is not in our database")
-        
-        # Log translations for debugging
-        logger.info(f"Translation results: district '{request.district}' -> '{district_guj}', "
-                   f"taluka '{request.taluka}' -> '{taluka_guj}', "
-                   f"village '{request.village}' -> '{village_guj}'")
-        
         # Sanity check: district should not contain " - " (village code pattern)
         if " - " in district_guj:
             logger.error(f"SUSPICIOUS: District translation '{district_guj}' looks like a village code!")
 
-        # Fetch land record
+        # Fetch land record (using already-translated Gujarati values)
         logger.info(f"Calling scraper with: district='{district_guj}', taluka='{taluka_guj}', village='{village_guj}', survey='{request.survey_number}'")
         result = scraping_service.fetch_land_record(
             district=district_guj,
@@ -279,9 +310,10 @@ def process_record(
         else:
             logger.error(f"PDF file does not exist at {pdf_path}")
         
-        # Generate TSR
+        # Generate TSR (lazy load to improve startup time)
         logger.info(f"Starting TSR generation from PDF: {pdf_path}")
-        tsr_result = generate_tsr_from_pdf(pdf_path, docx_path, logger)
+        generate_tsr = get_tsr_generator()
+        tsr_result = generate_tsr(pdf_path, docx_path, logger)
         
         logger.info(f"TSR generation result: success={tsr_result.get('success')}, error={tsr_result.get('error')}")
         
@@ -311,11 +343,16 @@ def process_record(
         file_service.cleanup_temp_file(docx_path)
         
         # ===== CACHE STORE =====
-        # Store the result in cache for future requests
+        # Store the result in cache using translated values for the key
         if cache_service is not None:
             try:
-                cache_service.cache_record(
-                    request=core_request,
+                # Use same cache key generation as lookup (based on translated Gujarati values)
+                cache_service.cache_record_by_key(
+                    cache_key=cache_key,  # Use the same key we generated for lookup
+                    original_request=core_request,
+                    translated_district=district_guj,
+                    translated_taluka=taluka_guj,
+                    translated_village=village_guj,
                     docx_content=docx_content,
                     pdf_content=pdf_content
                 )
