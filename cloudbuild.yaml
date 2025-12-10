@@ -27,7 +27,7 @@ steps:
       - '--concurrency=8'
       - '--min-instances=0'
       - '--max-instances=5'
-      - '--set-env-vars=USE_OPTIMIZED_EXTRACTION=true,GEMINI_MODEL_NAME=gemini-2.5-flash'
+      - '--set-env-vars=USE_OPTIMIZED_EXTRACTION=true,GEMINI_MODEL_NAME=gemini-2.5-flash,GCS_CACHE_BUCKET=$PROJECT_ID-tsr-cache'
       - '--set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest'
       - '--allow-unauthenticated'
 

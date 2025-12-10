@@ -322,13 +322,15 @@ def _process_batch(
         # Submit all tasks
         future_to_row = {}
         for idx, row in df_to_process.iterrows():
+            # Convert survey number to proper format before processing
+            survey_number = convert_survey_number(str(row[survey_col]).strip())
             future = executor.submit(
                 _process_single_record,
                 api_client,
                 str(row[district_col]).strip(),
                 str(row[taluka_col]).strip(),
                 str(row[village_col]).strip(),
-                str(row[survey_col]).strip(),
+                survey_number,
                 idx + start_row  # Original row index
             )
             future_to_row[future] = idx
