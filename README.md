@@ -12,6 +12,7 @@ A comprehensive automation solution for fetching land records from the Gujarat A
 - **Multi-Language Support**: English to Gujarati translation for form inputs
 - **Cloud Deployment**: Deployable on Google Cloud Run for serverless operation
 - **Streamlit UI**: User-friendly web interface for record processing
+- **GCS Caching**: Cache fetched records in Google Cloud Storage to avoid re-fetching for 1 week
 
 ---
 
@@ -29,6 +30,7 @@ gujrat_tsr_agent/
 │   ├── translation_service.py # English-Gujarati translation
 │   ├── file_service.py        # File operations (ZIP, temp files)
 │   ├── scraping_service.py    # Web scraping abstraction
+│   ├── cache_service.py       # GCS caching for fetched records
 │   └── processing_service.py  # TSR processing coordination
 │
 ├── app/                       # Streamlit application
@@ -109,7 +111,9 @@ streamlit run app/streamlit_app_cloud.py
 |----------|--------|-------------|
 | `/health` | GET | Health check |
 | `/generate-tsr` | POST | Generate TSR from uploaded PDF |
-| `/process-record` | POST | Scrape and generate TSR from record details |
+| `/process-record` | POST | Scrape and generate TSR from record details (with caching) |
+| `/cache-stats` | GET | Get cache statistics |
+| `/debug-env` | GET | Debug environment configuration |
 
 **Example: Generate TSR from PDF**
 ```bash
@@ -187,6 +191,75 @@ GEMINI_MODEL_NAME=gemini-2.5-flash
 
 ---
 
+## 📦 GCS Caching
+
+The application supports caching fetched records in Google Cloud Storage to avoid unnecessary re-fetching from the AnyRoR portal.
+
+### How It Works
+
+1. When a record is requested, the API first checks if it exists in the cache
+2. If cached and not expired (within the last 7 days), the cached version is returned
+3. If not cached or expired, the record is fetched from AnyRoR and stored in the cache
+4. Response headers indicate cache status: `X-Cache-Status: HIT` or `X-Cache-Status: MISS`
+
+### Configuration
+
+Set the following environment variable to enable caching:
+
+```bash
+# Required: GCS bucket name for storing cache
+GCS_CACHE_BUCKET=your-gcs-bucket-name
+```
+
+### Cache TTL
+
+By default, cached records expire after **7 days**. After expiration, the record will be re-fetched and re-cached.
+
+### Cache Structure in GCS
+
+```
+your-bucket/
+├── cache/
+│   ├── {cache_key_1}/
+│   │   ├── metadata.json    # Timestamp, request info
+│   │   ├── original.pdf     # Scraped PDF
+│   │   └── tsr.docx         # Generated TSR
+│   ├── {cache_key_2}/
+│   │   └── ...
+```
+
+### Check Cache Stats
+
+```bash
+curl http://localhost:8080/cache-stats
+```
+
+Returns:
+```json
+{
+  "status": "enabled",
+  "total_cached_records": 42,
+  "total_files": 126,
+  "total_size_mb": 15.6,
+  "ttl_days": 7
+}
+```
+
+### Cloud Run Deployment with Caching
+
+```bash
+gcloud run deploy agent-gujrat-tsr \
+  --image gcr.io/YOUR_PROJECT_ID/agent-gujrat-tsr \
+  --platform managed \
+  --region asia-south1 \
+  --allow-unauthenticated \
+  --set-env-vars GEMINI_API_KEY=your_key,GCS_CACHE_BUCKET=your-cache-bucket
+```
+
+Make sure the Cloud Run service account has access to the GCS bucket.
+
+---
+
 ## 📝 Configuration
 
 | Variable | Description | Default |
@@ -196,6 +269,7 @@ GEMINI_MODEL_NAME=gemini-2.5-flash
 | `GEMINI_MODEL_NAME` | LLM model to use | `gemini-2.5-flash` |
 | `HEADLESS` | Run browser in headless mode | `true` |
 | `MAX_WORKERS` | Parallel processing workers | `20` |
+| `GCS_CACHE_BUCKET` | GCS bucket for caching | Optional |
 
 ---
 
@@ -224,7 +298,8 @@ The application follows a layered architecture with SOLID principles:
                               ▼
 ┌───────────────────────────────────────────────────────────┐
 │                     SERVICE LAYER                         │
-│  TranslationService │ FileService │ ScrapingService       │
+│  TranslationService │ FileService │ ScrapingService │     │
+│                     CacheService (GCS)                    │
 └───────────────────────────────────────────────────────────┘
                               │
                               ▼
