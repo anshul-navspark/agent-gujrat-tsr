@@ -70,7 +70,7 @@ if st.session_state.api_client is None or st.session_state.api_client.api_url !=
         api_url=api_url, timeout=api_timeout, max_retries=max_retries
     )
 
-# Initialize file service (global singleton)
+# Initialize file service (global singleton)s
 file_service = get_file_service()
 
 # Helper to format duration
