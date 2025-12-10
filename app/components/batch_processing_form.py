@@ -23,11 +23,12 @@ from utils.ai_column_detector import AIColumnDetector, auto_detect_columns
 
 
 
-def batch_processing_form(api_client: TSRAPIClient) -> None:
+def batch_processing_form(api_client: TSRAPIClient, max_workers: int = 20) -> None:
     """Render the batch processing UI for Excel file uploads.
 
     Args:
         api_client: Initialized TSRAPIClient instance for making API calls.
+        max_workers: Number of parallel workers for processing. Defaults to 20.
     """
     st.subheader("📊 Batch Processing (Excel)")
     st.caption("Upload an Excel file with land records to process in batch.")
@@ -140,7 +141,7 @@ def batch_processing_form(api_client: TSRAPIClient) -> None:
                     taluka_col=taluka_col,
                     village_col=village_col,
                     survey_col=survey_col,
-                    max_workers=20,
+                    max_workers=max_workers,
                     start_row=1
                 )
 
@@ -148,10 +149,10 @@ def batch_processing_form(api_client: TSRAPIClient) -> None:
             st.error(f"❌ Error reading Excel file: {str(e)}")
     
     # Display persistent batch results (outside the file upload block)
-    _display_batch_results(api_client)
+    _display_batch_results(api_client, max_workers)
 
 
-def _display_batch_results(api_client: TSRAPIClient) -> None:
+def _display_batch_results(api_client: TSRAPIClient, max_workers: int = 20) -> None:
     """Display batch results with Download ZIP and Retry buttons."""
     if "batch_results" not in st.session_state or not st.session_state.batch_results:
         return
@@ -216,10 +217,10 @@ def _display_batch_results(api_client: TSRAPIClient) -> None:
     failed_count = sum(1 for r in results if not r.get("success"))
     if failed_count > 0:
         if st.button(f"🔄 Retry {failed_count} Failed Entries", type="primary", key=f"batch_retry_btn_{failed_count}"):
-            _retry_failed_entries(api_client, results)
+            _retry_failed_entries(api_client, results, max_workers)
 
 
-def _retry_failed_entries(api_client: TSRAPIClient, results: List[Dict[str, Any]]) -> None:
+def _retry_failed_entries(api_client: TSRAPIClient, results: List[Dict[str, Any]], max_workers: int = 20) -> None:
     """Retry all failed entries."""
     failed_indices = [i for i, r in enumerate(results) if not r.get("success")]
     if not failed_indices:
@@ -228,7 +229,7 @@ def _retry_failed_entries(api_client: TSRAPIClient, results: List[Dict[str, Any]
     progress = st.progress(0)
     status = st.empty()
     
-    with ThreadPoolExecutor(max_workers=20) as executor:
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_idx = {
             executor.submit(
                 _process_single_record,

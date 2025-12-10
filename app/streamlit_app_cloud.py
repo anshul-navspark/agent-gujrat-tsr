@@ -97,7 +97,7 @@ with tab1:
     single_record_form(st.session_state.api_client)
 
 with tab2:
-    batch_processing_form(st.session_state.api_client)
+    batch_processing_form(st.session_state.api_client, max_workers=max_workers)
 
 with tab3:
     results_display(st.session_state.api_client, st.session_state.processing_results)
