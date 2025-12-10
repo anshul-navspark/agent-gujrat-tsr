@@ -47,7 +47,8 @@ def batch_processing_form(api_client: TSRAPIClient) -> None:
 
             # Display preview
             with st.expander("📋 Preview Data", expanded=True):
-                st.dataframe(df.head(10), use_container_width=True, hide_index=True)
+                # Convert to string to avoid PyArrow serialization errors with mixed types (e.g. Survey Nos)
+                st.dataframe(df.head(10).astype(str), width="stretch", hide_index=True)
 
             # AI-based column detection
             st.divider()
