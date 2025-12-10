@@ -15,6 +15,7 @@ import streamlit as st
 from datetime import datetime
 from core.models import LandRecordRequest as CoreLandRecordRequest
 from app.api_client import TSRAPIClient, APIResponse
+from utils.survey_utils import convert_survey_number
 
 
 def _format_duration(delta) -> str:
@@ -58,8 +59,10 @@ def single_record_form(api_client: TSRAPIClient) -> None:
             return
         with st.spinner("Processing via API..."):
             start_time = datetime.now()
+            # Normalize survey number
+            normalized_survey = convert_survey_number(survey)
             result = process_single_record_api(
-                api_client, district, taluka, village, survey
+                api_client, district, taluka, village, normalized_survey
             )
             duration = datetime.now() - start_time
             # Store result in session state for persistence (not in processing_results)

@@ -20,6 +20,7 @@ from typing import List, Dict, Any, Optional
 from core.models import LandRecordRequest as CoreLandRecordRequest
 from app.api_client import TSRAPIClient, APIResponse
 from utils.ai_column_detector import AIColumnDetector, auto_detect_columns
+from utils.survey_utils import convert_survey_number
 
 
 
@@ -352,7 +353,7 @@ def _process_batch(
                     "district": str(row[district_col]).strip(),
                     "taluka": str(row[taluka_col]).strip(),
                     "village": str(row[village_col]).strip(),
-                    "survey": str(row[survey_col]).strip(),
+                    "survey": convert_survey_number(row[survey_col]),
                     "success": False,
                     "docx_content": None,
                     "pdf_content": None,
