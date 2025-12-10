@@ -100,6 +100,201 @@ class CacheService:
         self.logger.debug(f"Generated cache key {cache_key} for {key_string}")
         return cache_key
     
+    def generate_cache_key_from_translated(
+        self,
+        translated_district: str,
+        translated_taluka: str,
+        translated_village: str,
+        survey_number: str
+    ) -> str:
+        """
+        Generate a cache key from translated Gujarati values.
+        
+        This ensures all English spelling variations that translate to the
+        same Gujarati location will share the same cache entry.
+        
+        For example:
+        - "Kutch" and "Kuchh" both translate to "કચ્છ" -> same cache key
+        - "Trambo" and "Trambau" both translate to "ત્રંબો - 033" -> same cache key
+        
+        Args:
+            translated_district: Gujarati district name
+            translated_taluka: Gujarati taluka name  
+            translated_village: Gujarati village name
+            survey_number: Survey number (unchanged)
+            
+        Returns:
+            Cache key as a hex string
+        """
+        # Normalize inputs using translated Gujarati values
+        components = [
+            translated_district.strip().lower(),
+            translated_taluka.strip().lower(),
+            translated_village.strip().lower(),
+            survey_number.strip().lower()
+        ]
+        
+        # Create hash
+        key_string = "|".join(components)
+        cache_key = hashlib.sha256(key_string.encode()).hexdigest()[:32]
+        
+        self.logger.debug(f"Generated cache key {cache_key} from translated: {key_string}")
+        return cache_key
+    
+    def get_cached_record_by_key(
+        self,
+        cache_key: str
+    ) -> Optional[Tuple[bytes, Optional[bytes], Dict[str, Any]]]:
+        """
+        Retrieve a cached record by its pre-computed cache key.
+        
+        This is used when the cache key has already been computed using
+        translated values.
+        
+        Args:
+            cache_key: Pre-computed cache key
+            
+        Returns:
+            Tuple of (docx_content, pdf_content, metadata) if cache hit,
+            None if cache miss or expired
+        """
+        try:
+            # Check metadata first
+            metadata_path = self._get_cache_path(cache_key, "metadata.json")
+            metadata_blob = self._bucket.blob(metadata_path)
+            
+            if not metadata_blob.exists():
+                self.logger.debug(f"Cache miss: no metadata for key {cache_key}")
+                return None
+            
+            # Load and validate metadata
+            metadata_content = metadata_blob.download_as_text()
+            metadata = json.loads(metadata_content)
+            
+            if not self._is_cache_valid(metadata):
+                self.logger.info(f"Cache expired for key {cache_key}")
+                # Optionally clean up expired cache
+                self._cleanup_cache(cache_key)
+                return None
+            
+            # Load cached files
+            docx_path = self._get_cache_path(cache_key, "tsr.docx")
+            docx_blob = self._bucket.blob(docx_path)
+            
+            if not docx_blob.exists():
+                self.logger.warning(f"Cache incomplete: missing TSR DOCX for key {cache_key}")
+                return None
+            
+            docx_content = docx_blob.download_as_bytes()
+            
+            # PDF is optional
+            pdf_content = None
+            pdf_path = self._get_cache_path(cache_key, "original.pdf")
+            pdf_blob = self._bucket.blob(pdf_path)
+            
+            if pdf_blob.exists():
+                pdf_content = pdf_blob.download_as_bytes()
+            
+            self.logger.info(
+                f"Cache hit for key {cache_key} - "
+                f"cached on {metadata.get('timestamp', 'unknown')}"
+            )
+            
+            return (docx_content, pdf_content, metadata)
+            
+        except NotFound:
+            self.logger.debug(f"Cache miss: key {cache_key} not found")
+            return None
+        except Exception as e:
+            self.logger.error(f"Error reading cache: {e}")
+            return None
+    
+    def cache_record_by_key(
+        self,
+        cache_key: str,
+        original_request: LandRecordRequest,
+        translated_district: str,
+        translated_taluka: str,
+        translated_village: str,
+        docx_content: bytes,
+        pdf_content: Optional[bytes] = None,
+        additional_metadata: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        """
+        Cache a processed record using a pre-computed cache key.
+        
+        This stores both the original English input and the translated
+        Gujarati values for reference.
+        
+        Args:
+            cache_key: Pre-computed cache key (from translated values)
+            original_request: Original land record request (with English input)
+            translated_district: Gujarati district name
+            translated_taluka: Gujarati taluka name
+            translated_village: Gujarati village name
+            docx_content: Generated TSR DOCX content
+            pdf_content: Optional original PDF content
+            additional_metadata: Optional additional metadata to store
+            
+        Returns:
+            True if caching succeeded, False otherwise
+        """
+        try:
+            # Prepare metadata with both original and translated values
+            metadata = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                # Original English input
+                "original_district": original_request.district,
+                "original_taluka": original_request.taluka,
+                "original_village": original_request.village,
+                "survey_number": original_request.survey_number,
+                # Translated Gujarati values (used for cache key)
+                "translated_district": translated_district,
+                "translated_taluka": translated_taluka,
+                "translated_village": translated_village,
+                "ttl_days": self.ttl_days,
+                "docx_size": len(docx_content),
+                "pdf_size": len(pdf_content) if pdf_content else 0,
+                **(additional_metadata or {})
+            }
+            
+            # Store metadata
+            metadata_path = self._get_cache_path(cache_key, "metadata.json")
+            metadata_blob = self._bucket.blob(metadata_path)
+            metadata_blob.upload_from_string(
+                json.dumps(metadata, indent=2, ensure_ascii=False),
+                content_type="application/json"
+            )
+            
+            # Store DOCX
+            docx_path = self._get_cache_path(cache_key, "tsr.docx")
+            docx_blob = self._bucket.blob(docx_path)
+            docx_blob.upload_from_string(
+                docx_content,
+                content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+            
+            # Store PDF if available
+            if pdf_content:
+                pdf_path = self._get_cache_path(cache_key, "original.pdf")
+                pdf_blob = self._bucket.blob(pdf_path)
+                pdf_blob.upload_from_string(
+                    pdf_content,
+                    content_type="application/pdf"
+                )
+            
+            self.logger.info(
+                f"Cached record with key {cache_key}: "
+                f"DOCX={len(docx_content)} bytes, "
+                f"PDF={len(pdf_content) if pdf_content else 0} bytes"
+            )
+            
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Failed to cache record: {e}")
+            return False
+    
     def _get_cache_path(self, cache_key: str, filename: str) -> str:
         """Get full GCS path for a cached file."""
         return f"{self.cache_prefix}/{cache_key}/{filename}"

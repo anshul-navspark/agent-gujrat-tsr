@@ -1,0 +1,70 @@
+# ============================================
+# OPTIMIZED DOCKERFILE FOR FASTER CLOUD RUN STARTUP
+# ============================================
+# Key optimizations:
+# 1. Multi-stage build to reduce image size
+# 2. Pre-compile Python bytecode
+# 3. Install dependencies in a separate layer (cached)
+# 4. Use slim base image with minimal dependencies
+# ============================================
+
+# Stage 1: Builder - install dependencies
+FROM python:3.11-slim AS builder
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    libpoppler-cpp-dev \
+    pkg-config \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy and install Python dependencies first (cached layer)
+COPY requirements.txt .
+RUN pip install --no-cache-dir --user -r requirements.txt
+
+# Pre-compile Python bytecode for faster imports
+RUN python -m compileall -b /root/.local/lib/python3.11/site-packages/
+
+# Stage 2: Runtime - minimal production image
+FROM python:3.11-slim AS runtime
+
+# Install only runtime dependencies (minimal)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    chromium \
+    chromium-driver \
+    libpoppler-cpp-dev \
+    fonts-indic \
+    fonts-noto \
+    fonts-noto-cjk \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean \
+    && rm -rf /var/cache/apt/archives/*
+
+# Set environment variables
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV CHROME_BIN=/usr/bin/chromium
+ENV CHROMEDRIVER_PATH=/usr/bin/chromedriver
+ENV USE_OPTIMIZED_EXTRACTION=true
+ENV GEMINI_MODEL_NAME=gemini-2.5-flash
+
+# Copy installed packages from builder stage
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
+
+WORKDIR /app
+
+# Copy application code
+COPY . .
+
+# Pre-compile application bytecode
+RUN python -m compileall -b /app/
+
+# Expose port
+EXPOSE 8080
+
+# Run with optimized settings
+CMD ["python", "-O", "-m", "uvicorn", "api.server:app", "--host", "0.0.0.0", "--port", "8080"]
