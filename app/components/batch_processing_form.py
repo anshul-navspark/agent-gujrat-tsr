@@ -296,8 +296,16 @@ def _process_batch(
         st.warning("No records to process.")
         return
 
-    st.info(f"🔄 Processing {total_records} records")
+    # Clear previous results immediately to avoid confusion
+    if "batch_results" in st.session_state:
+        del st.session_state.batch_results
+    if "batch_summary" in st.session_state:
+        del st.session_state.batch_summary
+    if "batch_zip_data" in st.session_state:
+        del st.session_state.batch_zip_data
 
+    st.info(f"🔄 Processing {total_records} records")
+    
     # Progress tracking
     progress_bar = st.progress(0)
     status_container = st.empty()
@@ -367,9 +375,6 @@ def _process_batch(
     # Store results in session state (for batch section, not results tab)
     st.session_state.batch_results = results
     
-    # Clear any previous zip cache
-    if "batch_zip_data" in st.session_state:
-        del st.session_state.batch_zip_data
     st.session_state.batch_summary = {
         "total": total_records,
         "successful": successful,
@@ -397,6 +402,9 @@ def _process_batch(
         st.warning(f"⚠️ {failed} records failed.")
     else:
         st.error("❌ All records failed. Please check your inputs and API status.")
+    
+    # Force a rerun to ensure results are displayed correctly in the main view
+    st.rerun()
 
 
 def _process_single_record(
