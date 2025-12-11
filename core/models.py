@@ -110,6 +110,7 @@ class APIResponse:
     pdf_content: Optional[bytes] = None
     error: Optional[str] = None
     status_code: Optional[int] = None
+    cache_hit: bool = False
     
     def to_processing_result(self, request: LandRecordRequest) -> ProcessingResult:
         """Convert API response to ProcessingResult."""

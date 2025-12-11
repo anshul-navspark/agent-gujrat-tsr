@@ -99,6 +99,18 @@ class TSRAPIClient:
                 )
                 
                 if response.status_code == 200:
+                    # Check cache status from response headers
+                    cache_status = response.headers.get('X-Cache-Status', 'UNKNOWN')
+                    cache_timestamp = response.headers.get('X-Cache-Timestamp', '')
+                    
+                    if cache_status == 'HIT':
+                        self.logger.info(
+                            f"✅ CACHE HIT - Record served from cache "
+                            f"(cached: {cache_timestamp})"
+                        )
+                    elif cache_status == 'MISS':
+                        self.logger.info(f"❌ CACHE MISS - Record fetched from source")
+                    
                     self.logger.info(f"Successfully processed record")
                     
                     docx_content = None
@@ -129,7 +141,8 @@ class TSRAPIClient:
                         success=True,
                         docx_content=docx_content,
                         pdf_content=pdf_content,
-                        status_code=200
+                        status_code=200,
+                        cache_hit=(cache_status == 'HIT')
                     )
                 else:
                     error_msg = self._extract_error_message(response)
