@@ -47,21 +47,12 @@ def batch_processing_form(api_client: TSRAPIClient, max_workers: int = 20) -> No
             df = pd.read_excel(uploaded_file)
             st.success(f"✅ Loaded {len(df)} records from {uploaded_file.name}")
 
-            # Display preview
-            with st.expander("📋 Preview Data", expanded=True):
-                # Convert to string to avoid PyArrow serialization errors with mixed types (e.g. Survey Nos)
-                st.dataframe(df.head(10).astype(str), width="stretch", hide_index=True)
-
             # AI-based column detection
             st.divider()
             st.subheader("🤖 AI Column Mapping")
             
             # Use AI to detect columns
             detected_mapping, confidence_report = auto_detect_columns(df)
-            
-            # Show AI detection report
-            with st.expander("🔍 AI Detection Report", expanded=False):
-                st.text(confidence_report)
             
             # Prepare available columns with empty option
             available_columns = [""] + list(df.columns)
@@ -363,6 +354,16 @@ def _process_batch(
                     "timestamp": datetime.now().isoformat(),
                 })
 
+            # Update session state immediately so Results tab can show progress
+            st.session_state.batch_results = results.copy()
+            st.session_state.batch_summary = {
+                "total": total_records,
+                "successful": successful,
+                "failed": failed,
+                "in_progress": True,
+                "completed": completed_count
+            }
+
             # Update progress
             progress = completed_count / total_records
             progress_bar.progress(progress)
@@ -375,14 +376,16 @@ def _process_batch(
     elapsed_time = datetime.now() - start_time
     progress_bar.progress(1.0)
 
-    # Store results in session state (for batch section, not results tab)
+    # Store final results in session state
     st.session_state.batch_results = results
     
     st.session_state.batch_summary = {
         "total": total_records,
         "successful": successful,
         "failed": failed,
-        "duration": elapsed_time
+        "duration": elapsed_time,
+        "in_progress": False,
+        "completed": total_records
     }
 
     # Display summary

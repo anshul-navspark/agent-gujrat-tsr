@@ -44,6 +44,19 @@ def results_display(api_client, processing_results):
     results = st.session_state.batch_results
     summary = st.session_state.get("batch_summary", {})
     
+    # Check if processing is in progress
+    in_progress = summary.get("in_progress", False)
+    
+    if in_progress:
+        completed = summary.get("completed", 0)
+        total = summary.get("total", 0)
+        st.info(f"🔄 **Processing in progress...** ({completed}/{total} records completed)")
+        st.caption("This page will auto-refresh as new results become available.")
+        # Auto-refresh every 2 seconds while processing
+        import time
+        time.sleep(2)
+        st.rerun()
+    
     # Display summary metrics
     st.subheader("📊 Summary")
     col1, col2, col3, col4 = st.columns(4)
@@ -96,35 +109,90 @@ def results_display(api_client, processing_results):
     
     st.caption(f"Showing {len(filtered_results)} of {len(results)} records")
     
-    # Convert results to DataFrame for display
+    st.divider()
+    st.subheader("📄 Individual Records")
+    
+    # Display each result with download buttons
     if filtered_results:
-        df_data = []
-        for r in filtered_results:
-            df_data.append({
-                "Row": r.get("row_idx", "N/A"),
-                "District": r.get("district", ""),
-                "Taluka": r.get("taluka", ""),
-                "Village": r.get("village", ""),
-                "Survey No.": r.get("survey", ""),
-                "Status": "✅ Success" if r.get("success") else "❌ Failed",
-                "Error": r.get("error", "") if not r.get("success") else "",
-                "Timestamp": r.get("timestamp", "")
-            })
+        for idx, r in enumerate(filtered_results):
+            row_num = r.get("row_idx", "N/A")
+            district = r.get("district", "")
+            taluka = r.get("taluka", "")
+            village = r.get("village", "")
+            survey = r.get("survey", "")
+            success = r.get("success", False)
+            error = r.get("error", "")
+            timestamp = r.get("timestamp", "")
+            
+            # Create a container for each record
+            with st.container():
+                col1, col2, col3 = st.columns([3, 1, 1])
+                
+                with col1:
+                    status_icon = "✅" if success else "❌"
+                    st.markdown(f"**{status_icon} Row {row_num}:** {district} → {taluka} → {village} → Survey: {survey}")
+                    if timestamp:
+                        st.caption(f"⏰ {timestamp}")
+                
+                with col2:
+                    if success and r.get("docx_content"):
+                        docx_filename = f"{district}_{taluka}_{village}_{survey}_TSR.docx"
+                        st.download_button(
+                            label="📄 DOCX",
+                            data=r["docx_content"],
+                            file_name=docx_filename,
+                            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                            key=f"docx_{row_num}_{idx}",
+                            use_container_width=True
+                        )
+                
+                with col3:
+                    if success and r.get("pdf_content"):
+                        pdf_filename = f"{district}_{taluka}_{village}_{survey}_Original.pdf"
+                        st.download_button(
+                            label="📕 PDF",
+                            data=r["pdf_content"],
+                            file_name=pdf_filename,
+                            mime="application/pdf",
+                            key=f"pdf_{row_num}_{idx}",
+                            use_container_width=True
+                        )
+                
+                # Show error for failed records
+                if not success and error:
+                    st.error(f"Error: {error}")
+                
+                st.divider()
         
-        df = pd.DataFrame(df_data)
-        
-        # Display the dataframe
-        st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Row": st.column_config.NumberColumn("Row #", format="%d"),
-                "Status": st.column_config.TextColumn("Status"),
-                "Error": st.column_config.TextColumn("Error Message", width="large"),
-                "Timestamp": st.column_config.TextColumn("Timestamp", width="medium")
-            }
-        )
+        # Summary table view (collapsible)
+        with st.expander("📊 View Summary Table", expanded=False):
+            df_data = []
+            for r in filtered_results:
+                df_data.append({
+                    "Row": r.get("row_idx", "N/A"),
+                    "District": r.get("district", ""),
+                    "Taluka": r.get("taluka", ""),
+                    "Village": r.get("village", ""),
+                    "Survey No.": r.get("survey", ""),
+                    "Status": "✅ Success" if r.get("success") else "❌ Failed",
+                    "Error": r.get("error", "") if not r.get("success") else "",
+                    "Timestamp": r.get("timestamp", "")
+                })
+            
+            df = pd.DataFrame(df_data)
+            
+            # Display the dataframe
+            st.dataframe(
+                df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Row": st.column_config.NumberColumn("Row #", format="%d"),
+                    "Status": st.column_config.TextColumn("Status"),
+                    "Error": st.column_config.TextColumn("Error Message", width="large"),
+                    "Timestamp": st.column_config.TextColumn("Timestamp", width="medium")
+                }
+            )
         
         # Download results as Excel
         st.divider()
