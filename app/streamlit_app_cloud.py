@@ -62,7 +62,7 @@ logging.basicConfig(
 api_url = st.secrets.get("API_URL", "https://agent-gujarat-tsr-642363716512.asia-south1.run.app")
 api_timeout = int(st.secrets.get("API_TIMEOUT", 1200))
 max_retries = int(st.secrets.get("API_MAX_RETRIES", 2))
-max_workers = int(st.secrets.get("MAX_WORKERS", 45))
+max_workers = int(st.secrets.get("MAX_WORKERS", 40))
 
 # Initialize API client if needed
 if st.session_state.api_client is None or st.session_state.api_client.api_url != api_url:

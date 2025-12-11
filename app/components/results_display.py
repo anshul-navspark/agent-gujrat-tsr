@@ -143,7 +143,7 @@ def results_display(api_client, processing_results):
                             file_name=docx_filename,
                             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                             key=f"docx_{row_num}_{idx}",
-                            use_container_width=True
+                            width='stretch'
                         )
                 
                 with col3:
@@ -155,7 +155,7 @@ def results_display(api_client, processing_results):
                             file_name=pdf_filename,
                             mime="application/pdf",
                             key=f"pdf_{row_num}_{idx}",
-                            use_container_width=True
+                            width='stretch'
                         )
                 
                 # Show error for failed records
@@ -184,7 +184,7 @@ def results_display(api_client, processing_results):
             # Display the dataframe
             st.dataframe(
                 df,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 column_config={
                     "Row": st.column_config.NumberColumn("Row #", format="%d"),
