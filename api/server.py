@@ -227,7 +227,7 @@ def process_record(
             if cached_result is not None:
                 docx_content, pdf_content, cache_metadata = cached_result
                 logger.info(
-                    f"Cache hit for {request.district}/{request.taluka}/{request.village}/{request.survey_number} "
+                    f"✅ CACHE HIT for {request.district}/{request.taluka}/{request.village}/{request.survey_number} "
                     f"- cached on {cache_metadata.get('timestamp', 'unknown')}"
                 )
                 
@@ -255,6 +255,12 @@ def process_record(
                         'X-Cache-Status': 'HIT',
                         'X-Cache-Timestamp': cache_metadata.get('timestamp', '')
                     }
+                )
+            else:
+                # Cache miss - log it explicitly
+                logger.info(
+                    f"❌ CACHE MISS for {request.district}/{request.taluka}/{request.village}/{request.survey_number} "
+                    f"- will fetch from source"
                 )
         except Exception as e:
             # Log cache error but continue with normal processing
@@ -357,7 +363,8 @@ def process_record(
                     pdf_content=pdf_content
                 )
                 logger.info(
-                    f"Cached record for {request.district}/{request.taluka}/{request.village}/{request.survey_number}"
+                    f"💾 CACHED record for {request.district}/{request.taluka}/{request.village}/{request.survey_number} "
+                    f"(cache_key: {cache_key[:16]}...)"
                 )
             except Exception as e:
                 # Log cache error but don't fail the request
