@@ -18,6 +18,7 @@ import streamlit as st
 import pandas as pd
 from io import BytesIO
 from datetime import datetime
+from utils.survey_utils import sanitize_filename
 
 
 def results_display(api_client, processing_results):
@@ -74,7 +75,7 @@ def results_display(api_client, processing_results):
     st.divider()
     
     # Filter options
-    st.subheader("� Filter Results")
+    st.subheader("🔎 Filter Results")
     col1, col2 = st.columns(2)
     with col1:
         status_filter = st.selectbox(
@@ -134,9 +135,15 @@ def results_display(api_client, processing_results):
                     if timestamp:
                         st.caption(f"⏰ {timestamp}")
                 
+                # Sanitize components for filenames
+                safe_district = sanitize_filename(district)
+                safe_taluka = sanitize_filename(taluka)
+                safe_village = sanitize_filename(village)
+                safe_survey = sanitize_filename(survey)
+                
                 with col2:
                     if success and r.get("docx_content"):
-                        docx_filename = f"{district}_{taluka}_{village}_{survey}_TSR.docx"
+                        docx_filename = f"{safe_district}_{safe_taluka}_{safe_village}_{safe_survey}_TSR.docx"
                         st.download_button(
                             label="📄 DOCX",
                             data=r["docx_content"],
@@ -148,7 +155,7 @@ def results_display(api_client, processing_results):
                 
                 with col3:
                     if success and r.get("pdf_content"):
-                        pdf_filename = f"{district}_{taluka}_{village}_{survey}_Original.pdf"
+                        pdf_filename = f"{safe_district}_{safe_taluka}_{safe_village}_{safe_survey}_Original.pdf"
                         st.download_button(
                             label="📕 PDF",
                             data=r["pdf_content"],
