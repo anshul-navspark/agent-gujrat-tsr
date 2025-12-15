@@ -171,7 +171,7 @@ class AIBatchService:
         def process_findings(tasks_batch):
             for task in tasks_batch:
                 try:
-                    task.findings = generate_findings_table(task.pdf_text)
+                    task.findings = generate_findings_table(task.pdf_text, task.entry_details)
                     self.logger.debug(f"Findings generated for {task.task_id}")
                 except Exception as e:
                     self.logger.error(f"Findings generation failed for {task.task_id}: {e}")

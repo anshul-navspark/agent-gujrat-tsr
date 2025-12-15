@@ -439,6 +439,10 @@ def process_entry_details(raw_entries):
             if hasattr(entry, 'certification') and not entry.certification and 'certification' in raw_entry:
                 entry.certification = raw_entry['certification']
             
+            # Set entry_status from raw entry (certified, rejected, not_accepted)
+            if hasattr(entry, 'entry_status') and 'entry_status' in raw_entry:
+                entry.entry_status = raw_entry.get('entry_status', '')
+            
             processed_entries.append(entry)
             
         except Exception as e:

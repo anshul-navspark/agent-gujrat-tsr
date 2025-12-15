@@ -54,6 +54,7 @@ class BaseEntry:
     raw_description: str = ""
     formatted_description: str = ""
     certification: str = ""
+    entry_status: str = ""  # certified, rejected, not_accepted, cancelled
     
 
 @dataclass

@@ -33,7 +33,7 @@ from ..utils.retry_utils import retry_with_backoff, RetryableError
 logger = logging.getLogger(__name__)
 
 # Model configuration
-MODEL_NAME = os.getenv('GEMINI_MODEL_NAME', 'gemini-2.5-flash')
+MODEL_NAME = os.getenv('GEMINI_MODEL_NAME', 'gemini-3-pro-preview')
 
 
 # =============================================================================
@@ -71,13 +71,23 @@ Formatting Rules:
 10. OMIT sentences like "This entry was made based on..." or "This inheritance entry was made...". Keep descriptions concise.
 """
 
-# Certification patterns (~50 tokens)
+# Certification patterns (~150 tokens)
 CERTIFICATION_PATTERNS = """
-Certification formats:
-- "The Entry is certified."
-- "The Entry is certified by [Name] on DD/MM/YYYY."
-- "The Entry is rejected."
-- "The Entry is certified but date is not legible."
+CRITICAL - Translate Gujarati status words in certification:
+| Gujarati | English Translation | entry_status value |
+| રદ | cancelled | "rejected" |
+| ના મંજૂર | not accepted | "not_accepted" |
+| નામંજુર | rejected | "rejected" |
+| નામંજૂર | rejected | "rejected" |
+| પ્રમાણિત | certified | "certified" |
+
+Certification output formats:
+- If રદ found: "The Entry is cancelled by [Name] on DD/MM/YYYY." + entry_status: "rejected"
+- If ના મંજૂર or નામંજુર found: "The Entry is not accepted by [Name] on DD/MM/YYYY." + entry_status: "not_accepted"  
+- If પ્રમાણિત found: "The Entry is certified by [Name] on DD/MM/YYYY." + entry_status: "certified"
+- Default if unclear: entry_status: "" (empty)
+
+IMPORTANT: Do NOT output "certified" if the Gujarati text contains રદ, ના મંજૂર, or નામંજુર!
 """
 
 # Minimal description examples (~400 tokens - reduced from 1500+)
@@ -126,6 +136,7 @@ OUTPUT FORMAT - Return ONLY valid JSON with this exact structure:
     "taluka_name": "",
     "district_name": "",
     "survey_number": "",
+    "old_survey_number": "",
     "total_area": "",
     "nature_of_land": "",
     "owner": ""
@@ -137,6 +148,7 @@ OUTPUT FORMAT - Return ONLY valid JSON with this exact structure:
       "date": "",
       "type": "",
       "description": "",
+      "entry_status": "",
       "certification": ""
     }}
   ]
@@ -145,8 +157,10 @@ OUTPUT FORMAT - Return ONLY valid JSON with this exact structure:
 EXTRACTION INSTRUCTIONS:
 
 1. LAND DETAILS: Extract from the "Land Details" section. Translate ALL Gujarati to English.
-   - For "nature_of_land", include BOTH tenure (Old/New) and use (Agricultural/Non-Agri), separated by comma (e.g. "Old Tenure, Agricultural Use").
+   - For "nature_of_land", include BOTH tenure (Old/New) and use (Agricultural/Non-Agri), separated by comma.
    - For "survey_number", translate "Paiki" to "Part" and use spaces (e.g. "150 / Part 1").
+   - For "old_survey_number", look for re-survey promulgation entries (Entry 3888-type) that map old→new survey numbers.
+     Extract the old survey number. If found, format as just the number (e.g. "258" not "Old Survey No. 258").
 
 2. ENTRY NUMBERS: Extract from "Entry Details" table. Output as array of number strings.
    - Remove asterisks (*) and trailing Gujarati text
@@ -158,7 +172,14 @@ EXTRACTION INSTRUCTIONS:
    - date: Format as DD/MM/YYYY if available, else ""
    - type: One of: LOAN, DEATH, RELEASE, LOAN CLOSE, SALE, PARTITION, PERSONS ADD, TO TRANSFER, EXCHANGE, LIFETIME DISTRIBUTION, NOT RELATED, ORDER, RELINQUISHMENT, PROMULGATION
    - description: MUST BE IN ENGLISH. Translate all Gujarati.
-   - certification: Certification status if available
+   - entry_status: One of: "certified", "rejected", "not_accepted". Look for Gujarati keywords નામંજૂર (rejected), રદ (cancelled). Default to "certified" if the entry says "certified" or "The Entry is certified".
+   - certification: Format as "The Entry is [STATUS] by [POST/DESIGNATION], [PLACE] on DD/MM/YYYY."
+     IMPORTANT: Extract the official's POST/DESIGNATION (e.g., "Deputy Mamlatdar, Super" or "Circle Officer") NOT their personal name.
+     STATUS should be "certified", "rejected", or "not accepted" based on entry_status.
+     Examples:
+     - "The Entry is certified by Deputy Mamlatdar Super, Porbandar on 08/05/2015."
+     - "The Entry is rejected by Deputy Mamlatdar, Super on 19/03/2007."
+     - "The Entry is not accepted by Deputy Mamlatdar Super, Porbandar on 03/07/2011."
 
 {ENTRY_TYPE_RULES}
 {FORMATTING_RULES}
@@ -166,7 +187,10 @@ EXTRACTION INSTRUCTIONS:
 {CERTIFICATION_PATTERNS}
 
 For entries with only a number in the table (no details), include with empty fields:
-{{"entry_number": "X", "date": "", "type": "", "description": "", "certification": ""}}
+{{"entry_number": "X", "date": "", "type": "", "description": "", "entry_status": "", "certification": ""}}
+
+IMPORTANT: For entries where content is not legible/available, set description to:
+"Entry mentioned in the document but content is not legible."
 
 DOCUMENT TEXT:
 {pdf_text}
@@ -368,37 +392,98 @@ def _extract_relevant_sections(pdf_text: str) -> str:
     return '\n\n[...]\n\n'.join(sections)
 
 
-def _parse_json_response(content: str) -> Optional[Dict]:
+def _parse_json_response(content) -> Optional[Dict]:
     """Parse JSON from LLM response with multiple strategies."""
+    # Handle case where content is already a dict (new API response format)
+    if isinstance(content, dict):
+        logger.debug("Response is already a dict, returning directly")
+        return content
+    
+    # Handle list responses (some models return content as list of parts)
+    if isinstance(content, list):
+        logger.debug(f"Response is a list with {len(content)} items")
+        # Try to find the text content
+        for item in content:
+            if isinstance(item, str):
+                content = item
+                break
+            elif isinstance(item, dict) and 'text' in item:
+                content = item['text']
+                break
+        else:
+            content = str(content)
+    
+    # Convert to string if needed
+    if not isinstance(content, str):
+        logger.debug(f"Converting response type {type(content).__name__} to string")
+        content = str(content)
+    
+    logger.debug(f"Parsing JSON from response (length: {len(content)}, first 200 chars: {content[:200]}...)")
+    
     # Clean control characters
     content = ''.join(ch for ch in content if ch == '\t' or ch == '\n' or ch == '\r' or ord(ch) >= 32)
 
-    # Strategy 1: Look for JSON in code block
-    json_code_match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', content, re.IGNORECASE)
+    # Strategy 1: Look for JSON in code block (with or without "json" label)
+    json_code_match = re.search(r'```(?:json)?\s*(\{[\s\S]*\})\s*```', content, re.IGNORECASE)
     if json_code_match:
         try:
             json_str = json_code_match.group(1)
             json_str = re.sub(r',\s*([\]\}])', r'\1', json_str)
-            return json.loads(json_str)
-        except json.JSONDecodeError:
-            pass
+            result = json.loads(json_str)
+            logger.debug("Successfully parsed JSON from code block")
+            return result
+        except json.JSONDecodeError as e:
+            logger.debug(f"Failed to parse JSON from code block: {e}")
 
-    # Strategy 2: Find JSON object directly
-    json_match = re.search(r'\{[\s\S]*"land_details"[\s\S]*"mutation_entries"[\s\S]*\}', content)
+    # Strategy 2: Find JSON object containing our expected keys (flexible order)
+    json_match = re.search(r'\{[\s\S]*?(\"land_details\"|\"entry_numbers\"|\"mutation_entries\")[\s\S]*\}', content)
     if json_match:
-        try:
-            json_str = json_match.group(0)
-            json_str = re.sub(r',\s*([\]\}])', r'\1', json_str)
-            return json.loads(json_str)
-        except json.JSONDecodeError:
-            pass
+        # Find the full extent of this JSON object
+        start = json_match.start()
+        # Count braces to find the matching end
+        brace_count = 0
+        end = start
+        for i, ch in enumerate(content[start:]):
+            if ch == '{':
+                brace_count += 1
+            elif ch == '}':
+                brace_count -= 1
+                if brace_count == 0:
+                    end = start + i + 1
+                    break
+        
+        if end > start:
+            try:
+                json_str = content[start:end]
+                json_str = re.sub(r',\s*([\]\}])', r'\1', json_str)
+                result = json.loads(json_str)
+                logger.debug("Successfully parsed JSON using brace matching")
+                return result
+            except json.JSONDecodeError as e:
+                logger.debug(f"Failed to parse JSON with brace matching: {e}")
 
-    # Strategy 3: Try the whole content
+    # Strategy 3: Try the whole content as JSON
     try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        pass
+        result = json.loads(content)
+        logger.debug("Successfully parsed whole content as JSON")
+        return result
+    except json.JSONDecodeError as e:
+        logger.debug(f"Failed to parse whole content as JSON: {e}")
 
+    # Strategy 4: Try to extract just the JSON object part (strip any surrounding text)
+    try:
+        first_brace = content.find('{')
+        last_brace = content.rfind('}')
+        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+            json_str = content[first_brace:last_brace + 1]
+            json_str = re.sub(r',\s*([\]\}])', r'\1', json_str)
+            result = json.loads(json_str)
+            logger.debug("Successfully parsed JSON using first/last brace extraction")
+            return result
+    except json.JSONDecodeError as e:
+        logger.debug(f"Failed to parse JSON with first/last brace: {e}")
+    
+    logger.warning(f"All JSON parsing strategies failed. Response content: {content[:500]}...")
     return None
 
 
