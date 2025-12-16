@@ -20,7 +20,7 @@ class Config:
     
     # API Configuration
     gemini_api_key: str = field(default_factory=lambda: os.getenv('GEMINI_API_KEY', ''))
-    gemini_model_name: str = field(default_factory=lambda: os.getenv('GEMINI_MODEL_NAME', 'gemini-2.5-flash'))
+    gemini_model_name: str = field(default_factory=lambda: os.getenv('GEMINI_MODEL_NAME', 'gemini-3-pro-preview'))
     
     # AnyRoR Configuration
     anyror_url: str = 'https://anyror.gujarat.gov.in/LandRecordRural.aspx'

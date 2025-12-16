@@ -40,7 +40,7 @@ class CaptchaSolver:
         """
         api_key = SecretStr(os.getenv('GEMINI_API_KEY', ''))
         return ChatGoogleGenerativeAI(
-            model=os.getenv('GEMINI_MODEL_NAME', 'gemini-2.5-flash'),
+            model=os.getenv('CAPTCHA_MODEL_NAME', 'gemini-2.0-flash-exp'),
             google_api_key=api_key.get_secret_value(),
             temperature=0.0,
             convert_system_message_to_human=True,

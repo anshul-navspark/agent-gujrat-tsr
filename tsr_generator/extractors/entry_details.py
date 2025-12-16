@@ -12,7 +12,7 @@ from tsr_generator.extractors.entry_schema import (
     SaleEntry, MortgageEntry, ReleaseEntry, InheritanceEntry, 
     PartitionEntry, RelinquishmentEntry, OrderEntry, CorrectionEntry, GenericEntry
 )
-model_name = os.getenv('GEMINI_MODEL_NAME', 'gemini-2.5-flash')
+model_name = os.getenv('GEMINI_MODEL_NAME', 'gemini-3-pro-preview')
 
 def extract_entry_table(pdf_text):
     llm = ChatGoogleGenerativeAI(

@@ -27,7 +27,7 @@ steps:
       - '--concurrency=8'
       - '--min-instances=0'
       - '--max-instances=5'
-      - '--set-env-vars=USE_OPTIMIZED_EXTRACTION=true,GEMINI_MODEL_NAME=gemini-2.5-flash,GCS_CACHE_BUCKET=$PROJECT_ID-tsr-cache,GIT_COMMIT_SHA=$COMMIT_SHA'
+      - '--set-env-vars=USE_OPTIMIZED_EXTRACTION=true,GEMINI_MODEL_NAME=gemini-3-pro-preview,CAPTCHA_MODEL_NAME=gemini-2.0-flash-exp,GCS_CACHE_BUCKET=$PROJECT_ID-tsr-cache,GIT_COMMIT_SHA=$COMMIT_SHA'
       - '--set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest'
       - '--allow-unauthenticated'
 
