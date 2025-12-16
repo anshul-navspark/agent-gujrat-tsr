@@ -530,6 +530,36 @@ class CacheService:
             self.logger.error(f"Failed to get cache stats: {e}")
             return {"error": str(e)}
     
+    def clear_all_docx_cache(self) -> int:
+        """
+        Clear all generated TSR DOCX files from the cache.
+        
+        Returns:
+            Number of files deleted.
+        """
+        try:
+            # Clear DOCX files
+            # Note: List all blobs with prefix. This can be slow for very large buckets.
+            blobs = self._bucket.list_blobs(prefix=self.cache_prefix)
+            deleted_count = 0
+            
+            for b in blobs:
+                if b.name.endswith("tsr.docx"):
+                    try:
+                        b.delete()
+                        deleted_count += 1
+                        if deleted_count % 100 == 0:
+                            self.logger.info(f"Deleted {deleted_count} DOCX files so far...")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to delete {b.name}: {e}")
+            
+            self.logger.info(f"Cache clearing complete. Deleted {deleted_count} DOCX files.")
+            return deleted_count
+            
+        except Exception as e:
+            self.logger.error(f"Error during DOCX cache clearing: {e}")
+            return 0
+
     def check_and_clear_docx_if_new_version(self, current_version: str) -> bool:
         """
         Check if the deployed version is new, and if so, clear generated DOCX files.
@@ -559,21 +589,7 @@ class CacheService:
                 self.logger.info(f"No previous version found. Setting version to {current_version}.")
             
             # Clear DOCX files
-            # Note: List all blobs with prefix. This can be slow for very large buckets.
-            blobs = self._bucket.list_blobs(prefix=self.cache_prefix)
-            deleted_count = 0
-            
-            for b in blobs:
-                if b.name.endswith("tsr.docx"):
-                    try:
-                        b.delete()
-                        deleted_count += 1
-                        if deleted_count % 100 == 0:
-                            self.logger.info(f"Deleted {deleted_count} DOCX files so far...")
-                    except Exception as e:
-                        self.logger.warning(f"Failed to delete {b.name}: {e}")
-            
-            self.logger.info(f"Cache clearing complete. Deleted {deleted_count} DOCX files.")
+            self.clear_all_docx_cache()
             
             # Update version file
             blob.upload_from_string(current_version)
