@@ -529,6 +529,59 @@ class CacheService:
         except Exception as e:
             self.logger.error(f"Failed to get cache stats: {e}")
             return {"error": str(e)}
+    
+    def check_and_clear_docx_if_new_version(self, current_version: str) -> bool:
+        """
+        Check if the deployed version is new, and if so, clear generated DOCX files.
+        
+        Args:
+            current_version: The current git commit SHA or version string.
+            
+        Returns:
+            True if cache was cleared, False otherwise.
+        """
+        if not current_version:
+            self.logger.warning("No version provided for cache check.")
+            return False
+            
+        version_file = "deployed_version.txt"
+        
+        try:
+            # Check existing version in cache
+            blob = self._bucket.blob(version_file)
+            if blob.exists():
+                stored_version = blob.download_as_text().strip()
+                if stored_version == current_version:
+                    self.logger.info(f"Cache version match ({current_version}). No clearing needed.")
+                    return False
+                self.logger.info(f"New version detected (old: {stored_version}, new: {current_version}). Clearing DOCX cache...")
+            else:
+                self.logger.info(f"No previous version found. Setting version to {current_version}.")
+            
+            # Clear DOCX files
+            # Note: List all blobs with prefix. This can be slow for very large buckets.
+            blobs = self._bucket.list_blobs(prefix=self.cache_prefix)
+            deleted_count = 0
+            
+            for b in blobs:
+                if b.name.endswith("tsr.docx"):
+                    try:
+                        b.delete()
+                        deleted_count += 1
+                        if deleted_count % 100 == 0:
+                            self.logger.info(f"Deleted {deleted_count} DOCX files so far...")
+                    except Exception as e:
+                        self.logger.warning(f"Failed to delete {b.name}: {e}")
+            
+            self.logger.info(f"Cache clearing complete. Deleted {deleted_count} DOCX files.")
+            
+            # Update version file
+            blob.upload_from_string(current_version)
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Error during conditional cache clearing: {e}")
+            return False
 
 
 # Singleton instance

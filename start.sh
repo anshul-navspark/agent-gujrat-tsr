@@ -23,6 +23,11 @@ except Exception as e:
 "
 fi
 
+
+# Run cache clearing (conditionally clears DOCX if new version deployed)
+echo "Checking for cache clearing..."
+python scripts/clear_cache.py || echo "Cache clearing failed, but continuing startup..."
+
 # Start uvicorn with optimizations
 exec python -O -m uvicorn api.server:app \
     --host 0.0.0.0 \
