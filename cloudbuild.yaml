@@ -1,0 +1,39 @@
+# Cloud Build configuration with layer caching for faster builds and deployments
+# This config uses kaniko for better layer caching
+steps:
+  # Build with kaniko for layer caching
+  - name: 'gcr.io/kaniko-project/executor:latest'
+    args:
+      - --destination=asia-south1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/agent-gujrat-tsr:$COMMIT_SHA
+      - --destination=asia-south1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/agent-gujrat-tsr:latest
+      - --cache=true
+      - --cache-ttl=168h  # 1 week cache
+      - --snapshot-mode=redo
+      - --dockerfile=Dockerfile.optimized
+
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'agent-gujrat-tsr'
+      - '--image=asia-south1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/agent-gujrat-tsr:$COMMIT_SHA'
+      - '--region=asia-south1'
+      - '--platform=managed'
+      - '--memory=2Gi'
+      - '--cpu=2'
+      - '--timeout=1600'
+      - '--concurrency=4'
+      - '--min-instances=0'
+      - '--max-instances=14'
+      - '--set-env-vars=USE_OPTIMIZED_EXTRACTION=true,GEMINI_MODEL_NAME=gemini-3-pro-preview,CAPTCHA_MODEL_NAME=gemini-2.0-flash-exp,GCS_CACHE_BUCKET=$PROJECT_ID-tsr-cache,GIT_COMMIT_SHA=$COMMIT_SHA'
+      - '--set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest'
+      - '--allow-unauthenticated'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+
+# Timeout for build
+timeout: '1200s'

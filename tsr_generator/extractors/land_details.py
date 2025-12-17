@@ -27,7 +27,7 @@ def extract_land_records_ai(pdf_text):
         # Initialize Gemini client
         load_dotenv()
         llm = ChatGoogleGenerativeAI(
-            model=os.getenv('GEMINI_MODEL_NAME', 'gemini-2.5-flash'),
+            model=os.getenv('GEMINI_MODEL_NAME', 'gemini-3-pro-preview'),
             google_api_key=os.getenv('GEMINI_API_KEY', ''),
             temperature=0.0,
             convert_system_message_to_human=True,

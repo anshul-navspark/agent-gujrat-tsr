@@ -59,10 +59,10 @@ logging.basicConfig(
 )
 
 # Configuration from secrets
-api_url = st.secrets.get("API_URL", "https://gujrat-tsr-agent-5vu5tfjlga-el.a.run.app")
+api_url = st.secrets.get("API_URL", "https://agent-gujarat-tsr-642363716512.asia-south1.run.app")
 api_timeout = int(st.secrets.get("API_TIMEOUT", 1200))
 max_retries = int(st.secrets.get("API_MAX_RETRIES", 2))
-max_workers = int(st.secrets.get("MAX_WORKERS", 20))
+max_workers = int(st.secrets.get("MAX_WORKERS", 30))
 
 # Initialize API client if needed
 if st.session_state.api_client is None or st.session_state.api_client.api_url != api_url:
@@ -97,7 +97,7 @@ with tab1:
     single_record_form(st.session_state.api_client)
 
 with tab2:
-    batch_processing_form(st.session_state.api_client)
+    batch_processing_form(st.session_state.api_client, max_workers=max_workers)
 
 with tab3:
     results_display(st.session_state.api_client, st.session_state.processing_results)

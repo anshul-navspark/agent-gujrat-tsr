@@ -57,9 +57,19 @@ def generate_tsr_from_pdf(pdf_path, output_path, logger=None):
         # No need for separate translation as it's handled in the extraction process
         logger.debug("Entry translation is now handled within the extraction process")
         
-        # Generate findings
-        logger.debug("Generating findings")
-        findings = generate_findings_table(pdf_text)
+        # Generate findings with entry analysis for encumbrance detection
+        logger.debug("Generating findings with encumbrance analysis")
+        # Convert entries to dict format for findings analysis
+        entries_for_findings = [
+            {
+                'entry_number': str(entry.entry_number),
+                'type': entry.type.value if hasattr(entry.type, 'value') else str(entry.type),
+                'description': getattr(entry, 'formatted_description', ''),
+                'entry_status': getattr(entry, 'entry_status', 'certified')
+            }
+            for entry in entries
+        ]
+        findings = generate_findings_table(pdf_text, entries_for_findings)
         
         # Ensure output directory exists
         output_dir = os.path.dirname(output_path)

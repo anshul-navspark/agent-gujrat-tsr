@@ -18,14 +18,25 @@ from core.config import get_config
 from services.file_service import get_file_service
 from services.translation_service import get_translation_service
 from services.scraping_service import get_scraping_service
-from tsr_generator.api.tsr_generator import generate_tsr_from_pdf
+# Lazy import for TSR generator (heavy langchain dependencies)
+# This significantly improves startup time
+_tsr_generator = None
+
+def get_tsr_generator():
+    """Lazy load TSR generator to improve startup time."""
+    global _tsr_generator
+    if _tsr_generator is None:
+        from tsr_generator import generate_tsr_from_pdf
+        _tsr_generator = generate_tsr_from_pdf
+    return _tsr_generator
 
 
 # Import dependencies and middleware
 from api.dependencies import (
     get_file_service_dependency,
     get_translation_service_dependency, 
-    get_scraping_service_dependency
+    get_scraping_service_dependency,
+    get_cache_service_dependency
 )
 from api.middleware import TimingMiddleware
 
@@ -36,8 +47,16 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Gujarat TSR Agent API")
 app.add_middleware(TimingMiddleware)
 
-# Initialize configuration
-config = get_config()
+# Lazy configuration loading - improves startup time
+# Config is loaded on first request, not at module import
+_config = None
+
+def get_lazy_config():
+    """Lazy load configuration on first use."""
+    global _config
+    if _config is None:
+        _config = get_config()
+    return _config
 
 
 class LandRecordRequest(BaseModel):
@@ -75,8 +94,9 @@ def generate_tsr(
         output_filename = f"TSR_{os.path.splitext(file.filename)[0]}.docx"
         output_path = os.path.join(temp_dir, f"output_{os.urandom(8).hex()}.docx")
 
-        # Generate TSR
-        result = generate_tsr_from_pdf(input_path, output_path, logger)
+        # Generate TSR (lazy load to improve startup time)
+        generate_tsr = get_tsr_generator()
+        result = generate_tsr(input_path, output_path, logger)
 
         if not result['success']:
             logger.error(f"Generation failed: {result.get('error')}")
@@ -126,10 +146,14 @@ def process_record(
     # For now we use direct retrieval inside loop or here. 
     # With Depends, it's created per request which is good.
     # Note: scraping_service depends on being closed. 
-    scraping_service = Depends(get_scraping_service_dependency)
+    scraping_service = Depends(get_scraping_service_dependency),
+    cache_service = Depends(get_cache_service_dependency)
 ):
     """
     Scrape land record PDF from AnyRoR and generate TSR DOCX.
+    
+    Implements caching: if a record was fetched within the last week,
+    returns the cached version instead of re-fetching.
     """
     logger.info(f"Processing record: {request}")
     
@@ -158,6 +182,91 @@ def process_record(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     
+    # ===== TRANSLATE FIRST (needed for cache key) =====
+    # Translate to Gujarati early so we can use it for cache lookup
+    # This ensures different English spellings that map to same Gujarati location
+    # will share the same cache entry (e.g., "Kutch" and "Kuchh" -> "કચ્છ")
+    try:
+        district_guj = translation_service.translate_to_gujarati(request.district, context='district')
+    except Exception as e:
+        logger.warning(f"Invalid district '{request.district}': {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid district: '{request.district}' is not in our database")
+    
+    try:
+        taluka_guj = translation_service.translate_to_gujarati(request.taluka, context='taluka')
+    except Exception as e:
+        logger.warning(f"Invalid taluka '{request.taluka}': {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid taluka: '{request.taluka}' is not in our database")
+    
+    try:
+        village_guj = translation_service.translate_to_gujarati(request.village, context='village')
+    except Exception as e:
+        logger.warning(f"Invalid village '{request.village}': {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid village: '{request.village}' is not in our database")
+    
+    # Log translations for debugging
+    logger.info(f"Translation results: district '{request.district}' -> '{district_guj}', "
+               f"taluka '{request.taluka}' -> '{taluka_guj}', "
+               f"village '{request.village}' -> '{village_guj}'")
+    
+    # ===== CACHE CHECK =====
+    # Check cache using translated (Gujarati) values for the cache key
+    # This ensures cache hits work correctly regardless of English spelling variations
+    if cache_service is not None:
+        try:
+            # Generate cache key from translated Gujarati values
+            cache_key = cache_service.generate_cache_key_from_translated(
+                translated_district=district_guj,
+                translated_taluka=taluka_guj,
+                translated_village=village_guj,
+                survey_number=request.survey_number
+            )
+            
+            # Check cache using the pre-computed key
+            cached_result = cache_service.get_cached_record_by_key(cache_key)
+            if cached_result is not None:
+                docx_content, pdf_content, cache_metadata = cached_result
+                logger.info(
+                    f"✅ CACHE HIT for {request.district}/{request.taluka}/{request.village}/{request.survey_number} "
+                    f"- cached on {cache_metadata.get('timestamp', 'unknown')}"
+                )
+                
+                # Generate filenames using file service
+                docx_filename = file_service.generate_filename(core_request, file_type='docx', prefix='TSR')
+                pdf_filename = file_service.generate_filename(core_request, file_type='pdf', prefix='Original')
+                zip_filename = file_service.generate_filename(core_request, file_type='zip', prefix='TSR_Package')
+                
+                # Create ZIP file using file service
+                files_to_zip = {docx_filename: docx_content}
+                if pdf_content:
+                    files_to_zip[pdf_filename] = pdf_content
+                
+                zip_content = file_service.create_zip(files_to_zip, zip_filename)
+                
+                # Prepare filename for header
+                encoded_filename = quote(zip_filename)
+                zip_filename_ascii = f"TSR_Package_{os.urandom(4).hex()}.zip"
+                
+                return Response(
+                    content=zip_content,
+                    media_type='application/zip',
+                    headers={
+                        'Content-Disposition': f"attachment; filename=\"{zip_filename_ascii}\"; filename*=UTF-8''{encoded_filename}",
+                        'X-Cache-Status': 'HIT',
+                        'X-Cache-Timestamp': cache_metadata.get('timestamp', '')
+                    }
+                )
+            else:
+                # Cache miss - log it explicitly
+                logger.info(
+                    f"❌ CACHE MISS for {request.district}/{request.taluka}/{request.village}/{request.survey_number} "
+                    f"- will fetch from source"
+                )
+        except Exception as e:
+            # Log cache error but continue with normal processing
+            logger.warning(f"Cache check failed, proceeding without cache: {e}")
+    
+    # ===== CACHE MISS - PROCEED WITH SCRAPING =====
     temp_dir = tempfile.gettempdir()
     unique_id = os.urandom(8).hex()
     pdf_path = os.path.join(temp_dir, f"scraped_{unique_id}.pdf")
@@ -165,35 +274,11 @@ def process_record(
     
     # scraping_service is already initialized via Depends
     try:
-        # Translate to Gujarati for scraper - reject if translation fails (invalid entry)
-        try:
-            district_guj = translation_service.translate_to_gujarati(request.district, context='district')
-        except Exception as e:
-            logger.warning(f"Invalid district '{request.district}': {e}")
-            raise HTTPException(status_code=400, detail=f"Invalid district: '{request.district}' is not in our database")
-        
-        try:
-            taluka_guj = translation_service.translate_to_gujarati(request.taluka, context='taluka')
-        except Exception as e:
-            logger.warning(f"Invalid taluka '{request.taluka}': {e}")
-            raise HTTPException(status_code=400, detail=f"Invalid taluka: '{request.taluka}' is not in our database")
-        
-        try:
-            village_guj = translation_service.translate_to_gujarati(request.village, context='village')
-        except Exception as e:
-            logger.warning(f"Invalid village '{request.village}': {e}")
-            raise HTTPException(status_code=400, detail=f"Invalid village: '{request.village}' is not in our database")
-        
-        # Log translations for debugging
-        logger.info(f"Translation results: district '{request.district}' -> '{district_guj}', "
-                   f"taluka '{request.taluka}' -> '{taluka_guj}', "
-                   f"village '{request.village}' -> '{village_guj}'")
-        
         # Sanity check: district should not contain " - " (village code pattern)
         if " - " in district_guj:
             logger.error(f"SUSPICIOUS: District translation '{district_guj}' looks like a village code!")
 
-        # Fetch land record
+        # Fetch land record (using already-translated Gujarati values)
         logger.info(f"Calling scraper with: district='{district_guj}', taluka='{taluka_guj}', village='{village_guj}', survey='{request.survey_number}'")
         result = scraping_service.fetch_land_record(
             district=district_guj,
@@ -231,9 +316,10 @@ def process_record(
         else:
             logger.error(f"PDF file does not exist at {pdf_path}")
         
-        # Generate TSR
+        # Generate TSR (lazy load to improve startup time)
         logger.info(f"Starting TSR generation from PDF: {pdf_path}")
-        tsr_result = generate_tsr_from_pdf(pdf_path, docx_path, logger)
+        generate_tsr = get_tsr_generator()
+        tsr_result = generate_tsr(pdf_path, docx_path, logger)
         
         logger.info(f"TSR generation result: success={tsr_result.get('success')}, error={tsr_result.get('error')}")
         
@@ -262,6 +348,28 @@ def process_record(
         file_service.cleanup_temp_file(pdf_path)
         file_service.cleanup_temp_file(docx_path)
         
+        # ===== CACHE STORE =====
+        # Store the result in cache using translated values for the key
+        if cache_service is not None:
+            try:
+                # Use same cache key generation as lookup (based on translated Gujarati values)
+                cache_service.cache_record_by_key(
+                    cache_key=cache_key,  # Use the same key we generated for lookup
+                    original_request=core_request,
+                    translated_district=district_guj,
+                    translated_taluka=taluka_guj,
+                    translated_village=village_guj,
+                    docx_content=docx_content,
+                    pdf_content=pdf_content
+                )
+                logger.info(
+                    f"💾 CACHED record for {request.district}/{request.taluka}/{request.village}/{request.survey_number} "
+                    f"(cache_key: {cache_key[:16]}...)"
+                )
+            except Exception as e:
+                # Log cache error but don't fail the request
+                logger.warning(f"Failed to cache record: {e}")
+        
         # Generate filenames using file service
         docx_filename = file_service.generate_filename(core_request, file_type='docx', prefix='TSR')
         pdf_filename = file_service.generate_filename(core_request, file_type='pdf', prefix='Original')
@@ -284,7 +392,8 @@ def process_record(
             content=zip_content,
             media_type='application/zip',
             headers={
-                'Content-Disposition': f"attachment; filename=\"{zip_filename_ascii}\"; filename*=UTF-8''{encoded_filename}"
+                'Content-Disposition': f"attachment; filename=\"{zip_filename_ascii}\"; filename*=UTF-8''{encoded_filename}",
+                'X-Cache-Status': 'MISS'
             }
         )
         
@@ -321,6 +430,7 @@ def debug_environment():
             "GEMINI_MODEL_NAME": os.getenv("GEMINI_MODEL_NAME", "default: gemini-2.5-flash"),
             "CHROME_BIN": os.getenv("CHROME_BIN", "NOT SET"),
             "CHROMEDRIVER_PATH": os.getenv("CHROMEDRIVER_PATH", "NOT SET"),
+            "GCS_CACHE_BUCKET": os.getenv("GCS_CACHE_BUCKET", "NOT SET"),
         },
         "chrome_available": False,
         "chromedriver_available": False
@@ -353,3 +463,31 @@ def debug_environment():
             break
     
     return debug_info
+
+
+@app.get("/cache-stats")
+def cache_stats(cache_service = Depends(get_cache_service_dependency)):
+    """
+    Get statistics about the record cache.
+    
+    Returns cache statistics including number of cached records,
+    total size, and TTL configuration.
+    """
+    if cache_service is None:
+        return {
+            "status": "disabled",
+            "message": "Cache not configured. Set GCS_CACHE_BUCKET environment variable to enable."
+        }
+    
+    try:
+        stats = cache_service.get_cache_stats()
+        return {
+            "status": "enabled",
+            **stats
+        }
+    except Exception as e:
+        logger.error(f"Failed to get cache stats: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }

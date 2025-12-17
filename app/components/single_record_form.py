@@ -15,6 +15,7 @@ import streamlit as st
 from datetime import datetime
 from core.models import LandRecordRequest as CoreLandRecordRequest
 from app.api_client import TSRAPIClient, APIResponse
+from utils.survey_utils import convert_survey_number, sanitize_filename
 
 
 def _format_duration(delta) -> str:
@@ -58,8 +59,10 @@ def single_record_form(api_client: TSRAPIClient) -> None:
             return
         with st.spinner("Processing via API..."):
             start_time = datetime.now()
+            # Normalize survey number
+            normalized_survey = convert_survey_number(survey)
             result = process_single_record_api(
-                api_client, district, taluka, village, survey
+                api_client, district, taluka, village, normalized_survey
             )
             duration = datetime.now() - start_time
             # Store result in session state for persistence (not in processing_results)
@@ -85,13 +88,19 @@ def single_record_form(api_client: TSRAPIClient) -> None:
         if result["success"]:
             st.success(f"✅ TSR generated successfully in {_format_duration(duration)}!")
             
+            # Create safe filenames
+            safe_district = sanitize_filename(district)
+            safe_taluka = sanitize_filename(taluka)
+            safe_village = sanitize_filename(village)
+            safe_survey = sanitize_filename(survey)
+            
             col1, col2 = st.columns(2)
             with col1:
                 if result.get("docx_content"):
                     st.download_button(
                         "📥 Download TSR (DOCX)",
                         data=result["docx_content"],
-                        file_name=f"{district}_{taluka}_{village}_{survey}_TSR.docx",
+                        file_name=f"{safe_district}_{safe_taluka}_{safe_village}_{safe_survey}_TSR.docx",
                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                         key="single_docx_download"
                     )
@@ -100,7 +109,7 @@ def single_record_form(api_client: TSRAPIClient) -> None:
                     st.download_button(
                         "📥 Download Original (PDF)",
                         data=result["pdf_content"],
-                        file_name=f"{district}_{taluka}_{village}_{survey}_Original.pdf",
+                        file_name=f"{safe_district}_{safe_taluka}_{safe_village}_{safe_survey}_Original.pdf",
                         mime="application/pdf",
                         key="single_pdf_download"
                     )

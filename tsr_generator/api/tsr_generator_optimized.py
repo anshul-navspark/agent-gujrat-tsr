@@ -102,9 +102,9 @@ def generate_tsr_from_pdf_optimized(
 
         logger.debug(f"Extracted: land_details, {len(entry_table)} entry numbers, {len(entries)} detailed entries")
 
-        # Generate findings (no LLM call - static data)
-        logger.debug("Generating findings")
-        findings = generate_findings_table(pdf_text)
+        # Generate findings with dynamic encumbrance detection
+        logger.debug("Generating findings with encumbrance analysis")
+        findings = generate_findings_table(pdf_text, unified_result.mutation_entries)
 
         # Ensure output directory exists
         output_dir = os.path.dirname(output_path)
@@ -173,7 +173,17 @@ def _fallback_generation(
         land_details = extract_land_details(pdf_text)
         entry_table = extract_entry_table(pdf_text)
         entries = extract_entry_details(pdf_text)
-        findings = generate_findings_table(pdf_text)
+        # Convert entries to dict for findings
+        entries_for_findings = [
+            {
+                'entry_number': str(e.entry_number),
+                'type': e.type.value if hasattr(e.type, 'value') else str(e.type),
+                'description': getattr(e, 'formatted_description', ''),
+                'entry_status': getattr(e, 'entry_status', 'certified')
+            }
+            for e in entries
+        ]
+        findings = generate_findings_table(pdf_text, entries_for_findings)
 
         # Ensure output directory exists
         output_dir = os.path.dirname(output_path)

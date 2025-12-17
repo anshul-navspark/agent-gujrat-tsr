@@ -265,7 +265,8 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
             ("Old & New Village Form no. 7 starting from the year 1958 till latest version available.", "Online", "Not Applicable"),
             ("Old & New Village Form no. 6 starting from the year 1958 till latest version available.", "Online", "Not Applicable"),
             ("Village Form No. 8A", "Online", "Not Applicable"),
-            ("Old Scanned Village Form No. 7/12 starting from the year 1952 to 2004", "Online", "Not Applicable")
+            ("Old Scanned Village Form No. 7/12 starting from the year 1952 to 2004", "Online", "Not Applicable"),
+            ("Encumbrance Certificate for a period of 30 Years", "Digital Certified copy", sanitize_text(land_details.get('taluka_name', 'Porbandar')))
         ]
         
         for doc_type, perusal, office in standard_docs:

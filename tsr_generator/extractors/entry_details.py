@@ -12,7 +12,7 @@ from tsr_generator.extractors.entry_schema import (
     SaleEntry, MortgageEntry, ReleaseEntry, InheritanceEntry, 
     PartitionEntry, RelinquishmentEntry, OrderEntry, CorrectionEntry, GenericEntry
 )
-model_name = os.getenv('GEMINI_MODEL_NAME', 'gemini-2.5-flash')
+model_name = os.getenv('GEMINI_MODEL_NAME', 'gemini-3-pro-preview')
 
 def extract_entry_table(pdf_text):
     llm = ChatGoogleGenerativeAI(
@@ -130,7 +130,8 @@ def extract_entry_details_ai(pdf_text):
         CRITICAL Formatting Rules:
         1. ALL substantive descriptions MUST start with "That" (except for NOT RELATED and PROMULGATION types)
         2. Use proper name formatting with full titles (Thakor, Patel, Kanbi, Choudhary, Rabari, Vadher, Solanki, etc.)
-        3. Preserve measurement units exactly: "Acre/Guntha" or "Hectare"
+        3. Preserve measurement units exactly: "Acre/Guntha" or "Hectare". REPLACE "H.Are.SqMt." with "Hectare".
+           Example: "1-88-48 H.Are.SqMt. i.e.(18848 Sq. Mts)" -> "1-88-48 Hectare (i.e. 18848 Sq. Mts)"
         4. Format amounts as "Rs. X/-" or "Rs. X,XXX/-"
         5. For lists of heirs/parties, use "which are as follows:-" followed by bullet points
         6. Document references: "document no. X dated DD/MM/YYYY" or "document no. X dated DD.MM.YYYY"
@@ -307,7 +308,8 @@ def extract_entry_details_fallback(entry_section):
         CRITICAL Formatting Rules:
         1. Start descriptions with "That" (except NOT RELATED and PROMULGATION)
         2. Use proper titles: Thakor, Patel, Kanbi, Choudhary, Rabari, Vadher, Solanki
-        3. Preserve measurement units: "Acre/Guntha" or "Hectare"
+        3. Preserve measurement units: "Acre/Guntha" or "Hectare". REPLACE "H.Are.SqMt." with "Hectare".
+           Example: "1-88-48 H.Are.SqMt. i.e.(18848 Sq. Mts)" -> "1-88-48 Hectare (i.e. 18848 Sq. Mts)"
         4. Format amounts: "Rs. X/-" or "Rs. X,XXX/-"
         5. Lists: "which are as follows:-" followed by bullet points
         6. ALWAYS use "Survey No." instead of "Khata No." or "Account No."
@@ -438,6 +440,10 @@ def process_entry_details(raw_entries):
             # Ensure certification info is set
             if hasattr(entry, 'certification') and not entry.certification and 'certification' in raw_entry:
                 entry.certification = raw_entry['certification']
+            
+            # Set entry_status from raw entry (certified, rejected, not_accepted)
+            if hasattr(entry, 'entry_status') and 'entry_status' in raw_entry:
+                entry.entry_status = raw_entry.get('entry_status', '')
             
             processed_entries.append(entry)
             

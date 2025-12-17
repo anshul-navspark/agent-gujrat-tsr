@@ -20,14 +20,16 @@ from typing import List, Dict, Any, Optional
 from core.models import LandRecordRequest as CoreLandRecordRequest
 from app.api_client import TSRAPIClient, APIResponse
 from utils.ai_column_detector import AIColumnDetector, auto_detect_columns
+from utils.survey_utils import convert_survey_number
 
 
 
-def batch_processing_form(api_client: TSRAPIClient) -> None:
+def batch_processing_form(api_client: TSRAPIClient, max_workers: int = 20) -> None:
     """Render the batch processing UI for Excel file uploads.
 
     Args:
         api_client: Initialized TSRAPIClient instance for making API calls.
+        max_workers: Number of parallel workers for processing. Defaults to 20.
     """
     st.subheader("📊 Batch Processing (Excel)")
     st.caption("Upload an Excel file with land records to process in batch.")
@@ -45,20 +47,12 @@ def batch_processing_form(api_client: TSRAPIClient) -> None:
             df = pd.read_excel(uploaded_file)
             st.success(f"✅ Loaded {len(df)} records from {uploaded_file.name}")
 
-            # Display preview
-            with st.expander("📋 Preview Data", expanded=True):
-                st.dataframe(df.head(10), use_container_width=True, hide_index=True)
-
             # AI-based column detection
             st.divider()
             st.subheader("🤖 AI Column Mapping")
             
             # Use AI to detect columns
             detected_mapping, confidence_report = auto_detect_columns(df)
-            
-            # Show AI detection report
-            with st.expander("🔍 AI Detection Report", expanded=False):
-                st.text(confidence_report)
             
             # Prepare available columns with empty option
             available_columns = [""] + list(df.columns)
@@ -139,7 +133,7 @@ def batch_processing_form(api_client: TSRAPIClient) -> None:
                     taluka_col=taluka_col,
                     village_col=village_col,
                     survey_col=survey_col,
-                    max_workers=20,
+                    max_workers=max_workers,
                     start_row=1
                 )
 
@@ -147,10 +141,10 @@ def batch_processing_form(api_client: TSRAPIClient) -> None:
             st.error(f"❌ Error reading Excel file: {str(e)}")
     
     # Display persistent batch results (outside the file upload block)
-    _display_batch_results(api_client)
+    _display_batch_results(api_client, max_workers)
 
 
-def _display_batch_results(api_client: TSRAPIClient) -> None:
+def _display_batch_results(api_client: TSRAPIClient, max_workers: int = 20) -> None:
     """Display batch results with Download ZIP and Retry buttons."""
     if "batch_results" not in st.session_state or not st.session_state.batch_results:
         return
@@ -197,7 +191,10 @@ def _display_batch_results(api_client: TSRAPIClient) -> None:
                 files_to_zip[filename] = result['pdf_content']
         
         if files_to_zip:
-            zip_data = file_service.create_zip(files_to_zip, "tsr_documents.zip")
+            if "batch_zip_data" not in st.session_state:
+                st.session_state.batch_zip_data = file_service.create_zip(files_to_zip, "tsr_documents.zip")
+            
+            zip_data = st.session_state.batch_zip_data
             # Use summary timestamp to make key unique per batch run
             batch_id = st.session_state.get("batch_summary", {}).get("total", 0)
             st.download_button(
@@ -212,10 +209,10 @@ def _display_batch_results(api_client: TSRAPIClient) -> None:
     failed_count = sum(1 for r in results if not r.get("success"))
     if failed_count > 0:
         if st.button(f"🔄 Retry {failed_count} Failed Entries", type="primary", key=f"batch_retry_btn_{failed_count}"):
-            _retry_failed_entries(api_client, results)
+            _retry_failed_entries(api_client, results, max_workers)
 
 
-def _retry_failed_entries(api_client: TSRAPIClient, results: List[Dict[str, Any]]) -> None:
+def _retry_failed_entries(api_client: TSRAPIClient, results: List[Dict[str, Any]], max_workers: int = 20) -> None:
     """Retry all failed entries."""
     failed_indices = [i for i, r in enumerate(results) if not r.get("success")]
     if not failed_indices:
@@ -224,7 +221,7 @@ def _retry_failed_entries(api_client: TSRAPIClient, results: List[Dict[str, Any]
     progress = st.progress(0)
     status = st.empty()
     
-    with ThreadPoolExecutor(max_workers=20) as executor:
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_idx = {
             executor.submit(
                 _process_single_record,
@@ -253,6 +250,11 @@ def _retry_failed_entries(api_client: TSRAPIClient, results: List[Dict[str, Any]
     st.session_state.batch_summary["failed"] = sum(1 for r in results if not r.get("success"))
     
     st.success("Retry complete!")
+    
+    # Invalidate zip cache since results changed
+    if "batch_zip_data" in st.session_state:
+        del st.session_state.batch_zip_data
+        
     st.rerun()
 
 
@@ -286,8 +288,16 @@ def _process_batch(
         st.warning("No records to process.")
         return
 
-    st.info(f"🔄 Processing {total_records} records")
+    # Clear previous results immediately to avoid confusion
+    if "batch_results" in st.session_state:
+        del st.session_state.batch_results
+    if "batch_summary" in st.session_state:
+        del st.session_state.batch_summary
+    if "batch_zip_data" in st.session_state:
+        del st.session_state.batch_zip_data
 
+    st.info(f"🔄 Processing {total_records} records")
+    
     # Progress tracking
     progress_bar = st.progress(0)
     status_container = st.empty()
@@ -303,13 +313,15 @@ def _process_batch(
         # Submit all tasks
         future_to_row = {}
         for idx, row in df_to_process.iterrows():
+            # Convert survey number to proper format before processing
+            survey_number = convert_survey_number(str(row[survey_col]).strip())
             future = executor.submit(
                 _process_single_record,
                 api_client,
                 str(row[district_col]).strip(),
                 str(row[taluka_col]).strip(),
                 str(row[village_col]).strip(),
-                str(row[survey_col]).strip(),
+                survey_number,
                 idx + start_row  # Original row index
             )
             future_to_row[future] = idx
@@ -334,13 +346,23 @@ def _process_batch(
                     "district": str(row[district_col]).strip(),
                     "taluka": str(row[taluka_col]).strip(),
                     "village": str(row[village_col]).strip(),
-                    "survey": str(row[survey_col]).strip(),
+                    "survey": convert_survey_number(row[survey_col]),
                     "success": False,
                     "docx_content": None,
                     "pdf_content": None,
                     "error": str(e),
                     "timestamp": datetime.now().isoformat(),
                 })
+
+            # Update session state immediately so Results tab can show progress
+            st.session_state.batch_results = results.copy()
+            st.session_state.batch_summary = {
+                "total": total_records,
+                "successful": successful,
+                "failed": failed,
+                "in_progress": True,
+                "completed": completed_count
+            }
 
             # Update progress
             progress = completed_count / total_records
@@ -354,13 +376,16 @@ def _process_batch(
     elapsed_time = datetime.now() - start_time
     progress_bar.progress(1.0)
 
-    # Store results in session state (for batch section, not results tab)
+    # Store final results in session state
     st.session_state.batch_results = results
+    
     st.session_state.batch_summary = {
         "total": total_records,
         "successful": successful,
         "failed": failed,
-        "duration": elapsed_time
+        "duration": elapsed_time,
+        "in_progress": False,
+        "completed": total_records
     }
 
     # Display summary
@@ -383,6 +408,9 @@ def _process_batch(
         st.warning(f"⚠️ {failed} records failed.")
     else:
         st.error("❌ All records failed. Please check your inputs and API status.")
+    
+    # Force a rerun to ensure results are displayed correctly in the main view
+    st.rerun()
 
 
 def _process_single_record(
