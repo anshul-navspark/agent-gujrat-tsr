@@ -61,7 +61,8 @@ FORMATTING_RULES = """
 Formatting Rules:
 1. ALL descriptions MUST start with "That" (except NOT RELATED, PROMULGATION)
 2. Use titles: Thakor, Patel, Kanbi, Choudhary, Rabari, Vadher, Solanki
-3. Measurements: "Acre/Guntha" or "Hectare"
+3. Measurements: Use "Acre/Guntha" or "Hectare". REPLACE "H.Are.SqMt." with "Hectare".
+   - Example: Convert "1-88-48 H.Are.SqMt. i.e.(18848 Sq. Mts)" to "1-88-48 Hectare (i.e. 18848 Sq. Mts)"
 4. Amounts: "Rs. X/-" or "Rs. X,XXX/-"
 5. Lists: "which are as follows:-" + bullet points (Use "•" not "*")
 6. Documents: "document no. X dated DD/MM/YYYY"

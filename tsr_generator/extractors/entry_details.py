@@ -130,7 +130,8 @@ def extract_entry_details_ai(pdf_text):
         CRITICAL Formatting Rules:
         1. ALL substantive descriptions MUST start with "That" (except for NOT RELATED and PROMULGATION types)
         2. Use proper name formatting with full titles (Thakor, Patel, Kanbi, Choudhary, Rabari, Vadher, Solanki, etc.)
-        3. Preserve measurement units exactly: "Acre/Guntha" or "Hectare"
+        3. Preserve measurement units exactly: "Acre/Guntha" or "Hectare". REPLACE "H.Are.SqMt." with "Hectare".
+           Example: "1-88-48 H.Are.SqMt. i.e.(18848 Sq. Mts)" -> "1-88-48 Hectare (i.e. 18848 Sq. Mts)"
         4. Format amounts as "Rs. X/-" or "Rs. X,XXX/-"
         5. For lists of heirs/parties, use "which are as follows:-" followed by bullet points
         6. Document references: "document no. X dated DD/MM/YYYY" or "document no. X dated DD.MM.YYYY"
@@ -307,7 +308,8 @@ def extract_entry_details_fallback(entry_section):
         CRITICAL Formatting Rules:
         1. Start descriptions with "That" (except NOT RELATED and PROMULGATION)
         2. Use proper titles: Thakor, Patel, Kanbi, Choudhary, Rabari, Vadher, Solanki
-        3. Preserve measurement units: "Acre/Guntha" or "Hectare"
+        3. Preserve measurement units: "Acre/Guntha" or "Hectare". REPLACE "H.Are.SqMt." with "Hectare".
+           Example: "1-88-48 H.Are.SqMt. i.e.(18848 Sq. Mts)" -> "1-88-48 Hectare (i.e. 18848 Sq. Mts)"
         4. Format amounts: "Rs. X/-" or "Rs. X,XXX/-"
         5. Lists: "which are as follows:-" followed by bullet points
         6. ALWAYS use "Survey No." instead of "Khata No." or "Account No."
