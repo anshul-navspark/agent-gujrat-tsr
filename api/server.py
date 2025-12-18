@@ -39,12 +39,40 @@ from api.dependencies import (
     get_cache_service_dependency
 )
 from api.middleware import TimingMiddleware
+from contextlib import asynccontextmanager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Gujarat TSR Agent API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Lifespan event handler for startup/shutdown tasks."""
+    # Startup: Check and clear DOCX cache if new version detected
+    commit_sha = os.getenv("GIT_COMMIT_SHA")
+    if commit_sha:
+        logger.info(f"App starting with version: {commit_sha}")
+        try:
+            from services.cache_service import get_cache_service
+            cache_service = get_cache_service()
+            if cache_service:
+                if cache_service.check_and_clear_docx_if_new_version(commit_sha):
+                    logger.info("✅ DOCX cache cleared due to new deployment version")
+                else:
+                    logger.info("Cache version unchanged, no clearing needed")
+            else:
+                logger.warning("Cache service not available for version check")
+        except Exception as e:
+            logger.error(f"Failed to check/clear cache on startup: {e}")
+    else:
+        logger.warning("GIT_COMMIT_SHA not set, skipping cache version check")
+    
+    yield  # App runs here
+    
+    # Shutdown (if needed)
+    logger.info("App shutting down")
+
+app = FastAPI(title="Gujarat TSR Agent API", lifespan=lifespan)
 app.add_middleware(TimingMiddleware)
 
 # Lazy configuration loading - improves startup time
