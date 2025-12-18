@@ -74,6 +74,7 @@ Formatting Rules - USE COMPACT LANGUAGE:
 12. Translate "bhen" or "ben" suffix as "ben" (e.g. "Shantiben")
 13. Lists: "which are as follows:-" + bullet points (Use "•" not "*")
 14. OMIT sentences like "This entry was made based on..." or "This inheritance entry was made...". Keep descriptions concise.
+15. LOAN entries: Do NOT include agreement date. Only describe the loan, borrower, lender, amount, and land details.
 """
 
 # Certification patterns (~150 tokens)
@@ -100,7 +101,13 @@ DESCRIPTION_EXAMPLES = """
 Example descriptions (COMPACT - follow these exact patterns):
 
 LOAN (correct): "That Mer Deva Depa took a loan of Rs. 20,000/- on land bearing old Survey No. 373/p1, 359, 390, 389 (215) from Bank of India, Modhvada Branch."
+LOAN (wrong - includes agreement date): "That Mer Deva Depa took a loan of Rs. 20,000/- from Bank of India, Modhvada Branch based on an agreement dated 14/05/2005." - DO NOT include agreement date!
 LOAN (wrong - too verbose): "That account holder Shri Mer Deva Depa of Keshav village mortgaged his total land of 6-21-20 Hectare of Keshav village, Khata No. 215, bearing Survey No. 390, with Bank of India, Modhwada branch, to obtain a loan of Rs. 20,000/-. This encumbrance entry was recorded based on the agreement dated 14/05/2005."
+
+IMPORTANT for LOAN entries:
+- DO NOT include "agreement dated" or "based on an agreement"
+- DO NOT include total land area or hectare measurements in loan descriptions
+- Just state: borrower name, loan amount, survey numbers, bank name and branch
 
 Other patterns:
 - DEATH: "That upon demise of [Name], land bearing Survey No. X mutated to heirs: [list]"
@@ -158,7 +165,9 @@ OUTPUT FORMAT - Return ONLY valid JSON with this exact structure:
       "type": "",
       "description": "",
       "entry_status": "",
-      "certification": ""
+      "certification_status": "",
+      "certification_official": "",
+      "certification_date": ""
     }}
   ]
 }}
@@ -182,13 +191,14 @@ EXTRACTION INSTRUCTIONS:
    - type: One of: LOAN, DEATH, RELEASE, LOAN CLOSE, SALE, PARTITION, PERSONS ADD, TO TRANSFER, EXCHANGE, LIFETIME DISTRIBUTION, NOT RELATED, ORDER, RELINQUISHMENT, PROMULGATION
    - description: MUST BE IN ENGLISH. Translate all Gujarati.
    - entry_status: One of: "certified", "rejected", "not_accepted". Look for Gujarati keywords નામંજૂર (rejected), રદ (cancelled). Default to "certified" if the entry says "certified" or "The Entry is certified".
-   - certification: Format as "The Entry is [STATUS] by [POST/DESIGNATION], [PLACE] on DD/MM/YYYY."
-     IMPORTANT: Extract the official's POST/DESIGNATION (e.g., "Deputy Mamlatdar, Super" or "C.O.") NOT their personal name. Abbreviate "Circle Officer" as "C.O.".
-     STATUS should be "certified", "rejected", or "not accepted" based on entry_status.
-     Examples:
-     - "The Entry is certified by Deputy Mamlatdar Super, Porbandar on 08/05/2015."
-     - "The Entry is rejected by Deputy Mamlatdar, Super on 19/03/2007."
-     - "The Entry is not accepted by Deputy Mamlatdar Super, Porbandar on 03/07/2011."
+   - certification_status: MUST be one of: "certified", "rejected", "not_accepted", or "" if unclear
+   - certification_official: The official's POST/DESIGNATION and PLACE (e.g., "C.O. Porbandar", "Deputy Mamlatdar Super, Porbandar"). Abbreviate "Circle Officer" as "C.O.". Do NOT include personal names.
+   - certification_date: The certification date in DD/MM/YYYY format. This is DIFFERENT from the entry date - look for when the entry was certified/rejected.
+      
+      IMPORTANT: All three certification fields MUST be extracted if available in the document.
+      Examples of what to extract:
+      - certification_status: "certified", certification_official: "C.O. Porbandar", certification_date: "21/06/2005"
+      - certification_status: "rejected", certification_official: "Deputy Mamlatdar Super, Porbandar", certification_date: "19/03/2007"
 
 {ENTRY_TYPE_RULES}
 {FORMATTING_RULES}
@@ -196,7 +206,7 @@ EXTRACTION INSTRUCTIONS:
 {CERTIFICATION_PATTERNS}
 
 For entries with only a number in the table (no details), include with empty fields:
-{{"entry_number": "X", "date": "", "type": "", "description": "", "entry_status": "", "certification": ""}}
+{{"entry_number": "X", "date": "", "type": "", "description": "", "entry_status": "", "certification_status": "", "certification_official": "", "certification_date": ""}}
 
 IMPORTANT: For entries where content is not legible/available, set description to:
 "Entry mentioned in the document but content is not legible."

@@ -146,6 +146,42 @@ EntryUnion = Union[
 ]
 
 
+def _build_certification_string(entry_dict: Dict[str, Any]) -> str:
+    """
+    Build certification string from structured fields.
+    
+    Args:
+        entry_dict: Dictionary with certification_status, certification_official, certification_date fields
+        
+    Returns:
+        Certification string like "The Entry is certified by C.O. Porbandar on 21/06/2005."
+    """
+    status = entry_dict.get('certification_status', '').strip()
+    official = entry_dict.get('certification_official', '').strip()
+    cert_date = entry_dict.get('certification_date', '').strip()
+    
+    if not status:
+        return ""
+    
+    # Map status to display text
+    status_map = {
+        'certified': 'certified',
+        'rejected': 'rejected',
+        'not_accepted': 'not accepted',
+        'cancelled': 'cancelled'
+    }
+    display_status = status_map.get(status.lower(), status)
+    
+    # Build the certification string
+    if official and cert_date:
+        return f"The Entry is {display_status} by {official} on {cert_date}."
+    elif official:
+        return f"The Entry is {display_status} by {official}."
+    elif cert_date:
+        return f"The Entry is {display_status} on {cert_date}."
+    else:
+        return f"The Entry is {display_status}."
+
 def create_entry_from_dict(entry_dict):
     """
     Create a structured entry object from a dictionary of entry details
@@ -234,7 +270,12 @@ def create_entry_from_dict(entry_dict):
     entry_number = entry_dict.get('entry_number', '')
     date = entry_dict.get('date', '')
     description = entry_dict.get('description', '')
+    
+    # Handle both old format (certification string) and new format (structured fields)
     certification = entry_dict.get('certification', '')
+    if not certification:
+        # Try to construct from structured fields
+        certification = _build_certification_string(entry_dict)
     
     # Create the appropriate entry object based on type
     if entry_type == EntryType.SALE:
