@@ -58,18 +58,22 @@ Entry Type Classification:
 
 # Formatting rules (~150 tokens)
 FORMATTING_RULES = """
-Formatting Rules:
+Formatting Rules - USE COMPACT LANGUAGE:
 1. ALL descriptions MUST start with "That" (except NOT RELATED, PROMULGATION)
-2. Use titles: Thakor, Patel, Kanbi, Choudhary, Rabari, Vadher, Solanki
-3. Measurements: Use "Acre/Guntha" or "Hectare". REPLACE "H.Are.SqMt." with "Hectare".
-   - Example: Convert "1-88-48 H.Are.SqMt. i.e.(18848 Sq. Mts)" to "1-88-48 Hectare (i.e. 18848 Sq. Mts)"
-4. Amounts: "Rs. X/-" or "Rs. X,XXX/-"
-5. Lists: "which are as follows:-" + bullet points (Use "•" not "*")
-6. Documents: "document no. X dated DD/MM/YYYY"
+2. DO NOT use honorifics like "Shri", "Smt", "Mr.", "Mrs."
+3. DO NOT use "account holder", "mortgaged his total land", "of [village] village"
+4. DO NOT include sentences like "This encumbrance entry was recorded based on..." or "This inheritance entry was made..."
+5. Keep descriptions SHORT and DIRECT - one sentence if possible
+6. Amounts: "Rs. X/-" or "Rs. X,XXX/-"
 7. ALWAYS use "Survey No." instead of "Khata No." or "Account No."
-8. Translate "Paiki" or "p" or "pk" as "Part" in survey numbers (e.g. "150 / Part 1" with spaces around slash)
-9. Translate "bhen" or "ben" suffix as "ben" (e.g. "Shantiben")
-10. OMIT sentences like "This entry was made based on..." or "This inheritance entry was made...". Keep descriptions concise.
+8. Documents: "document no. X dated DD/MM/YYYY"
+9. Translate "Paiki" or "p" or "pk" as "Part" in survey numbers (e.g. "150 / p1" with spaces around slash)
+10. Use caste titles only when part of the name: Thakor, Patel, Kanbi, Choudhary, Rabari, Vadher, Solanki
+11. Measurements: Use "Acre/Guntha" or "Hectare". REPLACE "H.Are.SqMt." with "Hectare".
+   - Example: Convert "1-88-48 H.Are.SqMt. i.e.(18848 Sq. Mts)" to "1-88-48 Hectare (i.e. 18848 Sq. Mts)"
+12. Translate "bhen" or "ben" suffix as "ben" (e.g. "Shantiben")
+13. Lists: "which are as follows:-" + bullet points (Use "•" not "*")
+14. OMIT sentences like "This entry was made based on..." or "This inheritance entry was made...". Keep descriptions concise.
 """
 
 # Certification patterns (~150 tokens)
@@ -91,15 +95,19 @@ Certification output formats:
 IMPORTANT: Do NOT output "certified" if the Gujarati text contains રદ, ના મંજૂર, or નામંજુર!
 """
 
-# Minimal description examples (~400 tokens - reduced from 1500+)
+# Minimal description examples - COMPACT format
 DESCRIPTION_EXAMPLES = """
-Example descriptions (follow these patterns):
-- LOAN: "That [Name] took a loan of Rs. X/- on land bearing Survey No. Y from [Bank/Institution]."
-- DEATH: "That upon the demise of [Name], land bearing Survey No. X came to be mutated in legal heirs: [list]"
-- SALE: "That [Seller] sold land bearing Survey No. X to [Buyer] through document no. Y dated Z for Rs. X/-."
-- PARTITION: "That [Name] distributed land as follows:- [bullet list with Survey No. and area]"
-- RELEASE: "That upon receiving application from [Name] for removing charge of [Bank]. Entry No. X."
-- ORDER: "That as per Taluka Circular No. X dated Y, Survey No. Z was allotted to [Name]."
+Example descriptions (COMPACT - follow these exact patterns):
+
+LOAN (correct): "That Mer Deva Depa took a loan of Rs. 20,000/- on land bearing old Survey No. 373/p1, 359, 390, 389 (215) from Bank of India, Modhvada Branch."
+LOAN (wrong - too verbose): "That account holder Shri Mer Deva Depa of Keshav village mortgaged his total land of 6-21-20 Hectare of Keshav village, Khata No. 215, bearing Survey No. 390, with Bank of India, Modhwada branch, to obtain a loan of Rs. 20,000/-. This encumbrance entry was recorded based on the agreement dated 14/05/2005."
+
+Other patterns:
+- DEATH: "That upon demise of [Name], land bearing Survey No. X mutated to heirs: [list]"
+- SALE: "That [Seller] sold Survey No. X to [Buyer] for Rs. X/- vide document no. Y dated Z."
+- PARTITION: "That [Name] distributed land as follows:- [bullet list]"
+- RELEASE: "That charge of [Bank] removed on application of [Name]. Ref Entry No. X."
+- ORDER: "That as per Taluka Circular No. X dated Y, Survey No. Z allotted to [Name]."
 - NOT RELATED: "This entry is not related to present survey no."
 """
 
@@ -175,7 +183,7 @@ EXTRACTION INSTRUCTIONS:
    - description: MUST BE IN ENGLISH. Translate all Gujarati.
    - entry_status: One of: "certified", "rejected", "not_accepted". Look for Gujarati keywords નામંજૂર (rejected), રદ (cancelled). Default to "certified" if the entry says "certified" or "The Entry is certified".
    - certification: Format as "The Entry is [STATUS] by [POST/DESIGNATION], [PLACE] on DD/MM/YYYY."
-     IMPORTANT: Extract the official's POST/DESIGNATION (e.g., "Deputy Mamlatdar, Super" or "Circle Officer") NOT their personal name.
+     IMPORTANT: Extract the official's POST/DESIGNATION (e.g., "Deputy Mamlatdar, Super" or "C.O.") NOT their personal name. Abbreviate "Circle Officer" as "C.O.".
      STATUS should be "certified", "rejected", or "not accepted" based on entry_status.
      Examples:
      - "The Entry is certified by Deputy Mamlatdar Super, Porbandar on 08/05/2015."
