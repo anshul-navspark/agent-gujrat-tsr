@@ -119,6 +119,11 @@ def extract_entry_details_ai(pdf_text):
         3. type - Category of entry (LOAN, DEATH, RELEASE, LOAN CLOSE, SALE, PARTITION, PERSONS ADD, TO TRANSFER, EXCHANGE, LIFETIME DISTRIBUTION, NOT RELATED, ORDER, RELINQUISHMENT, etc.)
         4. description - Detailed description following the exact format from examples. MUST BE IN ENGLISH. Translate any Gujarati text. Do NOT include any Gujarati characters.
         5. certification - Line about certification if available (starts with "The Entry is certified..." or "The Entry is rejected"). MUST BE IN ENGLISH. Do NOT include any Gujarati characters.
+        6. certification_status - One of: "certified", "rejected", "not_approved"
+        7. certification_official - The official's POST/DESIGNATION and PLACE (e.g., "C.O. Porbandar", "Deputy Mamlatdar Super, Porbandar"). Abbreviate "Circle Officer" as "C.O.". Do NOT include personal names. 
+        8. certification_date - The certification date in DD/MM/YYYY format. This is DIFFERENT from the entry date - look for when the entry was certified/rejected. 
+        
+        IMPORTANT: Extract certification_official and certification_date whenever they are present in the document, even if certification_status is not explicitly stated. If certification_official or certification_date are present, include them in the response.
 
         Many entries will only have an entry number listed in a table format without any other details, under the table heading "Entry Details". For these entries:
         - entry_number: Use the number from the table
@@ -126,6 +131,9 @@ def extract_entry_details_ai(pdf_text):
         - type: ""
         - description: ""
         - certification: ""
+        - certification_status: ""
+        - certification_official: ""
+        - certification_date: ""
 
         CRITICAL Formatting Rules:
         1. ALL substantive descriptions MUST start with "That" (except for NOT RELATED and PROMULGATION types)
@@ -214,8 +222,13 @@ def extract_entry_details_ai(pdf_text):
         - "The entry is Rejected."
         - "The Entry is certified but date is not legible."
 
+        CRITICAL: When extracting certification information, look for:
+        - The certifier/official name and designation (e.g., "C.O. Porbandar", "Deputy Mamlatdar Super, Porbandar")
+        - The certification date (which may be different from the entry date)
+        - Extract these as separate fields (certification_official and certification_date) even if they appear in the certification text
+
         Format your response as a JSON array with objects containing these keys:
-        "entry_number", "date", "type", "description", "certification"
+        "entry_number", "date", "type", "description", "certification", "certification_status", "certification_official", "certification_date"
 
         Here's the document section to analyze:
         {entry_section}
@@ -302,6 +315,12 @@ def extract_entry_details_fallback(entry_section):
         - type: Category (LOAN, DEATH, RELEASE, SALE, PARTITION, EXCHANGE, LIFETIME DISTRIBUTION, NOT RELATED, ORDER, RELINQUISHMENT, etc.)
         - description: Start with "That" and provide complete details (except for NOT RELATED and PROMULGATION types). MUST BE IN ENGLISH. Translate all Gujarati text. Do NOT include any Gujarati characters.
         - certification: Information about who certified the entry and when. MUST BE IN ENGLISH. Do NOT include any Gujarati characters.
+        
+        - certification_status: One of: "certified", "rejected", "not_approved"
+        - certification_official: The official's POST/DESIGNATION and PLACE (e.g., "C.O. Porbandar", "Deputy Mamlatdar Super, Porbandar"). Abbreviate "Circle Officer" as "C.O.". Do NOT include personal names.
+        - certification_date: The certification date in DD/MM/YYYY format. This is DIFFERENT from the entry date - look for when the entry was certified/rejected.
+        
+        IMPORTANT: Extract certification_official and certification_date whenever they are present in the document, even if certification_status is not explicitly stated.
 
         For entries where you can identify the entry number but not the description or other details, you may include them with empty fields. Only do this if the number clearly appears under the "Entry Details" heading or next to "Entry No.". Do not create entries from Khata/Survey numbers.
 
@@ -327,8 +346,13 @@ def extract_entry_details_fallback(entry_section):
         - "The Entry is rejected."
         - "The Entry is certified but date is not legible."
 
+        CRITICAL: When extracting certification information, look for:
+        - The certifier/official name and designation (e.g., "C.O. Porbandar", "Deputy Mamlatdar Super, Porbandar")
+        - The certification date (which may be different from the entry date)
+        - Extract these as separate fields (certification_official and certification_date) even if they appear in the certification text
+
         Format your response as a JSON array with objects containing these keys:
-        "entry_number", "date", "type", "description", "certification"
+        "entry_number", "date", "type", "description", "certification", "certification_status", "certification_official", "certification_date"
 
         Here's the text:
         {entry_section}
@@ -438,12 +462,26 @@ def process_entry_details(raw_entries):
             extract_entry_specific_details(entry, raw_entry)
             
             # Ensure certification info is set
-            if hasattr(entry, 'certification') and not entry.certification and 'certification' in raw_entry:
-                entry.certification = raw_entry['certification']
+            # First check if we have structured certification fields that weren't used
+            if hasattr(entry, 'certification') and not entry.certification:
+                # Check for structured fields (certification_official, certification_date)
+                if 'certification_official' in raw_entry or 'certification_date' in raw_entry:
+                    from .entry_schema import _build_certification_string
+                    built_cert = _build_certification_string(raw_entry)
+                    if built_cert:
+                        entry.certification = built_cert
+                # Fall back to direct certification field if present
+                elif 'certification' in raw_entry and raw_entry['certification']:
+                    entry.certification = raw_entry['certification']
             
             # Set entry_status from raw entry (certified, rejected, not_accepted)
             if hasattr(entry, 'entry_status') and 'entry_status' in raw_entry:
                 entry.entry_status = raw_entry.get('entry_status', '')
+            # Also set entry_status from certification_status if available
+            elif hasattr(entry, 'entry_status') and 'certification_status' in raw_entry:
+                cert_status = raw_entry.get('certification_status', '').strip()
+                if cert_status:
+                    entry.entry_status = cert_status
             
             processed_entries.append(entry)
             

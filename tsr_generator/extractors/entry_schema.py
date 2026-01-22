@@ -272,7 +272,8 @@ def create_entry_from_dict(entry_dict):
     description = entry_dict.get('description', '')
     
     # Handle both old format (certification string) and new format (structured fields)
-    certification = entry_dict.get('certification', '')
+    certification = entry_dict.get('certification', '').strip()
+    # If certification is empty or just whitespace, try to construct from structured fields
     if not certification:
         # Try to construct from structured fields
         certification = _build_certification_string(entry_dict)
