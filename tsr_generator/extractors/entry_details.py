@@ -481,6 +481,11 @@ def format_entry_description(entry, raw_entry):
     # Store original description
     entry.raw_description = desc
     
+    # Replace "Part" or "part" with "p" in survey numbers
+    # Pattern matches: "Part 1", "Part 2", "part 1", "Part1", "part1", etc.
+    # This handles survey number patterns like "150 / Part 1" -> "150 / p1"
+    desc = re.sub(r'\b([Pp]art)\s*(\d+)', r'p\2', desc)
+    
     # Use the description as provided by the AI extraction
     # which should already be in the format we want
     entry.formatted_description = desc

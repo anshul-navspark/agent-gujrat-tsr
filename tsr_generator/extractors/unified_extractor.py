@@ -67,7 +67,7 @@ Formatting Rules - USE COMPACT LANGUAGE:
 6. Amounts: "Rs. X/-" or "Rs. X,XXX/-"
 7. ALWAYS use "Survey No." instead of "Khata No." or "Account No."
 8. Documents: "document no. X dated DD/MM/YYYY"
-9. Translate "Paiki" or "p" or "pk" as "Part" in survey numbers (e.g. "150 / p1" with spaces around slash)
+9. Translate "Paiki" or "Part" or "part" or "pk" as "p" in survey numbers (e.g. "150 / p1" with spaces around slash)
 10. Use caste titles only when part of the name: Thakor, Patel, Kanbi, Choudhary, Rabari, Vadher, Solanki
 11. Measurements: Use "Acre/Guntha" or "Hectare". REPLACE "H.Are.SqMt." with "Hectare".
    - Example: Convert "1-88-48 H.Are.SqMt. i.e.(18848 Sq. Mts)" to "1-88-48 Hectare (i.e. 18848 Sq. Mts)"
@@ -176,7 +176,7 @@ EXTRACTION INSTRUCTIONS:
 
 1. LAND DETAILS: Extract from the "Land Details" section. Translate ALL Gujarati to English.
    - For "nature_of_land", include BOTH tenure (Old/New) and use (Agricultural/Non-Agri), separated by comma.
-   - For "survey_number", translate "Paiki" to "Part" and use spaces (e.g. "150 / Part 1").
+   - For "survey_number", translate "Paiki" or "Part" or "part" to "p" and use spaces (e.g. "150 / p1").
    - For "old_survey_number", look for re-survey promulgation entries (Entry 3888-type) that map old→new survey numbers.
      Extract the old survey number. If found, format as just the number (e.g. "258" not "Old Survey No. 258").
 
