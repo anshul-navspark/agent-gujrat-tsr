@@ -195,8 +195,13 @@ EXTRACTION INSTRUCTIONS:
    - certification_status: MUST be one of: "certified", "rejected", "not_accepted", or "" if unclear
    - certification_official: The official's POST/DESIGNATION and PLACE (e.g., "C.O. Porbandar", "Deputy Mamlatdar Super, Porbandar"). Abbreviate "Circle Officer" as "C.O.". Do NOT include personal names.
 - certification_date: The certification date (DD/MM/YYYY preferred; DD/MM/YY is acceptable). This is DIFFERENT from the entry date - look for when the entry was certified/rejected.
-      
+     
       IMPORTANT: All three certification fields MUST be extracted if available in the document.
+      The certification text is very often located in the "Remarks of the Inspecting Officer" (written in gujrati)
+      column of the chain of title / Entry Details table. You MUST carefully read and translate
+      the content of this "Remarks of the Inspecting Officer" column (including Gujarati text)
+      to determine certification_status, certification_official, and certification_date for each
+      entry. Do NOT ignore this column.
       Examples of what to extract:
       - certification_status: "certified", certification_official: "C.O. Porbandar", certification_date: "21/06/2005"
       - certification_status: "rejected", certification_official: "Deputy Mamlatdar Super, Porbandar", certification_date: "19/03/2007"
