@@ -91,6 +91,7 @@ Certification output formats:
 - If રદ found: "The Entry is cancelled by [Name] on DD/MM/YYYY." + entry_status: "rejected"
 - If ના મંજૂર or નામંજુર found: "The Entry is not accepted by [Name] on DD/MM/YYYY." + entry_status: "not_accepted"  
 - If પ્રમાણિત found: "The Entry is certified by [Name] on DD/MM/YYYY." + entry_status: "certified"
+- IMPORTANT: If the document shows a 2-digit year (e.g., 30/09/05), still extract it as DD/MM/YY; it will be normalized later.
 - Default if unclear: entry_status: "" (empty)
 
 IMPORTANT: Do NOT output "certified" if the Gujarati text contains રદ, ના મંજૂર, or નામંજુર!
@@ -193,7 +194,7 @@ EXTRACTION INSTRUCTIONS:
    - entry_status: One of: "certified", "rejected", "not_accepted". Look for Gujarati keywords નામંજૂર (rejected), રદ (cancelled). Default to "certified" if the entry says "certified" or "The Entry is certified".
    - certification_status: MUST be one of: "certified", "rejected", "not_accepted", or "" if unclear
    - certification_official: The official's POST/DESIGNATION and PLACE (e.g., "C.O. Porbandar", "Deputy Mamlatdar Super, Porbandar"). Abbreviate "Circle Officer" as "C.O.". Do NOT include personal names.
-   - certification_date: The certification date in DD/MM/YYYY format. This is DIFFERENT from the entry date - look for when the entry was certified/rejected.
+- certification_date: The certification date (DD/MM/YYYY preferred; DD/MM/YY is acceptable). This is DIFFERENT from the entry date - look for when the entry was certified/rejected.
       
       IMPORTANT: All three certification fields MUST be extracted if available in the document.
       Examples of what to extract:
@@ -300,6 +301,7 @@ def extract_all_unified(pdf_text: str) -> UnifiedExtractionResult:
 
             # Extract mutation entries
             result.mutation_entries = parsed_data.get('mutation_entries', [])
+            _normalize_mutation_entries(result.mutation_entries)
 
             # Ensure all pre-detected entry numbers are included
             # NO: Do not force include hints as they might be years/survey numbers (false positives)
@@ -317,6 +319,47 @@ def extract_all_unified(pdf_text: str) -> UnifiedExtractionResult:
         logger.error(traceback.format_exc())
 
     return result
+
+
+def _normalize_date_str(date_str: str) -> str:
+    """
+    Normalize common date formats to DD/MM/YYYY.
+    Accepts DD/MM/YY (or with '-') and expands to 20YY for 00-49 else 19YY.
+    """
+    if not date_str:
+        return ""
+
+    s = str(date_str).strip()
+    # Common separators
+    m = re.fullmatch(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})', s)
+    if not m:
+        return s
+
+    dd, mm, yy = m.group(1), m.group(2), m.group(3)
+    dd = dd.zfill(2)
+    mm = mm.zfill(2)
+
+    if len(yy) == 2:
+        y = int(yy)
+        yyyy = 2000 + y if 0 <= y <= 49 else 1900 + y
+    else:
+        yyyy = int(yy)
+
+    return f"{dd}/{mm}/{yyyy:04d}"
+
+
+def _normalize_mutation_entries(mutation_entries: Any) -> None:
+    """In-place normalization for extracted mutation entry dictionaries."""
+    if not isinstance(mutation_entries, list):
+        return
+
+    for e in mutation_entries:
+        if not isinstance(e, dict):
+            continue
+        if 'date' in e:
+            e['date'] = _normalize_date_str(e.get('date', ''))
+        if 'certification_date' in e:
+            e['certification_date'] = _normalize_date_str(e.get('certification_date', ''))
 
 
 def _invoke_with_retry(llm, prompt: str, max_retries: int = 3):

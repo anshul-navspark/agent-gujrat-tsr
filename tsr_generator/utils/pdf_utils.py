@@ -7,16 +7,16 @@ from functools import lru_cache
 def _extract_text_cached(pdf_path: str) -> str:
     """Cached PDF text extraction - internal function."""
     logger = logging.getLogger(__name__)
-    try:
-        with open(pdf_path, 'rb') as file:
-            pdf_reader = pypdf.PdfReader(file)
-            text = ""
-            for page in pdf_reader.pages:
-                text += page.extract_text() + "\n"
-            return text
-    except Exception as e:
-        logger.error(f"Error extracting text from PDF: {str(e)}")
-        return None
+   # try:
+    with open(pdf_path, 'rb') as file:
+        pdf_reader = pypdf.PdfReader(file)
+        text = ""
+        for page in pdf_reader.pages:
+            text += page.extract_text() + "\n"
+        return text
+    # except Exception as e:
+    #     logger.error(f"Error extracting text from PDF: {str(e)}")
+    #     return None
 
 def extract_text_from_pdf(pdf_path):
     """
