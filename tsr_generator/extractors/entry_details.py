@@ -147,6 +147,7 @@ def extract_entry_details_ai(pdf_text):
         8. For entries with tables (PARTITION, EXCHANGE), preserve table structure with bullet points
         9. ALWAYS use "Survey No." instead of "Khata No." or "Account No." even if the text says Khata/Account.
         10. For ORDER entries, ALWAYS specify the Survey Number in the description. If the order applies to the current land, explicitly mention "land bearing Survey No. [Number]".
+        11. CRITICAL - Survey Number Prefix Rule: If a PROMULGATION entry exists in the document, ALL entries with entry numbers LESS THAN the promulgation entry number MUST have "old" before "Survey No." in their descriptions.
 
         Entry Type Classification Rules:
         - LOAN: Contains "took a loan" or "loan of Rs."
@@ -267,169 +268,38 @@ def extract_entry_details_ai(pdf_text):
             return entries
         else:
             logger.warning("Failed to parse JSON from AI response for entry details")
-            # If no entries found, fall back to heuristic extractor rather than fabricating placeholders
-            return extract_entry_details_fallback(entry_section)
+            # Return placeholder entries for all identified entry numbers
+            if all_entry_numbers:
+                return [{
+                    'entry_number': num,
+                    'date': "",
+                    'type': "",
+                    'description': "",
+                    'certification': "",
+                    'certification_status': "",
+                    'certification_official': "",
+                    'certification_date': ""
+                } for num in all_entry_numbers]
+            return []
     
     except Exception as e:
         logger.error(f"Error in AI-based entry details extraction: {str(e)}")
         logger.error(traceback.format_exc())
-        # Defer to fallback rather than fabricate a summary entry
-        return extract_entry_details_fallback(entry_section)
-
-def extract_entry_details_fallback(entry_section):
-    """
-    Fallback method for entry extraction matching Gujrat Mutation Entry format
-    
-    Args:
-        entry_section (str): The entry details section text
-        
-    Returns:
-        list: A list of dictionaries with entry details
-    """
-    logger = logging.getLogger(__name__)
-    logger.debug("Using fallback method for Gujrat Mutation Entry format extraction")
-
-    # First identify entry numbers to ensure all are captured
-    all_entry_numbers = identify_all_entry_numbers(entry_section)
-    logger.debug(f"Identified {len(all_entry_numbers)} entry numbers for fallback processing")
-
-    try:
-        # Initialize Gemini client
-        load_dotenv()
-        llm = ChatGoogleGenerativeAI(
-            model=model_name,
-            google_api_key=os.getenv('GEMINI_API_KEY', ''),
-            temperature=0.0,
-            convert_system_message_to_human=True,
-        )
-        
-        # Simplified prompt focusing on the exact format
-        prompt = f"""
-        Extract entries from this land record document using EXACTLY this format.
-
-        IMPORTANT: The document contains the following entry numbers that MUST be included in your extraction, even if you can't find detailed descriptions for them: {', '.join(all_entry_numbers)}
-
-        Entry format:
-        - entry_number: The numeric entry number
-        - date: In DD/MM/YYYY format if available
-        - type: Category (LOAN, DEATH, RELEASE, SALE, PARTITION, EXCHANGE, LIFETIME DISTRIBUTION, NOT RELATED, ORDER, RELINQUISHMENT, etc.)
-        - description: Start with "That" and provide complete details (except for NOT RELATED and PROMULGATION types). MUST BE IN ENGLISH. Translate all Gujarati text. Do NOT include any Gujarati characters.
-        - certification: Information about who certified the entry and when. MUST BE IN ENGLISH. Do NOT include any Gujarati characters.
-        
-        - certification_status: One of: "certified", "rejected", "not_approved"
-        - certification_official: The official's POST/DESIGNATION and PLACE (e.g., "C.O. Porbandar", "Deputy Mamlatdar Super, Porbandar"). Abbreviate "Circle Officer" as "C.O.". Do NOT include personal names.
-        - certification_date: The certification date in DD/MM/YYYY format. This is DIFFERENT from the entry date - look for when the entry was certified/rejected.
-        
-        IMPORTANT: Extract certification_official and certification_date whenever they are present in the document, even if certification_status is not explicitly stated.
-
-        For entries where you can identify the entry number but not the description or other details, you may include them with empty fields. Only do this if the number clearly appears under the "Entry Details" heading or next to "Entry No.". Do not create entries from Khata/Survey numbers.
-
-        CRITICAL Formatting Rules:
-        1. Start descriptions with "That" (except NOT RELATED and PROMULGATION)
-        2. Use proper titles: Thakor, Patel, Kanbi, Choudhary, Rabari, Vadher, Solanki
-        3. Preserve measurement units: "Acre/Guntha" or "Hectare". REPLACE "H.Are.SqMt." with "Hectare".
-           Example: "1-88-48 H.Are.SqMt. i.e.(18848 Sq. Mts)" -> "1-88-48 Hectare (i.e. 18848 Sq. Mts)"
-        4. Format amounts: "Rs. X/-" or "Rs. X,XXX/-"
-        5. Lists: "which are as follows:-" followed by bullet points
-        6. ALWAYS use "Survey No." instead of "Khata No." or "Account No."
-        7. For ORDER entries, ALWAYS specify the Survey Number.
-
-        Description examples:
-        - LOAN: "That Rabari Sujabhai Jawanabhai and others took a loan of Rs. 1,00,000/- on the land bearing Survey No. 54/2p2(143) from Voda Group Gopalak Vikas Kariyakari Sahakari Mandli."
-        - DEATH: "That upon the demise of Jawanabhai Manabhai, his land bearing old Survey No. 59 P came to be mutated in his legal heirs which are as follows:-"
-        - EXCHANGE: "That Thakor Mulji Gagji and Thakor Chaganbhai Khushalsinghji exchanged their respective lands through a registered document no. 2472 dated 26/06/2000 and got land as follows:-"
-        - NOT RELATED: "This entry is not related to present survey no."
-
-        Certification examples:
-        - "The Entry is certified."
-        - "The Entry is certified by C.O. Jadiya on DD/MM/YYYY."
-        - "The Entry is rejected."
-        - "The Entry is certified but date is not legible."
-
-        CRITICAL: When extracting certification information, look for:
-        - The certifier/official name and designation (e.g., "C.O. Porbandar", "Deputy Mamlatdar Super, Porbandar")
-        - The certification date (which may be different from the entry date)
-        - Extract these as separate fields (certification_official and certification_date) even if they appear in the certification text
-
-        Format your response as a JSON array with objects containing these keys:
-        "entry_number", "date", "type", "description", "certification", "certification_status", "certification_official", "certification_date"
-
-        Here's the text:
-        {entry_section}
-        """
-        
-        import time
-        max_retries = 3
-        retry_delay = 5
-        response = None
-        
-        for attempt in range(max_retries):
-            try:
-                response = llm.invoke(prompt)
-                break
-            except Exception as e:
-                is_rate_limit = "429" in str(e) or "resource" in str(e).lower() or "quota" in str(e).lower()
-                if is_rate_limit and attempt < max_retries - 1:
-                    logger.warning(f"Rate limit hit in fallback extraction. Sleeping for {retry_delay}s before retry {attempt+1}/{max_retries}...")
-                    time.sleep(retry_delay)
-                    continue
-                raise e
-        
-        # Parse JSON from the response
-        content = response.content if hasattr(response, 'content') else str(response)
-        content = ''.join(ch for ch in content if ch == '\t' or ch == '\n' or ch == '\r' or ord(ch) >= 32)
-        json_match = re.search(r'\[\s*\{[\s\S]*?\}\s*\]', content)
-        if json_match:
-            json_str = json_match.group(0)
-            json_str = re.sub(r',\s*([\]\}])', r'\1', json_str)
-            entries = json.loads(json_str)
-            logger.debug(f"Successfully extracted {len(entries)} entries using fallback method")
-            
-            # Check if all identified entry numbers are in the extracted entries
-            extracted_numbers = [entry.get('entry_number') for entry in entries]
-            missing_entries = [num for num in all_entry_numbers if num not in extracted_numbers]
-            
-            # Add placeholder entries for missing entry numbers
-            for entry_num in missing_entries:
-                logger.debug(f"Adding placeholder for missing entry in fallback response: {entry_num}")
-                entries.append({
-                    'entry_number': entry_num,
-                    'date': "",
-                    'type': "",
-                    'description': "",
-                    'certification': ""
-                })
-                
-            return entries
-        else:
-            logger.warning("Failed to parse JSON from fallback approach")
-            # If still nothing parsable, as a last resort return a single note entry
-            if not all_entry_numbers:
-                # If no entry numbers were found, create a single default entry
-                return [{
-                    'entry_number': "1",
-                    'date': datetime.now().strftime('%d/%m/%Y'),
-                    'type': "Summary",
-                    'description': "This document contains information about the property.",
-                    'certification': "The Entry is certified but details are not available."
-                }]
-            return []
-            
-    except Exception as e:
-        logger.error(f"Error in fallback entry extraction: {str(e)}")
-        logger.error(traceback.format_exc())
-        
-        # On error, avoid fabricating entries
-        if not all_entry_numbers:
-            # If no entry numbers were found, create a single default entry
+        # Return placeholder entries for identified entry numbers instead of calling redundant fallback
+        if all_entry_numbers:
             return [{
-                'entry_number': "1",
-                'date': datetime.now().strftime('%d/%m/%Y'),
-                'type': "Summary", 
-                'description': "This document contains information about the property.",
-                'certification': "The Entry is certified but date is not legible."
-            }]
+                'entry_number': num,
+                'date': "",
+                'type': "",
+                'description': "",
+                'certification': "",
+                'certification_status': "",
+                'certification_official': "",
+                'certification_date': ""
+            } for num in all_entry_numbers]
         return []
+
+
 
 def process_entry_details(raw_entries):
     """

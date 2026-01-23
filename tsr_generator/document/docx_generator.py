@@ -225,7 +225,6 @@ def add_chain_of_title_section(document, entries, entry_table):
                 # Format the entry paragraph
                 entry_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
                 entry_para.paragraph_format.line_spacing = 1.15
-                
                 # Add certification if present
                 if hasattr(entry, 'certification') and entry.certification:
                     cert_para = row_cells[1].add_paragraph()
@@ -239,33 +238,45 @@ def add_chain_of_title_section(document, entries, entry_table):
                         elif status_lower in ['not_accepted', 'not accepted']:
                             status_word = "not accepted"
                     
-                    # Get certification text
-                    certification_text = entry.certification
+                    # Try to use structured certification fields first
+                    cert_official = getattr(entry, 'certification_official', '') or ''
+                    cert_date = getattr(entry, 'certification_date', '') or ''
                     
-                    # Extract official designation and date from certification text
-                    import re
-                    official_match = re.search(r'by\s+([^.]+?)(?:\s+on\s+|\s*$)', certification_text)
-                    date_match = re.search(r'on\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4})', certification_text)
-                    
-                    # Build the certification text with correct status word
-                    if official_match:
-                        official_name = official_match.group(1).strip()
-                        # Clean up trailing punctuation
-                        official_name = re.sub(r'[.,;:]+$', '', official_name)
-                        
-                        if date_match:
-                            certification_text = f"The Entry is {status_word} by {official_name} on {date_match.group(1)}."
-                        else:
-                            # Check for special cases
-                            if "not legible" in entry.certification.lower() or "illegible" in entry.certification.lower():
-                                certification_text = f"The Entry is {status_word} by {official_name} but date is not legible."
-                            elif "not mentioned" in entry.certification.lower() or "not specified" in entry.certification.lower():
-                                certification_text = f"The Entry is {status_word} by {official_name} but date is not mentioned."
-                            else:
-                                certification_text = f"The Entry is {status_word} by {official_name}."
+                    if cert_official and cert_date:
+                        # Build from structured fields (preferred)
+                        certification_text = f"The Entry is {status_word} by {cert_official} on {cert_date}."
+                    elif cert_official:
+                        certification_text = f"The Entry is {status_word} by {cert_official}."
+                    elif cert_date:
+                        certification_text = f"The Entry is {status_word} on {cert_date}."
                     else:
-                        # No official found, use simple format
-                        certification_text = f"The Entry is {status_word}."
+                        # Fall back to parsing from certification string
+                        certification_text = entry.certification
+                        
+                        # Extract official designation and date from certification text
+                        import re
+                        official_match = re.search(r'by\s+([^.]+?)(?:\s+on\s+|\s*$)', certification_text)
+                        date_match = re.search(r'on\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4})', certification_text)
+                        
+                        # Build the certification text with correct status word
+                        if official_match:
+                            official_name = official_match.group(1).strip()
+                            # Clean up trailing punctuation
+                            official_name = re.sub(r'[.,;:]+$', '', official_name)
+                            
+                            if date_match:
+                                certification_text = f"The Entry is {status_word} by {official_name} on {date_match.group(1)}."
+                            else:
+                                # Check for special cases
+                                if "not legible" in entry.certification.lower() or "illegible" in entry.certification.lower():
+                                    certification_text = f"The Entry is {status_word} by {official_name} but date is not legible."
+                                elif "not mentioned" in entry.certification.lower() or "not specified" in entry.certification.lower():
+                                    certification_text = f"The Entry is {status_word} by {official_name} but date is not mentioned."
+                                else:
+                                    certification_text = f"The Entry is {status_word} by {official_name}."
+                        else:
+                            # No official found, use simple format
+                            certification_text = f"The Entry is {status_word}."
                     
                     cert_run = cert_para.add_run(certification_text)
                     cert_run.font.name = 'Times New Roman'

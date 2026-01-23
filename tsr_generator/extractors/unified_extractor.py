@@ -75,6 +75,7 @@ Formatting Rules - USE COMPACT LANGUAGE:
 13. Lists: "which are as follows:-" + bullet points (Use "•" not "*")
 14. OMIT sentences like "This entry was made based on..." or "This inheritance entry was made...". Keep descriptions concise.
 15. LOAN entries: Do NOT include agreement date. Only describe the loan, borrower, lender, amount, and land details.
+16. CRITICAL - Survey Number Prefix Rule: If a PROMULGATION entry exists in the document, ALL entries with entry numbers LESS THAN the promulgation entry number MUST have "old" before "Survey No." in their descriptions.
 """
 
 # Certification patterns (~150 tokens)
