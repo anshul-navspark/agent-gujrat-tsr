@@ -24,8 +24,28 @@ def main():
     logger.info("Starting cache version check...")
     
     commit_sha = os.getenv("GIT_COMMIT_SHA")
+    
+    # If GIT_COMMIT_SHA is not set, try to get it from git
     if not commit_sha:
-        logger.warning("GIT_COMMIT_SHA environment variable not found. Skipping cache clearing.")
+        try:
+            import subprocess
+            result = subprocess.run(
+                ['git', 'rev-parse', 'HEAD'],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd=project_root
+            )
+            if result.returncode == 0:
+                commit_sha = result.stdout.strip()
+                logger.info(f"Auto-detected git commit SHA: {commit_sha}")
+            else:
+                logger.warning("Could not auto-detect git commit SHA")
+        except Exception as e:
+            logger.warning(f"Failed to auto-detect git commit SHA: {e}")
+    
+    if not commit_sha:
+        logger.warning("GIT_COMMIT_SHA not available. Skipping cache clearing.")
         return
 
     # Initialize cache service using env vars for bucket config

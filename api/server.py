@@ -50,6 +50,26 @@ async def lifespan(app: FastAPI):
     """Lifespan event handler for startup/shutdown tasks."""
     # Startup: Check and clear DOCX cache if new version detected
     commit_sha = os.getenv("GIT_COMMIT_SHA")
+    
+    # If GIT_COMMIT_SHA is not set, try to get it from git
+    if not commit_sha:
+        try:
+            import subprocess
+            result = subprocess.run(
+                ['git', 'rev-parse', 'HEAD'],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                cwd=os.path.dirname(os.path.dirname(__file__))
+            )
+            if result.returncode == 0:
+                commit_sha = result.stdout.strip()
+                logger.info(f"Auto-detected git commit SHA: {commit_sha}")
+            else:
+                logger.warning("Could not auto-detect git commit SHA")
+        except Exception as e:
+            logger.warning(f"Failed to auto-detect git commit SHA: {e}")
+    
     if commit_sha:
         logger.info(f"App starting with version: {commit_sha}")
         try:
@@ -61,11 +81,11 @@ async def lifespan(app: FastAPI):
                 else:
                     logger.info("Cache version unchanged, no clearing needed")
             else:
-                logger.warning("Cache service not available for version check")
+                logger.debug("Cache service not available (caching disabled for local development)")
         except Exception as e:
             logger.error(f"Failed to check/clear cache on startup: {e}")
     else:
-        logger.warning("GIT_COMMIT_SHA not set, skipping cache version check")
+        logger.debug("GIT_COMMIT_SHA not available, skipping cache version check (normal for local development)")
     
     yield  # App runs here
     

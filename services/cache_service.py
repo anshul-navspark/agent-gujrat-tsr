@@ -629,8 +629,8 @@ def get_cache_service(
     bucket_name = bucket_name or os.getenv("GCS_CACHE_BUCKET")
     
     if not bucket_name:
-        logging.getLogger(__name__).warning(
-            "Cache service not initialized: GCS_CACHE_BUCKET not configured"
+        logging.getLogger(__name__).debug(
+            "Cache service not initialized: GCS_CACHE_BUCKET not configured (caching disabled for local development)"
         )
         return None
     
