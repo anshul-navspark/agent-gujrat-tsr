@@ -30,7 +30,7 @@ class JSONTranslationSystem:
         # Use a cheaper/faster model for simple translation matching tasks
         # Falls back to the main model if not set
         translation_model = os.getenv('GEMINI_TRANSLATION_MODEL', 
-                                       os.getenv('GEMINI_MODEL_NAME', 'gemini-2.0-flash-lite'))
+                                       os.getenv('GEMINI_MODEL_NAME', 'gemini-2.5-flash-lite'))
         self.llm = ChatGoogleGenerativeAI(
             model=translation_model,
             google_api_key=os.getenv('GEMINI_API_KEY'),
