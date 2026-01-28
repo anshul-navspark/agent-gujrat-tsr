@@ -14,6 +14,14 @@ from tsr_generator.extractors.entry_schema import (
 )
 model_name = os.getenv('GEMINI_MODEL_NAME', 'gemini-3-pro-preview')
 
+# Import LLM logger
+try:
+    from utils.llm_logger import log_llm_request, log_llm_response
+    LLM_LOGGING_ENABLED = True
+except ImportError:
+    LLM_LOGGING_ENABLED = False
+    logging.getLogger(__name__).warning("LLM logging module not available")
+
 def extract_entry_table(pdf_text):
     llm = ChatGoogleGenerativeAI(
         model=model_name,
@@ -51,9 +59,51 @@ def extract_entry_table(pdf_text):
     
     for attempt in range(max_retries):
         try:
+            # Log the request
+            log_entry = None
+            start_time = time.time()
+            if LLM_LOGGING_ENABLED:
+                try:
+                    log_entry = log_llm_request(
+                        model_name=model_name,
+                        prompt=prompt + "\n" + pdf_text,
+                        caller="extract_entry_table"
+                    )
+                except Exception:
+                    pass
+
             response = llm.invoke(prompt + "\n" + pdf_text)
+            
+            # Log successful response
+            if LLM_LOGGING_ENABLED and log_entry:
+                try:
+                    content_str = response.content if hasattr(response, 'content') else str(response)
+                    if isinstance(content_str, list):
+                        content_str = ''.join(
+                            part.get('text', str(part)) if isinstance(part, dict) else str(part)
+                            for part in content_str
+                        )
+                    log_llm_response(
+                        log_entry=log_entry,
+                        response=content_str,
+                        start_time=start_time,
+                        retry_count=attempt
+                    )
+                except Exception:
+                    pass
             break
         except Exception as e:
+            # Log error
+            if LLM_LOGGING_ENABLED and log_entry:
+                try:
+                    log_llm_response(
+                        log_entry=log_entry,
+                        error=e,
+                        start_time=start_time,
+                        retry_count=attempt
+                    )
+                except Exception:
+                    pass
             if "429" in str(e) or "resource" in str(e).lower() and attempt < max_retries - 1:
                 print(f"Rate limit hit in table extraction. Sleeping for {retry_delay}s...")
                 time.sleep(retry_delay)
@@ -61,7 +111,20 @@ def extract_entry_table(pdf_text):
             raise e    
     # Extract only numeric tokens from the response, filtering out non-digit characters
     # Handle various LLM output formats including code blocks, markdown, etc.
-    content = response.content
+    content = response.content if hasattr(response, 'content') else str(response)
+    
+    # Handle cases where content might be a list of content parts (newer API format)
+    if isinstance(content, list):
+        # Extract text from list of content parts
+        text_parts = []
+        for part in content:
+            if isinstance(part, dict):
+                text_parts.append(part.get('text', str(part)))
+            else:
+                text_parts.append(str(part))
+        content = ''.join(text_parts)
+    elif not isinstance(content, str):
+        content = str(content)
     
     # Extract all sequences of digits (1-4 digits long, typical for entry numbers)
     # This handles both space-separated and newline-separated numbers
@@ -242,9 +305,51 @@ def extract_entry_details_ai(pdf_text):
         
         for attempt in range(max_retries):
             try:
+                # Log the request
+                log_entry = None
+                start_time = time.time()
+                if LLM_LOGGING_ENABLED:
+                    try:
+                        log_entry = log_llm_request(
+                            model_name=model_name,
+                            prompt=prompt,
+                            caller="extract_entry_details_ai"
+                        )
+                    except Exception:
+                        pass
+
                 response = llm.invoke(prompt)
+                
+                # Log successful response
+                if LLM_LOGGING_ENABLED and log_entry:
+                    try:
+                        content_str = response.content if hasattr(response, 'content') else str(response)
+                        if isinstance(content_str, list):
+                            content_str = ''.join(
+                                part.get('text', str(part)) if isinstance(part, dict) else str(part)
+                                for part in content_str
+                            )
+                        log_llm_response(
+                            log_entry=log_entry,
+                            response=content_str,
+                            start_time=start_time,
+                            retry_count=attempt
+                        )
+                    except Exception:
+                        pass
                 break
             except Exception as e:
+                # Log error
+                if LLM_LOGGING_ENABLED and log_entry:
+                    try:
+                        log_llm_response(
+                            log_entry=log_entry,
+                            error=e,
+                            start_time=start_time,
+                            retry_count=attempt
+                        )
+                    except Exception:
+                        pass
                 is_rate_limit = "429" in str(e) or "resource" in str(e).lower() or "quota" in str(e).lower()
                 if is_rate_limit and attempt < max_retries - 1:
                     logger.warning(f"Rate limit hit in extract_entry_details_ai. Sleeping for {retry_delay}s before retry {attempt+1}/{max_retries}...")
@@ -254,6 +359,20 @@ def extract_entry_details_ai(pdf_text):
         
         # Parse JSON from the response with robust cleaning of control characters
         content = response.content if hasattr(response, 'content') else str(response)
+        
+        # Handle cases where content might be a list of content parts (newer API format)
+        if isinstance(content, list):
+            # Extract text from list of content parts
+            text_parts = []
+            for part in content:
+                if isinstance(part, dict):
+                    text_parts.append(part.get('text', str(part)))
+                else:
+                    text_parts.append(str(part))
+            content = ''.join(text_parts)
+        elif not isinstance(content, str):
+            content = str(content)
+        
         # Remove NULL and other control chars that break JSON
         content = ''.join(ch for ch in content if ch == '\t' or ch == '\n' or ch == '\r' or ord(ch) >= 32)
         json_match = re.search(r'\[\s*\{[\s\S]*?\}\s*\]', content)

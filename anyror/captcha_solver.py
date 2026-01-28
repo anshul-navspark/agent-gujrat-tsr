@@ -132,8 +132,24 @@ Example response format: 123456"""
                     except Exception:
                         pass
                     
+                    # Extract content and handle list format (newer API)
+                    content = response.content if hasattr(response, 'content') else str(response)
+                    
+                    # Handle cases where content might be a list of content parts (newer API format)
+                    if isinstance(content, list):
+                        # Extract text from list of content parts
+                        text_parts = []
+                        for part in content:
+                            if isinstance(part, dict):
+                                text_parts.append(part.get('text', str(part)))
+                            else:
+                                text_parts.append(str(part))
+                        content = ''.join(text_parts)
+                    elif not isinstance(content, str):
+                        content = str(content)
+                    
                     # Extract only digits from the response
-                    captcha_text = ''.join(re.findall(r'\d', response.content))
+                    captcha_text = ''.join(re.findall(r'\d', content))
                     
                     if len(captcha_text) == 6:  # Verify we got exactly 6 digits
                         self.logger.debug(f"LLM recognized captcha: {captcha_text} (attempt {attempt + 1})")
@@ -144,7 +160,7 @@ Example response format: 123456"""
                         self.logger.debug(f"LLM returned {len(captcha_text)} digits, using first 6: {captcha_text} (attempt {attempt + 1})")
                         return captcha_text
                     else:
-                        self.logger.warning(f"Attempt {attempt + 1}: Invalid captcha format (got {len(captcha_text)} digits): {response.content}")
+                        self.logger.warning(f"Attempt {attempt + 1}: Invalid captcha format (got {len(captcha_text)} digits): {content}")
                         if attempt < max_attempts - 1:
                             time.sleep(1)  # Brief delay before retry
                             continue

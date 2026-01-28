@@ -214,7 +214,22 @@ class JSONTranslationSystem:
         for attempt in range(max_retries):
             try:
                 response = self.llm.invoke(prompt)
-                result = response.content.strip()
+                content = response.content if hasattr(response, 'content') else str(response)
+                
+                # Handle cases where content might be a list of content parts (newer API format)
+                if isinstance(content, list):
+                    # Extract text from list of content parts
+                    text_parts = []
+                    for part in content:
+                        if isinstance(part, dict):
+                            text_parts.append(part.get('text', str(part)))
+                        else:
+                            text_parts.append(str(part))
+                    content = ''.join(text_parts)
+                elif not isinstance(content, str):
+                    content = str(content)
+                
+                result = content.strip()
                 
                 # Check if AI returned NO_MATCH
                 if result == "NO_MATCH" or result == "NO MATCH":

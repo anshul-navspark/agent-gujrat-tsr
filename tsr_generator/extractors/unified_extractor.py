@@ -29,11 +29,37 @@ from .entry_schema import (
 from ..utils.text_utils import convert_gujarati_to_english_numerals, translate_gujarati_text
 from ..utils.retry_utils import retry_with_backoff, RetryableError
 
-# Initialize logger
+# Initialize logger (before using it in imports below)
 logger = logging.getLogger(__name__)
+
+# Import LLM logger for API call tracking
+try:
+    from utils.llm_logger import log_llm_request, log_llm_response, get_llm_logger
+    LLM_LOGGING_ENABLED = True
+except ImportError:
+    LLM_LOGGING_ENABLED = False
+    logger.warning("LLM logging module not available - API calls will not be logged")
 
 # Model configuration
 MODEL_NAME = os.getenv('GEMINI_MODEL_NAME', 'gemini-3-pro-preview')
+
+# Singleton LLM instance - avoid re-initialization overhead on every request
+_llm_instance = None
+
+def _get_llm():
+    """Get or create singleton LLM instance for unified extraction."""
+    global _llm_instance
+    if _llm_instance is None:
+        load_dotenv()
+        from langchain_google_genai import ChatGoogleGenerativeAI
+        _llm_instance = ChatGoogleGenerativeAI(
+            model=MODEL_NAME,
+            google_api_key=os.getenv('GEMINI_API_KEY', ''),
+            temperature=0.0,
+            convert_system_message_to_human=True,
+        )
+        logger.info(f"Initialized unified extractor LLM: {MODEL_NAME}")
+    return _llm_instance
 
 
 # =============================================================================
@@ -274,21 +300,28 @@ def extract_all_unified(pdf_text: str) -> UnifiedExtractionResult:
         result.input_tokens = len(prompt) // 4
         logger.debug(f"Unified extraction: ~{result.input_tokens} input tokens")
 
-        # Initialize LLM
-        load_dotenv()
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        llm = ChatGoogleGenerativeAI(
-            model=MODEL_NAME,
-            google_api_key=os.getenv('GEMINI_API_KEY', ''),
-            temperature=0.0,
-            convert_system_message_to_human=True,
-        )
+        # Get singleton LLM instance (avoids re-initialization overhead)
+        llm = _get_llm()
 
         # Make the SINGLE API call with retry
         response = _invoke_with_retry(llm, prompt, max_retries=3)
 
         # Parse the response
         content = response.content if hasattr(response, 'content') else str(response)
+        
+        # Handle cases where content might be a list of content parts (newer API format)
+        if isinstance(content, list):
+            # Extract text from list of content parts
+            text_parts = []
+            for part in content:
+                if isinstance(part, dict):
+                    text_parts.append(part.get('text', str(part)))
+                else:
+                    text_parts.append(str(part))
+            content = ''.join(text_parts)
+        elif not isinstance(content, str):
+            content = str(content)
+        
         result.raw_response = content
         result.output_tokens = len(content) // 4
 
@@ -369,20 +402,70 @@ def _normalize_mutation_entries(mutation_entries: Any) -> None:
 
 
 def _invoke_with_retry(llm, prompt: str, max_retries: int = 3):
-    """Invoke LLM with retry logic for rate limits."""
+    """Invoke LLM with retry logic for rate limits and comprehensive logging."""
     import time
     retry_delay = 5
+    total_retries = 0
+    
+    # Start LLM logging
+    log_entry = None
+    start_time = time.time()
+    if LLM_LOGGING_ENABLED:
+        try:
+            log_entry = log_llm_request(
+                model_name=MODEL_NAME,
+                prompt=prompt,
+                caller="extract_all_unified"
+            )
+        except Exception as log_err:
+            logger.debug(f"Failed to create LLM log entry: {log_err}")
 
     for attempt in range(max_retries):
         try:
-            return llm.invoke(prompt)
+            response = llm.invoke(prompt)
+            
+            # Log successful response
+            if LLM_LOGGING_ENABLED and log_entry:
+                try:
+                    # Extract response content for logging
+                    content = response.content if hasattr(response, 'content') else str(response)
+                    if isinstance(content, list):
+                        content = ''.join(
+                            part.get('text', str(part)) if isinstance(part, dict) else str(part)
+                            for part in content
+                        )
+                    log_llm_response(
+                        log_entry=log_entry,
+                        response=content,
+                        start_time=start_time,
+                        retry_count=total_retries
+                    )
+                except Exception as log_err:
+                    logger.debug(f"Failed to log LLM response: {log_err}")
+            
+            return response
+            
         except Exception as e:
+            total_retries += 1
             is_rate_limit = any(term in str(e).lower() for term in ['429', 'resource', 'quota', 'rate limit'])
             if is_rate_limit and attempt < max_retries - 1:
                 logger.warning(f"Rate limit hit. Sleeping {retry_delay}s (attempt {attempt+1}/{max_retries})")
                 time.sleep(retry_delay)
                 retry_delay *= 2
                 continue
+            
+            # Log error
+            if LLM_LOGGING_ENABLED and log_entry:
+                try:
+                    log_llm_response(
+                        log_entry=log_entry,
+                        error=e,
+                        start_time=start_time,
+                        retry_count=total_retries
+                    )
+                except Exception as log_err:
+                    logger.debug(f"Failed to log LLM error: {log_err}")
+            
             raise
 
 
@@ -460,6 +543,60 @@ def _extract_relevant_sections(pdf_text: str) -> str:
     return '\n\n[...]\n\n'.join(sections)
 
 
+def _fix_json_string(json_str: str) -> str:
+    """
+    Fix common JSON issues that cause parsing failures.
+    
+    Handles:
+    - Newlines inside string values
+    - Unescaped control characters
+    - Trailing commas
+    - Smart quotes
+    """
+    # Replace smart quotes with regular quotes
+    json_str = json_str.replace('"', '"').replace('"', '"')
+    json_str = json_str.replace(''', "'").replace(''', "'")
+    
+    # Remove trailing commas before ] or }
+    json_str = re.sub(r',\s*([\]\}])', r'\1', json_str)
+    
+    # Fix newlines inside string values (convert to \n escape sequence)
+    # This is tricky - we need to be inside a string value
+    result = []
+    in_string = False
+    escape_next = False
+    
+    for i, ch in enumerate(json_str):
+        if escape_next:
+            result.append(ch)
+            escape_next = False
+            continue
+            
+        if ch == '\\':
+            result.append(ch)
+            escape_next = True
+            continue
+            
+        if ch == '"':
+            in_string = not in_string
+            result.append(ch)
+            continue
+            
+        if in_string and ch == '\n':
+            result.append('\\n')
+            continue
+        elif in_string and ch == '\r':
+            result.append('\\r')
+            continue
+        elif in_string and ch == '\t':
+            result.append('\\t')
+            continue
+            
+        result.append(ch)
+    
+    return ''.join(result)
+
+
 def _parse_json_response(content) -> Optional[Dict]:
     """Parse JSON from LLM response with multiple strategies."""
     # Handle case where content is already a dict (new API response format)
@@ -486,32 +623,44 @@ def _parse_json_response(content) -> Optional[Dict]:
         logger.debug(f"Converting response type {type(content).__name__} to string")
         content = str(content)
     
-    logger.debug(f"Parsing JSON from response (length: {len(content)}, first 200 chars: {content[:200]}...)")
+    logger.debug(f"Parsing JSON from response (length: {len(content)}, first 300 chars: {content[:300]})")
     
-    # Clean control characters
-    content = ''.join(ch for ch in content if ch == '\t' or ch == '\n' or ch == '\r' or ord(ch) >= 32)
+    # Clean control characters (except newlines/tabs which we handle specially)
+    content = ''.join(ch for ch in content if ch in '\t\n\r' or ord(ch) >= 32)
 
     # Strategy 1: Look for JSON in code block (with or without "json" label)
-    json_code_match = re.search(r'```(?:json)?\s*(\{[\s\S]*\})\s*```', content, re.IGNORECASE)
+    json_code_match = re.search(r'```(?:json)?\s*(\{[\s\S]*?\})\s*```', content, re.IGNORECASE)
     if json_code_match:
         try:
-            json_str = json_code_match.group(1)
-            json_str = re.sub(r',\s*([\]\}])', r'\1', json_str)
+            json_str = _fix_json_string(json_code_match.group(1))
             result = json.loads(json_str)
             logger.debug("Successfully parsed JSON from code block")
             return result
         except json.JSONDecodeError as e:
             logger.debug(f"Failed to parse JSON from code block: {e}")
 
-    # Strategy 2: Find JSON object containing our expected keys (flexible order)
-    json_match = re.search(r'\{[\s\S]*?(\"land_details\"|\"entry_numbers\"|\"mutation_entries\")[\s\S]*\}', content)
+    # Strategy 2: Find JSON object containing our expected keys with balanced brace matching
+    json_match = re.search(r'\{[\s\S]*?(\"land_details\"|\"entry_numbers\"|\"mutation_entries\")', content)
     if json_match:
-        # Find the full extent of this JSON object
         start = json_match.start()
         # Count braces to find the matching end
         brace_count = 0
         end = start
+        in_string = False
+        escape_next = False
+        
         for i, ch in enumerate(content[start:]):
+            if escape_next:
+                escape_next = False
+                continue
+            if ch == '\\':
+                escape_next = True
+                continue
+            if ch == '"':
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
             if ch == '{':
                 brace_count += 1
             elif ch == '}':
@@ -522,36 +671,53 @@ def _parse_json_response(content) -> Optional[Dict]:
         
         if end > start:
             try:
-                json_str = content[start:end]
-                json_str = re.sub(r',\s*([\]\}])', r'\1', json_str)
+                json_str = _fix_json_string(content[start:end])
                 result = json.loads(json_str)
-                logger.debug("Successfully parsed JSON using brace matching")
+                logger.debug("Successfully parsed JSON using balanced brace matching")
                 return result
             except json.JSONDecodeError as e:
                 logger.debug(f"Failed to parse JSON with brace matching: {e}")
 
-    # Strategy 3: Try the whole content as JSON
+    # Strategy 3: Try the whole content as JSON (after fixing)
     try:
-        result = json.loads(content)
+        json_str = _fix_json_string(content)
+        result = json.loads(json_str)
         logger.debug("Successfully parsed whole content as JSON")
         return result
     except json.JSONDecodeError as e:
         logger.debug(f"Failed to parse whole content as JSON: {e}")
 
-    # Strategy 4: Try to extract just the JSON object part (strip any surrounding text)
-    try:
-        first_brace = content.find('{')
-        last_brace = content.rfind('}')
-        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
-            json_str = content[first_brace:last_brace + 1]
-            json_str = re.sub(r',\s*([\]\}])', r'\1', json_str)
+    # Strategy 4: Extract between first { and last } with fixing
+    first_brace = content.find('{')
+    last_brace = content.rfind('}')
+    if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+        try:
+            json_str = _fix_json_string(content[first_brace:last_brace + 1])
             result = json.loads(json_str)
             logger.debug("Successfully parsed JSON using first/last brace extraction")
             return result
-    except json.JSONDecodeError as e:
-        logger.debug(f"Failed to parse JSON with first/last brace: {e}")
+        except json.JSONDecodeError as e:
+            logger.debug(f"Failed to parse JSON with first/last brace: {e}")
     
-    logger.warning(f"All JSON parsing strategies failed. Response content: {content[:500]}...")
+    # Strategy 5: Try to use ast.literal_eval as last resort (handles some Python-like formats)
+    try:
+        import ast
+        # Replace JSON true/false/null with Python equivalents
+        py_content = content[first_brace:last_brace + 1] if first_brace != -1 else content
+        py_content = py_content.replace('true', 'True').replace('false', 'False').replace('null', 'None')
+        result = ast.literal_eval(py_content)
+        if isinstance(result, dict):
+            logger.debug("Successfully parsed using ast.literal_eval")
+            return result
+    except Exception as e:
+        logger.debug(f"Failed to parse with ast.literal_eval: {e}")
+    
+    # Log detailed failure info for debugging
+    logger.warning(f"All JSON parsing strategies failed.")
+    logger.warning(f"Response length: {len(content)}")
+    logger.warning(f"First 500 chars: {content[:500]}")
+    logger.warning(f"Last 200 chars: {content[-200:] if len(content) > 200 else content}")
+    
     return None
 
 

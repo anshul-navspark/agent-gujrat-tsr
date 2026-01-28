@@ -9,6 +9,13 @@ from dotenv import load_dotenv
 from tsr_generator.utils.text_utils import convert_gujarati_to_english_numerals, translate_gujarati_text
 from tsr_generator.utils.retry_utils import retry_with_backoff, RetryableError
 
+# Import LLM logger
+try:
+    from utils.llm_logger import log_llm_request, log_llm_response
+    LLM_LOGGING_ENABLED = True
+except ImportError:
+    LLM_LOGGING_ENABLED = False
+
 @retry_with_backoff(max_attempts=3, delay=2.0, exceptions=(RetryableError, ConnectionError, TimeoutError))
 def extract_land_records_ai(pdf_text):
     """
@@ -67,8 +74,51 @@ def extract_land_records_ai(pdf_text):
         """
         
         try:
+            # Log the request
+            log_entry = None
+            import time
+            start_time = time.time()
+            if LLM_LOGGING_ENABLED:
+                try:
+                    log_entry = log_llm_request(
+                        model_name=os.getenv('GEMINI_MODEL_NAME', 'gemini-3-pro-preview'),
+                        prompt=prompt,
+                        caller="extract_land_records_ai"
+                    )
+                except Exception as log_err:
+                    logger.debug(f"Failed to create LLM log entry: {log_err}")
+
             response = llm.invoke(prompt)
+            
+            # Log the successful response
+            if LLM_LOGGING_ENABLED and log_entry:
+                try:
+                    content_str = response.content if hasattr(response, 'content') else str(response)
+                    if isinstance(content_str, list):
+                        content_str = ''.join(
+                            part.get('text', str(part)) if isinstance(part, dict) else str(part)
+                            for part in content_str
+                        )
+                    log_llm_response(
+                        log_entry=log_entry,
+                        response=content_str,
+                        start_time=start_time
+                    )
+                except Exception as log_err:
+                    logger.debug(f"Failed to log LLM response: {log_err}")
+                    
         except Exception as e:
+            # Log the error
+            if LLM_LOGGING_ENABLED and log_entry:
+                try:
+                    log_llm_response(
+                        log_entry=log_entry,
+                        error=e,
+                        start_time=start_time
+                    )
+                except Exception:
+                    pass
+
             # Check if this is a retryable error
             if any(term in str(e).lower() for term in ['timeout', 'connection', 'rate limit', 'server error']):
                 logger.warning(f"Retryable error in AI call: {e}")
