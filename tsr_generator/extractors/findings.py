@@ -172,8 +172,8 @@ def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None)
     
     # Generate dynamic encumbrance text
     if has_encumbrances:
-        encumbrance_text = f"30 years.\n\nAs per revenue records there is charge subsisting over the land (Entry No. {', '.join(active_entry_nums)})."
-        charge_detail_text = f"As per revenue records there is charge subsisting over the land. Active loan/mortgage entries: {', '.join(active_entry_nums)}."
+        encumbrance_text = f"30 years.\n\nAs per revenue records there is charge subsisting over the land."
+        charge_detail_text = f"As per revenue records there is charge subsisting over the land."
     else:
         encumbrance_text = "30 years.\n\nAs per revenue records there is no charge subsisting over the land."
         charge_detail_text = "As per revenue records there is no charge subsisting over the land."
