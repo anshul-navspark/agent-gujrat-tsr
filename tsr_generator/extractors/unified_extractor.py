@@ -106,7 +106,7 @@ Formatting Rules - USE COMPACT LANGUAGE:
 
 # Certification patterns (~150 tokens)
 CERTIFICATION_PATTERNS = """
-CRITICAL - Translate Gujarati status words in certification:
+CRITICAL - Translate Gujarati status words in certification (often in "Remarks" column):
 | Gujarati | English Translation | entry_status value |
 | રદ | cancelled | "rejected" |
 | ના મંજૂર | not accepted | "not_accepted" |
@@ -122,6 +122,11 @@ Certification output formats:
 - Default if unclear: entry_status: "" (empty)
 
 IMPORTANT: Do NOT output "certified" if the Gujarati text contains રદ, ના મંજૂર, or નામંજુર!
+
+CRITICAL: The certification info is often in the RIGHTMOST column. Look for:
+- Designation: C.O. (Circle Officer), Mamlatdar, Prant Officer, Dy. Collector, T.D.O.
+- Date: DD/MM/YYYY format.
+Example: "Pramaniit [Date] [Officer]" -> "The Entry is certified by [Officer] on [Date]."
 """
 
 # Minimal description examples - COMPACT format
@@ -224,11 +229,24 @@ EXTRACTION INSTRUCTIONS:
 - certification_date: The certification date (DD/MM/YYYY preferred; DD/MM/YY is acceptable). This is DIFFERENT from the entry date - look for when the entry was certified/rejected.
      
       IMPORTANT: All three certification fields MUST be extracted if available in the document.
-      The certification text is very often located in the "Remarks of the Inspecting Officer" (written in gujrati)
-      column of the chain of title / Entry Details table. You MUST carefully read and translate
-      the content of this "Remarks of the Inspecting Officer" column (including Gujarati text)
-      to determine certification_status, certification_official, and certification_date for each
-      entry. Do NOT ignore this column.
+      The certification text is almost ALWAYS located in the "Remarks of the Inspecting Officer" (separate column).
+      You MUST read that column for the corresponding row to get the details.
+      
+      CRITICAL INSTRUCTION FOR CERTIFICATIONS:
+      1. Locate the entry row.
+      2. Look at the "Remarks" / "Certification" column for that row.
+      3. Extract the STATUS (Certified/Rejected), OFFICIAL (C.O., Mamlatdar, etc.), and DATE.
+      4. If the column says "Pramaniit" (Certified) with a date and signature, output:
+         - description: "... The Entry is certified by [Official] on [Date]."
+         - certification_status: "certified"
+         - certification_official: "[Official]"
+         - certification_date: "[Date]"
+      5. If the column says "Radd" or "Namaujur" (Rejected/Cancelled), output:
+         - description: "... The Entry is rejected by [Official] on [Date]."
+         - certification_status: "rejected"
+         - certification_official: "[Official]"
+         - certification_date: "[Date]"
+      
       Examples of what to extract:
       - certification_status: "certified", certification_official: "C.O. Porbandar", certification_date: "21/06/2005"
       - certification_status: "rejected", certification_official: "Deputy Mamlatdar Super, Porbandar", certification_date: "19/03/2007"
