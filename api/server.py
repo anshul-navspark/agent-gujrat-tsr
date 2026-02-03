@@ -539,3 +539,83 @@ def cache_stats(cache_service = Depends(get_cache_service_dependency)):
             "status": "error",
             "error": str(e)
         }
+
+
+class ClearCacheRequest(BaseModel):
+    """Request model for cache clearing."""
+    commit_sha: str = ""
+    force: bool = False
+
+
+@app.post("/clear-docx-cache")
+def clear_docx_cache(
+    request: ClearCacheRequest = ClearCacheRequest(),
+    cache_service = Depends(get_cache_service_dependency)
+):
+    """
+    Clear all DOCX files from the cache.
+    
+    This endpoint is intended to be called by CI/CD pipelines (GitHub Actions)
+    after a new deployment to ensure users get fresh TSR documents generated
+    with the latest code.
+    
+    Args:
+        request: Optional request body with commit_sha and force flag
+        
+    Returns:
+        Status of the cache clearing operation
+    """
+    if cache_service is None:
+        return {
+            "status": "disabled",
+            "message": "Cache not configured. Set GCS_CACHE_BUCKET environment variable to enable.",
+            "deleted_count": 0
+        }
+    
+    try:
+        commit_sha = request.commit_sha or os.getenv("GIT_COMMIT_SHA", "")
+        
+        if request.force or not commit_sha:
+            # Force clear all DOCX files
+            logger.info(f"Force clearing all DOCX cache files (commit: {commit_sha or 'not provided'})")
+            deleted_count = cache_service.clear_all_docx_cache()
+            
+            # Update version file if commit_sha provided
+            if commit_sha:
+                try:
+                    version_blob = cache_service._bucket.blob("deployed_version.txt")
+                    version_blob.upload_from_string(commit_sha)
+                    logger.info(f"Updated deployed version to: {commit_sha}")
+                except Exception as e:
+                    logger.warning(f"Failed to update version file: {e}")
+            
+            return {
+                "status": "success",
+                "message": f"Cleared {deleted_count} DOCX files from cache",
+                "deleted_count": deleted_count,
+                "commit_sha": commit_sha,
+                "method": "force_clear"
+            }
+        else:
+            # Conditional clear based on version
+            logger.info(f"Checking if cache clear needed for commit: {commit_sha}")
+            cleared = cache_service.check_and_clear_docx_if_new_version(commit_sha)
+            
+            if cleared:
+                return {
+                    "status": "success",
+                    "message": "DOCX cache cleared due to new version",
+                    "commit_sha": commit_sha,
+                    "method": "version_check"
+                }
+            else:
+                return {
+                    "status": "skipped",
+                    "message": "Cache version unchanged, no clearing needed",
+                    "commit_sha": commit_sha,
+                    "method": "version_check"
+                }
+                
+    except Exception as e:
+        logger.error(f"Failed to clear cache: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to clear cache: {str(e)}")
