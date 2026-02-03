@@ -137,10 +137,10 @@ curl -X POST "http://localhost:8080/process-record" \
 
 ```bash
 # Build the Docker image
-docker build -t agent-gujrat-tsr .
+docker build -t agent-gujarat-tsr .
 
 # Run the container
-docker run -p 8080:8080 -e GEMINI_API_KEY=your_key agent-gujrat-tsr
+docker run -p 8080:8080 -e GEMINI_API_KEY=your_key agent-gujarat-tsr
 ```
 
 ### Deploy to Google Cloud Run
@@ -150,11 +150,11 @@ docker run -p 8080:8080 -e GEMINI_API_KEY=your_key agent-gujrat-tsr
 gcloud config set project YOUR_PROJECT_ID
 
 # Build and push (uses cloud builder, no local Docker needed)
-gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/agent-gujrat-tsr
+gcloud builds submit --tag gcr.io/YOUR_PROJECT_ID/agent-gujarat-tsr
 
 # Deploy
-gcloud run deploy agent-gujrat-tsr \
-  --image gcr.io/YOUR_PROJECT_ID/agent-gujrat-tsr \
+gcloud run deploy agent-gujarat-tsr \
+  --image gcr.io/YOUR_PROJECT_ID/agent-gujarat-tsr \
   --platform managed \
   --region us-central1 \
   --allow-unauthenticated \
@@ -248,8 +248,8 @@ Returns:
 ### Cloud Run Deployment with Caching
 
 ```bash
-gcloud run deploy agent-gujrat-tsr \
-  --image gcr.io/YOUR_PROJECT_ID/agent-gujrat-tsr \
+gcloud run deploy agent-gujarat-tsr \
+  --image gcr.io/YOUR_PROJECT_ID/agent-gujarat-tsr \
   --platform managed \
   --region asia-south1 \
   --allow-unauthenticated \
