@@ -55,60 +55,8 @@ class AIBatchService:
         
         # Executor for AI calls
         self.ai_executor = ThreadPoolExecutor(max_workers=max_concurrent_ai_calls)
-        
-        # Pre-computed prompt templates (to avoid re-creating them each time)
-        self._land_details_prompt_template = self._prepare_land_details_prompt()
-        self._entry_details_prompt_template = self._prepare_entry_details_prompt()
-        self._findings_prompt_template = self._prepare_findings_prompt()
     
-    def _prepare_land_details_prompt(self) -> str:
-        """Pre-compute the land details extraction prompt template"""
-        return """
-        Extract land record details from the following Gujarati land record text and return as JSON.
-        
-        Required fields:
-        - village_name: Name of the village
-        - taluka_name: Name of the taluka
-        - district_name: Name of the district
-        - survey_number: Survey/Block number
-        - total_area: Total area of the land
-        - nature_of_land: Classification/nature of land
-        - owner: Current owner(s) name(s)
-        - old_survey_number: Old survey number if available
-        
-        Text: {pdf_text}
-        
-        Return only valid JSON:
-        """
-    
-    def _prepare_entry_details_prompt(self) -> str:
-        """Pre-compute the entry details extraction prompt template"""
-        return """
-        Extract mutation entry details from the following Gujarati land record text.
-        Focus on the "Entry Details" section and return as JSON array.
-        
-        For each entry, extract:
-        - entry_number: Entry/mutation number
-        - date: Date of the entry
-        - type: Type of mutation (Sale, Mortgage, Release, etc.)
-        - description: Brief description
-        - parties_involved: Names of people involved
-        
-        Text: {pdf_text}
-        
-        Return only valid JSON array:
-        """
-    
-    def _prepare_findings_prompt(self) -> str:
-        """Pre-compute the findings prompt template"""
-        return """
-        Generate standard TSR findings based on the land record analysis.
-        Return as JSON array of finding objects with 'text' field.
-        
-        Text: {pdf_text}
-        
-        Return only valid JSON array:
-        """
+
     
     def submit_task(self, task_id: str, pdf_path: str) -> str:
         """Submit a PDF for AI processing"""

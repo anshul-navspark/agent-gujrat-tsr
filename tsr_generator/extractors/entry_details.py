@@ -290,6 +290,8 @@ def extract_entry_details_ai(pdf_text):
         - The certifier/official name and designation (e.g., "C.O. Porbandar", "Deputy Mamlatdar Super, Porbandar")
         - The certification date (which may be different from the entry date)
         - Extract these as separate fields (certification_official and certification_date) even if they appear in the certification text
+        - DO NOT include certification text (like "The Entry is certified...") in the "description" field
+        - Keep certification information ONLY in the certification, certification_status, certification_official, and certification_date fields
 
         Format your response as a JSON array with objects containing these keys:
         "entry_number", "date", "type", "description", "certification", "certification_status", "certification_official", "certification_date"

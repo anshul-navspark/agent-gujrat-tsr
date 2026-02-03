@@ -88,7 +88,7 @@ Formatting Rules - USE COMPACT LANGUAGE:
 1. ALL descriptions MUST start with "That" (except NOT RELATED, PROMULGATION)
 2. DO NOT use honorifics like "Shri", "Smt", "Mr.", "Mrs."
 3. DO NOT use "account holder", "mortgaged his total land", "of [village] village"
-4. DO NOT include sentences like "This encumbrance entry was recorded based on..." or "This inheritance entry was made..."
+4. DO NOT include sentences like "This encumbrance entry was recorded based on..." or "This inheritance entry was made...". Keep descriptions concise.
 5. Keep descriptions SHORT and DIRECT - one sentence if possible
 6. Amounts: "Rs. X/-" or "Rs. X,XXX/-"
 7. ALWAYS use "Survey No." instead of "Khata No." or "Account No."
@@ -99,9 +99,8 @@ Formatting Rules - USE COMPACT LANGUAGE:
    - Example: Convert "1-88-48 H.Are.SqMt. i.e.(18848 Sq. Mts)" to "1-88-48 Hectare (i.e. 18848 Sq. Mts)"
 12. Translate "bhen" or "ben" suffix as "ben" (e.g. "Shantiben")
 13. Lists: "which are as follows:-" + bullet points (Use "•" not "*")
-14. OMIT sentences like "This entry was made based on..." or "This inheritance entry was made...". Keep descriptions concise.
-15. LOAN entries: Do NOT include agreement date. Only describe the loan, borrower, lender, amount, and land details.
-16. CRITICAL - Survey Number Prefix Rule: If a PROMULGATION entry exists in the document, ALL entries with entry numbers LESS THAN the promulgation entry number MUST have "old" before "Survey No." in their descriptions.
+14. LOAN entries: Do NOT include agreement date. Only describe the loan, borrower, lender, amount, and land details.
+15. CRITICAL - Survey Number Prefix Rule: If a PROMULGATION entry exists in the document, ALL entries with entry numbers LESS THAN the promulgation entry number MUST have "old" before "Survey No." in their descriptions.
 """
 
 # Certification patterns (~150 tokens)
@@ -127,6 +126,7 @@ CRITICAL: The certification info is often in the RIGHTMOST column. Look for:
 - Designation: C.O. (Circle Officer), Mamlatdar, Prant Officer, Dy. Collector, T.D.O.
 - Date: DD/MM/YYYY format.
 Example: "Pramaniit [Date] [Officer]" -> "The Entry is certified by [Officer] on [Date]."
+EXCEPTION: PROMULGATION entries do not have certification details. Set certification_status, certification_official, and certification_date to empty strings ("").
 """
 
 # Minimal description examples - COMPACT format
@@ -236,16 +236,22 @@ EXTRACTION INSTRUCTIONS:
       1. Locate the entry row.
       2. Look at the "Remarks" / "Certification" column for that row.
       3. Extract the STATUS (Certified/Rejected), OFFICIAL (C.O., Mamlatdar, etc.), and DATE.
-      4. If the column says "Pramaniit" (Certified) with a date and signature, output:
-         - description: "... The Entry is certified by [Official] on [Date]."
+      4. DO NOT include certification text in the "description" field.
+      5. If the column says "Pramaniit" (Certified) with a date and signature, output:
+         - description: [Entry details WITHOUT certification text]
          - certification_status: "certified"
          - certification_official: "[Official]"
          - certification_date: "[Date]"
-      5. If the column says "Radd" or "Namaujur" (Rejected/Cancelled), output:
-         - description: "... The Entry is rejected by [Official] on [Date]."
+      6. If the column says "Radd" or "Namaujur" (Rejected/Cancelled), output:
+         - description: [Entry details WITHOUT certification text]
          - certification_status: "rejected"
          - certification_official: "[Official]"
          - certification_date: "[Date]"
+      7. EXCEPTION - PROMULGATION / RE-SURVEY ENTRIES:
+         - THESE DO NOT HAVE A CERTIFIER.
+         - Set certification_status: ""
+         - Set certification_official: ""
+         - Set certification_date: ""
       
       Examples of what to extract:
       - certification_status: "certified", certification_official: "C.O. Porbandar", certification_date: "21/06/2005"
