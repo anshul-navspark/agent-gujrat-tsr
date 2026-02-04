@@ -73,6 +73,22 @@ if st.session_state.api_client is None or st.session_state.api_client.api_url !=
         api_url=api_url, timeout=api_timeout, max_retries=max_retries
     )
 
+# Sidebar with debug info and API health check
+with st.sidebar:
+    st.markdown(f"**Version:** `{APP_VERSION}`")
+    api_host = api_url.replace("https://", "").split("/")[0]
+    st.markdown(f"**API:** `{api_host[:35]}...`")
+    
+    if st.button("Check API Health"):
+        try:
+            is_healthy = st.session_state.api_client.health_check()
+            if is_healthy:
+                st.success("API is healthy!")
+            else:
+                st.error("API health check failed")
+        except Exception as e:
+            st.error(f"Error: {e}")
+
 # Initialize file service (global singleton)
 file_service = get_file_service()
 
