@@ -37,6 +37,9 @@ st.set_page_config(page_title="Gujarat TSR Agent", page_icon="📄", layout="cen
 st.title("Gujarat Land Record & TSR Generator")
 st.caption("Fetch land records and generate Title Search Reports via Cloud API")
 
+# Version for debugging deployments
+APP_VERSION = "2.1.0-2026-02-04"
+
 # Initialize session state
 if "processing_results" not in st.session_state:
     st.session_state.processing_results = []
