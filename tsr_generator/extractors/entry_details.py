@@ -115,13 +115,13 @@ def extract_entry_details_ai(pdf_text):
 
         For each entry, extract:
         1. entry_number - The entry number
-        2. date - The date (DD/MM/YYYY)
+        2. date - The date (DD/MM/YY)
         3. type - Category of entry (LOAN, DEATH, RELEASE, LOAN CLOSE, SALE, PARTITION, PERSONS ADD, TO TRANSFER, EXCHANGE, LIFETIME DISTRIBUTION, NOT RELATED, ORDER, RELINQUISHMENT, etc.)
         4. description - Detailed description following the exact format from examples. MUST BE IN ENGLISH. Translate any Gujarati text. Do NOT include any Gujarati characters.
         5. certification - Line about certification if available (starts with "The Entry is certified..." or "The Entry is rejected"). MUST BE IN ENGLISH. Do NOT include any Gujarati characters.
-        6. certification_status - One of: "certified", "rejected", "not_approved"
+        6. certification_status - One of: "certified", "rejected", "not_accepted"
         7. certification_official - The official's POST/DESIGNATION and PLACE (e.g., "C.O. Porbandar", "Deputy Mamlatdar Super, Porbandar"). Abbreviate "Circle Officer" as "C.O.". Do NOT include personal names. 
-        8. certification_date - The certification date in DD/MM/YYYY format. This is DIFFERENT from the entry date - look for when the entry was certified/rejected. 
+        8. certification_date - The certification date in DD/MM/YY format. This is DIFFERENT from the entry date - look for when the entry was certified/rejected. 
         
         IMPORTANT: Extract certification_official and certification_date whenever they are present in the document, even if certification_status is not explicitly stated. If certification_official or certification_date are present, include them in the response.
 
@@ -142,11 +142,13 @@ def extract_entry_details_ai(pdf_text):
            Example: "1-88-48 H.Are.SqMt. i.e.(18848 Sq. Mts)" -> "1-88-48 Hectare (i.e. 18848 Sq. Mts)"
         4. Format amounts as "Rs. X/-" or "Rs. X,XXX/-"
         5. For lists of heirs/parties, use "which are as follows:-" followed by bullet points
-        6. Document references: "document no. X dated DD/MM/YYYY" or "document no. X dated DD.MM.YYYY"
+        6. Document references: "document no. X dated DD/MM/YY" or "document no. X dated DD.MM.YY"
         7. Survey numbers: Preserve exact format including "old Survey No." vs "Survey No."
-        8. For entries with tables (PARTITION, EXCHANGE), preserve table structure with bullet points
-        9. ALWAYS use "Survey No." instead of "Khata No." or "Account No." even if the text says Khata/Account.
-        10. For ORDER entries, ALWAYS specify the Survey Number in the description. If the order applies to the current land, explicitly mention "land bearing Survey No. [Number]".
+        8. IMPORTANT: Preserve "/" in survey numbers (e.g., "387/p3" NOT "387p3")
+        9. For entries with tables (PARTITION, EXCHANGE), preserve table structure with bullet points
+        10. ALWAYS use "Survey No." instead of "Khata No." or "Account No." even if the text says Khata/Account.
+        11. For ORDER entries, ALWAYS specify the Survey Number in the description. If the order applies to the current land, explicitly mention "land bearing Survey No. [Number]".
+        12. OLD SURVEY NUMBERS: If there is a PROMULGATION entry (re-survey), use "old Survey No." for all entries BEFORE the promulgation entry. Use "Survey No." for entries AFTER promulgation. If there is NO promulgation entry, use "Survey No." (without "old").
 
         Entry Type Classification Rules:
         - LOAN: Contains "took a loan" or "loan of Rs."
@@ -216,11 +218,15 @@ def extract_entry_details_ai(pdf_text):
 
         Also extract certification information if available. Certification examples:
         - "The Entry is certified."
-        - "The Entry is certified by C.O. Jadiya on DD/MM/YYYY."
-        - "The Entry is certified on DD/MM/YYYY."
+        - "The Entry is certified by C.O. Jadiya on DD/MM/YY."
+        - "The Entry is certified on DD/MM/YY."
         - "The Entry is rejected."
         - "The entry is Rejected."
         - "The Entry is certified but date is not legible."
+
+        SPECIAL RULES:
+        - For PROMULGATION type entries, certification should be just "The Entry is certified." (no certifier name or date).
+        - BOREWELL NAMING: Use "Borewell-1", "Borewell-2", etc. instead of "Bore-1", "Bore-2". Always use the full word "Borewell".
 
         CRITICAL: When extracting certification information, look for:
         - The certifier/official name and designation (e.g., "C.O. Porbandar", "Deputy Mamlatdar Super, Porbandar")
@@ -311,14 +317,14 @@ def extract_entry_details_fallback(entry_section):
 
         Entry format:
         - entry_number: The numeric entry number
-        - date: In DD/MM/YYYY format if available
+        - date: In DD/MM/YY format if available
         - type: Category (LOAN, DEATH, RELEASE, SALE, PARTITION, EXCHANGE, LIFETIME DISTRIBUTION, NOT RELATED, ORDER, RELINQUISHMENT, etc.)
         - description: Start with "That" and provide complete details (except for NOT RELATED and PROMULGATION types). MUST BE IN ENGLISH. Translate all Gujarati text. Do NOT include any Gujarati characters.
         - certification: Information about who certified the entry and when. MUST BE IN ENGLISH. Do NOT include any Gujarati characters.
         
-        - certification_status: One of: "certified", "rejected", "not_approved"
+        - certification_status: One of: "certified", "rejected", "not_accepted"
         - certification_official: The official's POST/DESIGNATION and PLACE (e.g., "C.O. Porbandar", "Deputy Mamlatdar Super, Porbandar"). Abbreviate "Circle Officer" as "C.O.". Do NOT include personal names.
-        - certification_date: The certification date in DD/MM/YYYY format. This is DIFFERENT from the entry date - look for when the entry was certified/rejected.
+        - certification_date: The certification date in DD/MM/YY format. This is DIFFERENT from the entry date - look for when the entry was certified/rejected.
         
         IMPORTANT: Extract certification_official and certification_date whenever they are present in the document, even if certification_status is not explicitly stated.
 
@@ -342,7 +348,7 @@ def extract_entry_details_fallback(entry_section):
 
         Certification examples:
         - "The Entry is certified."
-        - "The Entry is certified by C.O. Jadiya on DD/MM/YYYY."
+        - "The Entry is certified by C.O. Jadiya on DD/MM/YY."
         - "The Entry is rejected."
         - "The Entry is certified but date is not legible."
 

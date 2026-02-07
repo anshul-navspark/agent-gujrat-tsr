@@ -30,7 +30,8 @@ def generate_tsr_from_pdf_optimized(
     pdf_path: str,
     output_path: str,
     logger: Optional[logging.Logger] = None,
-    log_tokens: bool = True
+    log_tokens: bool = True,
+    request_metadata: Optional[Dict[str, str]] = None
 ) -> Dict[str, Any]:
     """
     Generate a TSR document from a PDF land record using OPTIMIZED extraction.
@@ -92,6 +93,32 @@ def generate_tsr_from_pdf_optimized(
         land_details = unified_result.land_details
         entry_table = sorted([int(n) for n in unified_result.entry_numbers if n.isdigit()])
 
+        # Override land details with request metadata if provided
+        old_survey = None
+        if request_metadata:
+            if request_metadata.get('survey_number'):
+                old_survey = land_details.get('survey_number', '')
+                land_details['survey_number'] = request_metadata['survey_number']
+                logger.info(f"Overriding survey_number: '{old_survey}' -> '{request_metadata['survey_number']}'")
+            if request_metadata.get('village'):
+                land_details['village_name'] = request_metadata['village']
+            if request_metadata.get('taluka'):
+                land_details['taluka_name'] = request_metadata['taluka']
+            if request_metadata.get('district'):
+                land_details['district_name'] = request_metadata['district']
+
+        # Fix entry descriptions to use the correct survey number if it was overridden
+        if old_survey and old_survey != land_details.get('survey_number'):
+            import re as _re_survey
+            new_survey = land_details['survey_number']
+            for me in unified_result.mutation_entries:
+                if isinstance(me, dict) and me.get('description'):
+                    me['description'] = _re_survey.sub(
+                        r'Survey\s+No\.\s*' + _re_survey.escape(old_survey),
+                        f'Survey No. {new_survey}',
+                        me['description']
+                    )
+
         # Process mutation entries into structured objects
         from ..extractors.entry_details import process_entry_details
         entries = []
@@ -104,7 +131,7 @@ def generate_tsr_from_pdf_optimized(
 
         # Generate findings with dynamic encumbrance detection
         logger.debug("Generating findings with encumbrance analysis")
-        findings = generate_findings_table(pdf_text, unified_result.mutation_entries)
+        findings = generate_findings_table(pdf_text, unified_result.mutation_entries, land_details)
 
         # Ensure output directory exists
         output_dir = os.path.dirname(output_path)
@@ -183,7 +210,7 @@ def _fallback_generation(
             }
             for e in entries
         ]
-        findings = generate_findings_table(pdf_text, entries_for_findings)
+        findings = generate_findings_table(pdf_text, entries_for_findings, land_details)
 
         # Ensure output directory exists
         output_dir = os.path.dirname(output_path)
@@ -220,14 +247,14 @@ def _fallback_generation(
 # DROP-IN REPLACEMENT FUNCTION
 # =============================================================================
 
-def generate_tsr_from_pdf(pdf_path: str, output_path: str, logger=None) -> Dict[str, Any]:
+def generate_tsr_from_pdf(pdf_path: str, output_path: str, logger=None, request_metadata=None) -> Dict[str, Any]:
     """
     Drop-in replacement for original generate_tsr_from_pdf.
 
     This function has the same signature and return format as the original,
     but uses optimized extraction internally.
     """
-    return generate_tsr_from_pdf_optimized(pdf_path, output_path, logger, log_tokens=False)
+    return generate_tsr_from_pdf_optimized(pdf_path, output_path, logger, log_tokens=False, request_metadata=request_metadata)
 
 
 # =============================================================================

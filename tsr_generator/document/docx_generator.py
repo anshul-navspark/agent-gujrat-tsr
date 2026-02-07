@@ -226,7 +226,14 @@ def add_chain_of_title_section(document, entries, entry_table):
                 entry_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
                 entry_para.paragraph_format.line_spacing = 1.15
                 
-                # Add certification if present
+                # Add certification: use existing cert or default for non-promulgation entries
+                _entry_type_val = entry.type.value if hasattr(entry.type, 'value') else str(entry.type)
+                _skip_cert_types = ['Promulgation', 'Not Related', 'PROMULGATION', 'NOT_RELATED']
+                _has_cert = hasattr(entry, 'certification') and entry.certification
+                if not _has_cert and _entry_type_val not in _skip_cert_types:
+                    entry.certification = "The Entry is certified."
+                    entry.entry_status = entry.entry_status or "certified"
+                
                 if hasattr(entry, 'certification') and entry.certification:
                     cert_para = row_cells[1].add_paragraph()
                     
@@ -236,7 +243,7 @@ def add_chain_of_title_section(document, entries, entry_table):
                         status_lower = entry.entry_status.lower()
                         if status_lower in ['rejected', 'cancelled']:
                             status_word = "rejected"
-                        elif status_lower in ['not_accepted', 'not accepted']:
+                        elif status_lower in ['not_accepted', 'not accepted', 'not_approved']:
                             status_word = "not accepted"
                     
                     # Get certification text
@@ -244,7 +251,8 @@ def add_chain_of_title_section(document, entries, entry_table):
                     
                     # Extract official designation and date from certification text
                     import re
-                    official_match = re.search(r'by\s+([^.]+?)(?:\s+on\s+|\s*$)', certification_text)
+                    # Fixed regex: allow periods in official names (e.g. "C.O. Talaja")
+                    official_match = re.search(r'by\s+(.+?)(?:\s+on\s+\d|\s+but\s|\s*\.\s*$)', certification_text)
                     date_match = re.search(r'on\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4})', certification_text)
                     
                     # Build the certification text with correct status word

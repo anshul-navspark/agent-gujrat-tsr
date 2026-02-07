@@ -347,7 +347,13 @@ def process_record(
         # Generate TSR (lazy load to improve startup time)
         logger.info(f"Starting TSR generation from PDF: {pdf_path}")
         generate_tsr = get_tsr_generator()
-        tsr_result = generate_tsr(pdf_path, docx_path, logger)
+        _request_metadata = {
+            'district': request.district,
+            'taluka': request.taluka,
+            'village': request.village,
+            'survey_number': request.survey_number
+        }
+        tsr_result = generate_tsr(pdf_path, docx_path, logger, request_metadata=_request_metadata)
         
         logger.info(f"TSR generation result: success={tsr_result.get('success')}, error={tsr_result.get('error')}")
         

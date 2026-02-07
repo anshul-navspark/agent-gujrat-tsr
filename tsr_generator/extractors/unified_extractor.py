@@ -66,15 +66,18 @@ Formatting Rules - USE COMPACT LANGUAGE:
 5. Keep descriptions SHORT and DIRECT - one sentence if possible
 6. Amounts: "Rs. X/-" or "Rs. X,XXX/-"
 7. ALWAYS use "Survey No." instead of "Khata No." or "Account No."
-8. Documents: "document no. X dated DD/MM/YYYY"
+8. Documents: "document no. X dated DD/MM/YY"
 9. Translate "Paiki" or "Part" or "part" or "pk" as "p" in survey numbers (e.g. "150/p1")
-10. Use caste titles only when part of the name: Thakor, Patel, Kanbi, Choudhary, Rabari, Vadher, Solanki
-11. Measurements: Use "Acre/Guntha" or "Hectare". REPLACE "H.Are.SqMt." with "Hectare".
+10. IMPORTANT: Preserve "/" in survey numbers (e.g., "387/p3" NOT "387p3")
+11. Use caste titles only when part of the name: Thakor, Patel, Kanbi, Choudhary, Rabari, Vadher, Solanki
+12. Measurements: Use "Acre/Guntha" or "Hectare". REPLACE "H.Are.SqMt." with "Hectare".
    - Example: Convert "1-88-48 H.Are.SqMt. i.e.(18848 Sq. Mts)" to "1-88-48 Hectare (i.e. 18848 Sq. Mts)"
-12. Translate "bhen" or "ben" suffix as "ben" (e.g. "Shantiben")
-13. Lists: "which are as follows:-" + bullet points (Use "•" not "*")
-14. OMIT sentences like "This entry was made based on..." or "This inheritance entry was made...". Keep descriptions concise.
-15. LOAN entries: Do NOT include agreement date. Only describe the loan, borrower, lender, amount, and land details.
+13. Translate "bhen" or "ben" suffix as "ben" (e.g. "Shantiben")
+14. Lists: "which are as follows:-" + bullet points (Use "•" not "*")
+15. OMIT sentences like "This entry was made based on..." or "This inheritance entry was made...". Keep descriptions concise.
+16. LOAN entries: Do NOT include agreement date. Only describe the loan, borrower, lender, amount, and land details.
+17. OLD SURVEY NUMBERS: If there is a PROMULGATION entry (re-survey), use "old Survey No." for all entries BEFORE the promulgation entry. Use "Survey No." for entries AFTER promulgation. If there is NO promulgation entry, use "Survey No." (without "old").
+18. BOREWELL NAMING: Use "Borewell-1", "Borewell-2", etc. instead of "Bore-1", "Bore-2". Always use the full word "Borewell".
 """
 
 # Certification patterns (~150 tokens)
@@ -88,11 +91,15 @@ CRITICAL - Translate Gujarati status words in certification:
 | પ્રમાણિત | certified | "certified" |
 
 Certification output formats:
-- If રદ found: "The Entry is cancelled by [Name] on DD/MM/YYYY." + entry_status: "rejected"
-- If ના મંજૂર or નામંજુર found: "The Entry is not accepted by [Name] on DD/MM/YYYY." + entry_status: "not_accepted"  
-- If પ્રમાણિત found: "The Entry is certified by [Name] on DD/MM/YYYY." + entry_status: "certified"
+- If રદ found: "The Entry is cancelled by [Name] on DD/MM/YY." + entry_status: "rejected"
+- If ના મંજૂર or નામંજુર found: "The Entry is not accepted by [Name] on DD/MM/YY." + entry_status: "not_accepted"  
+- If પ્રમાણિત found: "The Entry is certified by [Name] on DD/MM/YY." + entry_status: "certified"
 - IMPORTANT: If the document shows a 2-digit year (e.g., 30/09/05), still extract it as DD/MM/YY; it will be normalized later.
 - Default if unclear: entry_status: "" (empty)
+
+SPECIAL RULE FOR PROMULGATION ENTRIES: 
+- For PROMULGATION type entries, certification should be just "The Entry is certified." 
+- Do NOT include certifier name or certification date for promulgation entries.
 
 IMPORTANT: Do NOT output "certified" if the Gujarati text contains રદ, ના મંજૂર, or નામંજુર!
 """
@@ -156,7 +163,8 @@ OUTPUT FORMAT - Return ONLY valid JSON with this exact structure:
     "old_survey_number": "",
     "total_area": "",
     "nature_of_land": "",
-    "owner": ""
+    "owner": "",
+    "has_borewell": false
   }},
   "entry_numbers": [],
   "mutation_entries": [
@@ -180,6 +188,7 @@ EXTRACTION INSTRUCTIONS:
    - For "survey_number", translate "Paiki" or "Part" or "part" to "p"(e.g. "150/p1").
    - For "old_survey_number", look for re-survey promulgation entries (Entry 3888-type) that map old→new survey numbers.
      Extract the old survey number. If found, format as just the number (e.g. "258" not "Old Survey No. 258").
+   - For "has_borewell", set to true if any entry or document mentions a Borewell (બોરવેલ, બોર, કૂવો, Bore, Borewell, tubewell). Set to false otherwise.
 
 2. ENTRY NUMBERS: Extract from "Entry Details" table. Output as array of number strings.
    - Remove asterisks (*) and trailing Gujarati text
@@ -188,13 +197,12 @@ EXTRACTION INSTRUCTIONS:
 
 3. MUTATION ENTRIES: For each entry number, extract:
    - entry_number: The numeric entry number
-   - date: Format as DD/MM/YYYY if available, else ""
+   - date: Format as DD/MM/YY if available, else ""
    - type: One of: LOAN, DEATH, RELEASE, LOAN CLOSE, SALE, PARTITION, PERSONS ADD, TO TRANSFER, EXCHANGE, LIFETIME DISTRIBUTION, NOT RELATED, ORDER, RELINQUISHMENT, PROMULGATION
    - description: MUST BE IN ENGLISH. Translate all Gujarati.
    - entry_status: One of: "certified", "rejected", "not_accepted". Look for Gujarati keywords નામંજૂર (rejected), રદ (cancelled). Default to "certified" if the entry says "certified" or "The Entry is certified".
    - certification_status: MUST be one of: "certified", "rejected", "not_accepted", or "" if unclear
    - certification_official: The official's POST/DESIGNATION and PLACE (e.g., "C.O. Porbandar", "Deputy Mamlatdar Super, Porbandar"). Abbreviate "Circle Officer" as "C.O.". Do NOT include personal names.
-- certification_date: The certification date (DD/MM/YYYY preferred; DD/MM/YY is acceptable). This is DIFFERENT from the entry date - look for when the entry was certified/rejected.
      
       IMPORTANT: All three certification fields MUST be extracted if available in the document.
       The certification text is very often located in the "Remarks of the Inspecting Officer" (written in gujrati)
@@ -328,8 +336,8 @@ def extract_all_unified(pdf_text: str) -> UnifiedExtractionResult:
 
 def _normalize_date_str(date_str: str) -> str:
     """
-    Normalize common date formats to DD/MM/YYYY.
-    Accepts DD/MM/YY (or with '-') and expands to 20YY for 00-49 else 19YY.
+    Normalize common date formats to DD/MM/YY.
+    Accepts DD/MM/YY or DD/MM/YYYY (or with '-') and converts to 2-digit year.
     """
     if not date_str:
         return ""
@@ -344,13 +352,11 @@ def _normalize_date_str(date_str: str) -> str:
     dd = dd.zfill(2)
     mm = mm.zfill(2)
 
-    if len(yy) == 2:
-        y = int(yy)
-        yyyy = 2000 + y if 0 <= y <= 49 else 1900 + y
-    else:
-        yyyy = int(yy)
+    # Convert 4-digit year to 2-digit year
+    if len(yy) == 4:
+        yy = yy[2:]  # Take last 2 digits
 
-    return f"{dd}/{mm}/{yyyy:04d}"
+    return f"{dd}/{mm}/{yy}"
 
 
 def _normalize_mutation_entries(mutation_entries: Any) -> None:

@@ -105,8 +105,10 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         current_date = datetime.now().strftime('%d %b %Y')
         survey_number = sanitize_text(land_details.get('survey_number', '13'))
         ref_para = doc.add_paragraph()
-        village_prefix = land_details.get('village_name', 'ABD')[:3].upper()
-        ref_text = ref_para.add_run(f"Ref. No. ABREL/GUJ/KUT/ABD/{village_prefix}/{survey_number}                    Dated: {current_date}")
+        village_prefix = land_details.get('village_name', 'N/A')[:3].upper()
+        district_prefix = land_details.get('district_name', 'N/A')[:3].upper()
+        taluka_prefix = land_details.get('taluka_name', 'N/A')[:3].upper()
+        ref_text = ref_para.add_run(f"Ref. No. ABREL/GUJ/{district_prefix}/{taluka_prefix}/{village_prefix}/{survey_number}                    Dated: {current_date}")
         ref_text.bold = True
         
 
@@ -125,7 +127,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         
         # Add introduction
         doc.add_paragraph("Dear Sir,")
-        intro_text = f"     We have been engaged for the Title Investigation of land situated at Village- {sanitize_text(land_details.get('village_name'))}, Taluka-{sanitize_text(land_details.get('taluka_name', 'Abdasa'))}, District- {sanitize_text(land_details.get('district_name', 'Kachchh (Gujarat)'))}. Our detailed report and findings are as under:"
+        intro_text = f"     We have been engaged for the Title Investigation of land situated at Village- {sanitize_text(land_details.get('village_name', 'Not Available'))}, Taluka-{sanitize_text(land_details.get('taluka_name', 'Not Available'))}, District- {sanitize_text(land_details.get('district_name', 'Not Available'))} (Gujarat). Our detailed report and findings are as under:"
         
         doc.add_paragraph(intro_text)
         
@@ -165,9 +167,11 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         nature = sanitize_text(land_details.get('nature_of_land'))
        
         if 'old tenure' in nature.lower() and 'ju. sh.' in nature.lower():
-            row[1].text = "Old Tenure\nAgricultural"
+            row[1].text = "Old Tenure\nAgricultural Use"
         elif 'new tenure' in nature.lower():
-            row[1].text = "New Tenure\nAgricultural"
+            row[1].text = "New Tenure\nAgricultural Use"
+        elif 'old tenure' in nature.lower():
+            row[1].text = "Old Tenure\nAgricultural Use"
         else:
             row[1].text = nature
         
@@ -231,6 +235,15 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         for i, width in enumerate(col_widths):
             row[i].width = Inches(width)
         
+        # Check if land has Borewell (extracted from Gujarati text by LLM)
+        has_borewell = land_details.get('has_borewell', False)
+        if has_borewell and str(has_borewell).lower() not in ['false', 'no', '', 'none']:
+            borewell_para = doc.add_paragraph()
+            borewell_run = borewell_para.add_run("There is a Borewell on the land.")
+            borewell_run.font.name = 'Times New Roman'
+            borewell_run.font.size = Pt(12.5)
+            borewell_para.paragraph_format.line_spacing = 1.15
+        
         # Section 2: Documents Scrutinized
         doc.add_paragraph()
         add_section_heading(doc, "2.  Details/Description of document scrutinized", numbered=True)
@@ -266,7 +279,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
             ("Old & New Village Form no. 6 starting from the year 1958 till latest version available.", "Online", "Not Applicable"),
             ("Village Form No. 8A", "Online", "Not Applicable"),
             ("Old Scanned Village Form No. 7/12 starting from the year 1952 to 2004", "Online", "Not Applicable"),
-            ("Encumbrance Certificate for a period of 30 Years", "Digital Certified copy", sanitize_text(land_details.get('taluka_name', 'Porbandar')))
+            ("Encumbrance Certificate for a period of 30 Years", "Digital Certified copy", sanitize_text(land_details.get('taluka_name', 'Not Available')))
         ]
         
         for doc_type, perusal, office in standard_docs:
@@ -318,9 +331,11 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         # Save the document
         doc.save(output_path)
         logger.debug(f"Document saved successfully as {output_path}")
+        
         return output_path
         
     except Exception as e:
         logger.error(f"Error during document generation: {str(e)}")
         logger.error(traceback.format_exc())
+        
         raise 

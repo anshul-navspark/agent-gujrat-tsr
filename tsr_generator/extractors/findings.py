@@ -149,13 +149,14 @@ def detect_rejected_entries(entries: List[Dict]) -> List[str]:
     return rejected
 
 
-def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None) -> List[Dict[str, str]]:
+def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None, land_details: Optional[Dict[str, str]] = None) -> List[Dict[str, str]]:
     """
     Generate findings for the TSR report with dynamic encumbrance detection.
     
     Args:
         pdf_text (str): The full text of the PDF document
         entries (list, optional): List of extracted mutation entries for encumbrance analysis
+        land_details (dict, optional): Land details for dynamic location values
         
     Returns:
         list: A list of dictionaries with findings
@@ -210,7 +211,7 @@ def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None)
         {
             'sn': '2',
             'particular': "a) Immoveable Properties falls within the jurisdiction of which sub-registrar office?",
-            'observation': "Nakhtarana and Naliya"
+            'observation': land_details.get('taluka_name', 'Not Available') if land_details else "Not Available"
         },
         {
             'sn': '',

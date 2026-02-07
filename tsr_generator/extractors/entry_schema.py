@@ -163,11 +163,25 @@ def _build_certification_string(entry_dict: Dict[str, Any]) -> str:
     if not status:
         return ""
     
+    # Fix: If LLM put a full sentence in certification_status instead of a keyword,
+    # extract just the keyword (e.g. "The Entry is certified by..." -> "certified")
+    import re
+    if len(status) > 20 or ' ' in status:
+        status_extract = re.search(r'(?:entry\s+is\s+)(certified|rejected|cancelled|not\s*accepted|not\s*approved)', status, re.IGNORECASE)
+        if status_extract:
+            status = status_extract.group(1).strip()
+        else:
+            entry_status = entry_dict.get('entry_status', '').strip()
+            if entry_status and len(entry_status) < 20:
+                status = entry_status
+    
     # Map status to display text
     status_map = {
         'certified': 'certified',
         'rejected': 'rejected',
         'not_accepted': 'not accepted',
+        'not_approved': 'not accepted',
+        'not accepted': 'not accepted',
         'cancelled': 'cancelled'
     }
     display_status = status_map.get(status.lower(), status)
