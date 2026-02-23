@@ -55,6 +55,8 @@ class BaseEntry:
     formatted_description: str = ""
     certification: str = ""
     entry_status: str = ""  # certified, rejected, not_accepted, cancelled
+    certification_official: Optional[str] = None
+    certification_date: Optional[str] = None
     
 
 @dataclass
@@ -285,6 +287,11 @@ def create_entry_from_dict(entry_dict):
     date = entry_dict.get('date', '')
     description = entry_dict.get('description', '')
     
+    # Get structured certification details
+    certification_official = entry_dict.get('certification_official', '').strip()
+    certification_date = entry_dict.get('certification_date', '').strip()
+    entry_status = entry_dict.get('entry_status', '').strip()
+    
     # Handle both old format (certification string) and new format (structured fields)
     certification = entry_dict.get('certification', '').strip()
     # If certification is empty or just whitespace, try to construct from structured fields
@@ -300,7 +307,10 @@ def create_entry_from_dict(entry_dict):
             type=entry_type,
             raw_description=description,
             formatted_description=description,
-            certification=certification
+            certification=certification,
+            entry_status=entry_status,
+            certification_official=certification_official,
+            certification_date=certification_date
         )
     elif entry_type == EntryType.LOAN or entry_type == EntryType.MORTGAGE:
         entry = MortgageEntry(
@@ -309,7 +319,10 @@ def create_entry_from_dict(entry_dict):
             type=entry_type,
             raw_description=description,
             formatted_description=description,
-            certification=certification
+            certification=certification,
+            entry_status=entry_status,
+            certification_official=certification_official,
+            certification_date=certification_date
         )
     elif entry_type == EntryType.RELEASE:
         entry = ReleaseEntry(
@@ -318,7 +331,10 @@ def create_entry_from_dict(entry_dict):
             type=entry_type,
             raw_description=description,
             formatted_description=description,
-            certification=certification
+            certification=certification,
+            entry_status=entry_status,
+            certification_official=certification_official,
+            certification_date=certification_date
         )
     elif entry_type == EntryType.INHERITANCE:
         entry = InheritanceEntry(
@@ -327,7 +343,10 @@ def create_entry_from_dict(entry_dict):
             type=entry_type,
             raw_description=description,
             formatted_description=description,
-            certification=certification
+            certification=certification,
+            entry_status=entry_status,
+            certification_official=certification_official,
+            certification_date=certification_date
         )
     elif entry_type == EntryType.PARTITION:
         entry = PartitionEntry(
@@ -336,7 +355,10 @@ def create_entry_from_dict(entry_dict):
             type=entry_type,
             raw_description=description,
             formatted_description=description,
-            certification=certification
+            certification=certification,
+            entry_status=entry_status,
+            certification_official=certification_official,
+            certification_date=certification_date
         )
     elif entry_type == EntryType.RELINQUISHMENT:
         entry = RelinquishmentEntry(
@@ -345,7 +367,10 @@ def create_entry_from_dict(entry_dict):
             type=entry_type,
             raw_description=description,
             formatted_description=description,
-            certification=certification
+            certification=certification,
+            entry_status=entry_status,
+            certification_official=certification_official,
+            certification_date=certification_date
         )
     elif entry_type == EntryType.ORDER:
         entry = OrderEntry(
@@ -354,7 +379,10 @@ def create_entry_from_dict(entry_dict):
             type=entry_type,
             raw_description=description,
             formatted_description=description,
-            certification=certification
+            certification=certification,
+            entry_status=entry_status,
+            certification_official=certification_official,
+            certification_date=certification_date
         )
     elif entry_type == EntryType.CORRECTION:
         entry = CorrectionEntry(
@@ -363,7 +391,10 @@ def create_entry_from_dict(entry_dict):
             type=entry_type,
             raw_description=description,
             formatted_description=description,
-            certification=certification
+            certification=certification,
+            entry_status=entry_status,
+            certification_official=certification_official,
+            certification_date=certification_date
         )
     else:
         # For other or unknown types
@@ -373,7 +404,10 @@ def create_entry_from_dict(entry_dict):
             type=entry_type,
             raw_description=description,
             formatted_description=description,
-            certification=certification
+            certification=certification,
+            entry_status=entry_status,
+            certification_official=certification_official,
+            certification_date=certification_date
         )
     
     return entry 

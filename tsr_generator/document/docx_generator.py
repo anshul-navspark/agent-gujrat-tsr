@@ -105,7 +105,7 @@ def add_section_heading(doc, text, level=1, numbered=True):
     
     return heading
 
-def add_chain_of_title_section(document, entries, entry_table):
+def add_chain_of_title_section(document, entries, entry_table, has_borewell=False):
     """
     Add Chain of Title section with a two-column table format where:
     - First column (0.42 inches): Auto-numbered entries (1., 2., etc.)
@@ -249,31 +249,57 @@ def add_chain_of_title_section(document, entries, entry_table):
                     # Get certification text
                     certification_text = entry.certification
                     
-                    # Extract official designation and date from certification text
-                    import re
-                    # Fixed regex: allow periods in official names (e.g. "C.O. Talaja")
-                    official_match = re.search(r'by\s+(.+?)(?:\s+on\s+\d|\s+but\s|\s*\.\s*$)', certification_text)
-                    date_match = re.search(r'on\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4})', certification_text)
+                    # USE STRUCTURED FIELDS IF AVAILABLE (Fix for regression)
+                    # Check if we have structured official/date from the extractor
+                    has_structured_data = (
+                        (hasattr(entry, 'certification_official') and entry.certification_official) or
+                        (hasattr(entry, 'certification_date') and entry.certification_date)
+                    )
                     
-                    # Build the certification text with correct status word
-                    if official_match:
-                        official_name = official_match.group(1).strip()
-                        # Clean up trailing punctuation
-                        official_name = re.sub(r'[.,;:]+$', '', official_name)
+                    if has_structured_data:
+                        # Use the structured data to build the string
+                        official_name = getattr(entry, 'certification_official', '') or ""
+                        cert_date = getattr(entry, 'certification_date', '') or ""
                         
-                        if date_match:
-                            certification_text = f"The Entry is {status_word} by {official_name} on {date_match.group(1)}."
+                        # Clean up
+                        official_name = official_name.strip()
+                        if official_name.endswith(','): official_name = official_name[:-1]
+                        
+                        if official_name and cert_date:
+                            certification_text = f"The Entry is {status_word} by {official_name} on {cert_date}."
+                        elif official_name:
+                            certification_text = f"The Entry is {status_word} by {official_name}."
+                        elif cert_date:
+                            certification_text = f"The Entry is {status_word} on {cert_date}."
                         else:
-                            # Check for special cases
-                            if "not legible" in entry.certification.lower() or "illegible" in entry.certification.lower():
-                                certification_text = f"The Entry is {status_word} by {official_name} but date is not legible."
-                            elif "not mentioned" in entry.certification.lower() or "not specified" in entry.certification.lower():
-                                certification_text = f"The Entry is {status_word} by {official_name} but date is not mentioned."
-                            else:
-                                certification_text = f"The Entry is {status_word} by {official_name}."
+                            certification_text = f"The Entry is {status_word}."
+                            
                     else:
-                        # No official found, use simple format
-                        certification_text = f"The Entry is {status_word}."
+                        # Fallback to Regex parsing ONLY if structured data is missing
+                        import re
+                        # Fixed regex: allow periods in official names (e.g. "C.O. Talaja")
+                        official_match = re.search(r'by\s+(.+?)(?:\s+on\s+\d|\s+but\s|\s*\.\s*$)', certification_text)
+                        date_match = re.search(r'on\s+(\d{1,2}[/-]\d{1,2}[/-]\d{2,4}|\d{1,2}\s+[A-Za-z]+\s+\d{2,4})', certification_text)
+                        
+                        # Build the certification text with correct status word
+                        if official_match:
+                            official_name = official_match.group(1).strip()
+                            # Clean up trailing punctuation
+                            official_name = re.sub(r'[.,;:]+$', '', official_name)
+                            
+                            if date_match:
+                                certification_text = f"The Entry is {status_word} by {official_name} on {date_match.group(1)}."
+                            else:
+                                # Check for special cases
+                                if "not legible" in entry.certification.lower() or "illegible" in entry.certification.lower():
+                                    certification_text = f"The Entry is {status_word} by {official_name} but date is not legible."
+                                elif "not mentioned" in entry.certification.lower() or "not specified" in entry.certification.lower():
+                                    certification_text = f"The Entry is {status_word} by {official_name} but date is not mentioned."
+                                else:
+                                    certification_text = f"The Entry is {status_word} by {official_name}."
+                        else:
+                            # No official found, use simple format
+                            certification_text = f"The Entry is {status_word}."
                     
                     cert_run = cert_para.add_run(certification_text)
                     cert_run.font.name = 'Times New Roman'
@@ -310,6 +336,15 @@ def add_chain_of_title_section(document, entries, entry_table):
     note_run_1.bold = True
     note_run_1.font.name = 'Times New Roman'
     note_run_1.font.size = Pt(12.5)
+
+    # Add borewell statement in the note if applicable
+    if has_borewell:
+        borewell_para = note_row_cells[1].add_paragraph()
+        borewell_run = borewell_para.add_run("There is a Borewell on the land.")
+        borewell_run.bold = True
+        borewell_run.font.name = 'Times New Roman'
+        borewell_run.font.size = Pt(12.5)
+        borewell_para.paragraph_format.line_spacing = 1.15
 
     # Add some space after the table
     document.add_paragraph()

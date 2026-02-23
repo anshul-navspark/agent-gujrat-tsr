@@ -127,7 +127,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         
         # Add introduction
         doc.add_paragraph("Dear Sir,")
-        intro_text = f"     We have been engaged for the Title Investigation of land situated at Village- {sanitize_text(land_details.get('village_name', 'Not Available'))}, Taluka-{sanitize_text(land_details.get('taluka_name', 'Not Available'))}, District- {sanitize_text(land_details.get('district_name', 'Not Available'))} (Gujarat). Our detailed report and findings are as under:"
+        intro_text = f"     We have been engaged for the Title Investigation of land situated at Village- {sanitize_text(land_details.get('village_name', 'Not Available'))}, Taluka-{sanitize_text(land_details.get('taluka_name', 'Not Available'))}, District- {sanitize_text(land_details.get('district_name', 'Not Available'))}. Our detailed report and findings are as under:"
         
         doc.add_paragraph(intro_text)
         
@@ -237,12 +237,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         
         # Check if land has Borewell (extracted from Gujarati text by LLM)
         has_borewell = land_details.get('has_borewell', False)
-        if has_borewell and str(has_borewell).lower() not in ['false', 'no', '', 'none']:
-            borewell_para = doc.add_paragraph()
-            borewell_run = borewell_para.add_run("There is a Borewell on the land.")
-            borewell_run.font.name = 'Times New Roman'
-            borewell_run.font.size = Pt(12.5)
-            borewell_para.paragraph_format.line_spacing = 1.15
+        has_borewell = has_borewell and str(has_borewell).lower() not in ['false', 'no', '', 'none']
         
         # Section 2: Documents Scrutinized
         doc.add_paragraph()
@@ -311,9 +306,9 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
             for i, width in enumerate(col_widths):
                 row[i].width = Inches(width)
         
-        # Add Chain of Title section
+        # Add Chain of Title section (pass has_borewell to include in note)
         doc.add_paragraph()
-        add_chain_of_title_section(doc, entries, entry_table)
+        add_chain_of_title_section(doc, entries, entry_table, has_borewell=has_borewell)
         
         # Add Findings table
         add_findings_table(doc, findings)

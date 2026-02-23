@@ -78,6 +78,17 @@ def extract_land_records_ai(pdf_text):
         
         # Parse JSON from the response robustly
         content = response.content if hasattr(response, 'content') else str(response)
+        
+        # Handle list responses if needed (ensure content is a string before cleaning)
+        if isinstance(content, list):
+            content_str = ""
+            for part in content:
+                if isinstance(part, str):
+                    content_str += part
+                elif isinstance(part, dict) and "text" in part:
+                    content_str += part["text"]
+            content = content_str
+            
         logger.info(f"AI response received, length: {len(content)} characters")
         logger.debug(f"AI response content (first 500 chars): {content[:500]}")
         

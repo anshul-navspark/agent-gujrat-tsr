@@ -475,14 +475,16 @@ def _parse_json_response(content) -> Optional[Dict]:
     # Handle list responses (some models return content as list of parts)
     if isinstance(content, list):
         logger.debug(f"Response is a list with {len(content)} items")
-        # Try to find the text content
+        # Try to find the text content and concatenate it properly
+        content_str = ""
         for item in content:
             if isinstance(item, str):
-                content = item
-                break
+                content_str += item
             elif isinstance(item, dict) and 'text' in item:
-                content = item['text']
-                break
+                content_str += item['text']
+        
+        if content_str:
+            content = content_str
         else:
             content = str(content)
     

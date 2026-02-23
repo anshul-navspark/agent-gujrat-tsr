@@ -133,7 +133,18 @@ Example response format: 123456"""
                         pass
                     
                     # Extract only digits from the response
-                    captcha_text = ''.join(re.findall(r'\d', response.content))
+                    content = response.content
+                    if isinstance(content, list):
+                        # Handle cases where content is a list of parts (common in newer models/APIs)
+                        content_str = ""
+                        for part in content:
+                            if isinstance(part, str):
+                                content_str += part
+                            elif isinstance(part, dict) and "text" in part:
+                                content_str += part["text"]
+                        content = content_str
+                    
+                    captcha_text = ''.join(re.findall(r'\d', content))
                     
                     if len(captcha_text) == 6:  # Verify we got exactly 6 digits
                         self.logger.debug(f"LLM recognized captcha: {captcha_text} (attempt {attempt + 1})")

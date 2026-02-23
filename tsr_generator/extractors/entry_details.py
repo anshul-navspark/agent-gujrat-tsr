@@ -63,6 +63,16 @@ def extract_entry_table(pdf_text):
     # Handle various LLM output formats including code blocks, markdown, etc.
     content = response.content
     
+    # Handle list responses if needed
+    if isinstance(content, list):
+        content_str = ""
+        for part in content:
+            if isinstance(part, str):
+                content_str += part
+            elif isinstance(part, dict) and "text" in part:
+                content_str += part["text"]
+        content = content_str
+    
     # Extract all sequences of digits (1-4 digits long, typical for entry numbers)
     # This handles both space-separated and newline-separated numbers
     entry_numbers = re.findall(r'\b(\d{1,4})\b', content)
@@ -259,6 +269,17 @@ def extract_entry_details_ai(pdf_text):
         
         # Parse JSON from the response with robust cleaning of control characters
         content = response.content if hasattr(response, 'content') else str(response)
+        
+        # Handle list responses if needed (ensure content is a string before cleaning)
+        if isinstance(content, list):
+            content_str = ""
+            for part in content:
+                if isinstance(part, str):
+                    content_str += part
+                elif isinstance(part, dict) and "text" in part:
+                    content_str += part["text"]
+            content = content_str
+            
         # Remove NULL and other control chars that break JSON
         content = ''.join(ch for ch in content if ch == '\t' or ch == '\n' or ch == '\r' or ord(ch) >= 32)
         json_match = re.search(r'\[\s*\{[\s\S]*?\}\s*\]', content)
@@ -381,8 +402,20 @@ def extract_entry_details_fallback(entry_section):
                     continue
                 raise e
         
-        # Parse JSON from the response
+        # Robust JSON parsing from response
         content = response.content if hasattr(response, 'content') else str(response)
+        
+        # Handle list responses if needed (ensure content is a string before cleaning)
+        if isinstance(content, list):
+            content_str = ""
+            for part in content:
+                if isinstance(part, str):
+                    content_str += part
+                elif isinstance(part, dict) and "text" in part:
+                    content_str += part["text"]
+            content = content_str
+            
+        # Clean control characters
         content = ''.join(ch for ch in content if ch == '\t' or ch == '\n' or ch == '\r' or ord(ch) >= 32)
         json_match = re.search(r'\[\s*\{[\s\S]*?\}\s*\]', content)
         if json_match:

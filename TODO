@@ -1,0 +1,22 @@
+okay now do one thing, read this docx /Users/anshulgoyal/work/gujrat_tsr_agent/1352 complete(2).docx
+
+the tsr docx for another village was working fine, the above docx is handtyped, try to generate the same docx using the code, compare differences and highlight them.. 
+(do not change code ) (use venv don't run code without it)
+(don't look at existing pdf or docx for generation instead use the local process record api)
+
+
+
+
+
+okay do the following changes
+in the introductory paragraph copy the handtyped format
+in table 1 don't drop "Use"
+make sure that the entries before promulgation entry have "old", in cases of no promulgation entry no need of "old"
+date format every where should be dd/mm/yy not dd/mm/yyyy
+do not drop / like i.e. 387/p3 not 387p3
+the promulgation entry's last line doesn't have certifier or certification date it has only usually the entry is certified. Also try to copy the handtyped format.
+Instead of Bore-1 use Borewell-1
+regarding entries like 4089 (release) re read the gujrati text , maybe the extra info is added later in the handwritten
+also add a provision to add "There is a Borewell on the land."	seems straight forward
+
+for each code/prompt change be extra careful and ask for my permission before going ahead with next change in the above requests
