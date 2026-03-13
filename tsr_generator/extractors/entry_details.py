@@ -125,13 +125,13 @@ def extract_entry_details_ai(pdf_text):
 
         For each entry, extract:
         1. entry_number - The entry number
-        2. date - The date (DD/MM/YY)
+        2. date - The date (DD/MM/YYYY) using a four-digit year
         3. type - Category of entry (LOAN, DEATH, RELEASE, LOAN CLOSE, SALE, PARTITION, PERSONS ADD, TO TRANSFER, EXCHANGE, LIFETIME DISTRIBUTION, NOT RELATED, ORDER, RELINQUISHMENT, etc.)
         4. description - Detailed description following the exact format from examples. MUST BE IN ENGLISH. Translate any Gujarati text. Do NOT include any Gujarati characters.
-        5. certification - Line about certification if available (starts with "The Entry is certified..." or "The Entry is rejected"). MUST BE IN ENGLISH. Do NOT include any Gujarati characters.
+        5. certification - Complete certification text. MUST include the official's name/designation and the 4-digit year date if available. Example: "The Entry is certified by C.O. Jadiya on 01/03/2024".
         6. certification_status - One of: "certified", "rejected", "not_accepted"
         7. certification_official - The official's POST/DESIGNATION and PLACE (e.g., "C.O. Porbandar", "Deputy Mamlatdar Super, Porbandar"). Abbreviate "Circle Officer" as "C.O.". Do NOT include personal names. 
-        8. certification_date - The certification date in DD/MM/YY format. This is DIFFERENT from the entry date - look for when the entry was certified/rejected. 
+        8. certification_date - The certification date in DD/MM/YYYY format. This is DIFFERENT from the entry date. 
         
         IMPORTANT: Extract certification_official and certification_date whenever they are present in the document, even if certification_status is not explicitly stated. If certification_official or certification_date are present, include them in the response.
 
@@ -159,6 +159,9 @@ def extract_entry_details_ai(pdf_text):
         10. ALWAYS use "Survey No." instead of "Khata No." or "Account No." even if the text says Khata/Account.
         11. For ORDER entries, ALWAYS specify the Survey Number in the description. If the order applies to the current land, explicitly mention "land bearing Survey No. [Number]".
         12. OLD SURVEY NUMBERS: If there is a PROMULGATION entry (re-survey), use "old Survey No." for all entries BEFORE the promulgation entry. Use "Survey No." for entries AFTER promulgation. If there is NO promulgation entry, use "Survey No." (without "old").
+        13. EXPAND DATES: ALWAYS use a 4-digit year for all dates (DD/MM/YYYY format).
+        14. SURVEY AND ACCOUNT NUMBERS: Never omit any survey numbers. If an account/khata number is associated with a survey number, include it in parenthesis immediately after, like "Survey No. 11(128), 325(128)". Do not separate them with a space.
+        15. CERTIFICATION TEXT: The "certification" field MUST include the official's name/designation and the date if it's available. DO NOT just write "The Entry is certified." unless no name and date are given. Example: "The Entry is certified by C.O. Jadiya on 01/03/2024".
 
         Entry Type Classification Rules:
         - LOAN: Contains "took a loan" or "loan of Rs."
@@ -187,7 +190,7 @@ def extract_entry_details_ai(pdf_text):
         "That Sonbai Jetji and Heenabai Jetji relinquished their respective share in favour of Madansingh Jetji and Ishwarsingh Jetji."
 
         RELEASE/LOAN CLOSE Example:
-        "That upon receiving an application from said Rabari Amarabhai Chamnabhai for removing the charge of Dena Gujrat Gramin Bank, Dhanera Branch. Entry No. 1341. The said exemption of burden has been recorded."
+        "That upon receiving an application from the said Patel Gagdabhai Ukabhai for removing the charge created on Survey Number 11(128), 325(128), 666(128) of Malotra Seva Sahakari Mandali Ltd and State Bank of India Ghanera Branch. The said exemption of burden has been recorded. (Entry no. 6277 & 4477)"
 
         SALE Example:
         "That the said Choudhary Harkhabhai Chhotybhai and Choudhary Shivabhai Harkhabhai they sold their respective share in land bearing Survey No. 241/1 measuring 1-96-27 Hectare to Choudhary Shaileshbhai Devanbhai through the document no. 324/2022 dated 17.05.2022 for a consideration of Rs. 3,00,000/-."
@@ -228,8 +231,8 @@ def extract_entry_details_ai(pdf_text):
 
         Also extract certification information if available. Certification examples:
         - "The Entry is certified."
-        - "The Entry is certified by C.O. Jadiya on DD/MM/YY."
-        - "The Entry is certified on DD/MM/YY."
+        - "The Entry is certified by C.O. Jadiya on DD/MM/YYYY."
+        - "The Entry is certified on DD/MM/YYYY."
         - "The Entry is rejected."
         - "The entry is Rejected."
         - "The Entry is certified but date is not legible."
@@ -338,14 +341,14 @@ def extract_entry_details_fallback(entry_section):
 
         Entry format:
         - entry_number: The numeric entry number
-        - date: In DD/MM/YY format if available
+        - date: In DD/MM/YYYY format (4-digit year) if available
         - type: Category (LOAN, DEATH, RELEASE, SALE, PARTITION, EXCHANGE, LIFETIME DISTRIBUTION, NOT RELATED, ORDER, RELINQUISHMENT, etc.)
         - description: Start with "That" and provide complete details (except for NOT RELATED and PROMULGATION types). MUST BE IN ENGLISH. Translate all Gujarati text. Do NOT include any Gujarati characters.
-        - certification: Information about who certified the entry and when. MUST BE IN ENGLISH. Do NOT include any Gujarati characters.
+        - certification: Information about who certified the entry and when. MUST BE IN ENGLISH. Provide the full certification string including certifier and 4-digit year date (e.g. "The Entry is certified by C.O. Jadiya on 01/03/2024.")
         
         - certification_status: One of: "certified", "rejected", "not_accepted"
         - certification_official: The official's POST/DESIGNATION and PLACE (e.g., "C.O. Porbandar", "Deputy Mamlatdar Super, Porbandar"). Abbreviate "Circle Officer" as "C.O.". Do NOT include personal names.
-        - certification_date: The certification date in DD/MM/YY format. This is DIFFERENT from the entry date - look for when the entry was certified/rejected.
+        - certification_date: The certification date in DD/MM/YYYY (4-digit year) format. This is DIFFERENT from the entry date - look for when the entry was certified/rejected.
         
         IMPORTANT: Extract certification_official and certification_date whenever they are present in the document, even if certification_status is not explicitly stated.
 
@@ -360,6 +363,9 @@ def extract_entry_details_fallback(entry_section):
         5. Lists: "which are as follows:-" followed by bullet points
         6. ALWAYS use "Survey No." instead of "Khata No." or "Account No."
         7. For ORDER entries, ALWAYS specify the Survey Number.
+        8. EXPAND DATES: ALWAYS use a 4-digit year for dates (DD/MM/YYYY format).
+        9. SURVEY NUMBERS: Include ALL survey numbers with their associated account numbers in parenthesis immediately after, like "Survey No. 11(128), 325(128)".
+        10. CERTIFICATION TEXT: The "certification" field MUST include the official's name/designation and the date if it's available. Example: "The Entry is certified by C.O. Jadiya on 01/03/2024".
 
         Description examples:
         - LOAN: "That Rabari Sujabhai Jawanabhai and others took a loan of Rs. 1,00,000/- on the land bearing Survey No. 54/2p2(143) from Voda Group Gopalak Vikas Kariyakari Sahakari Mandli."
@@ -501,17 +507,20 @@ def process_entry_details(raw_entries):
             extract_entry_specific_details(entry, raw_entry)
             
             # Ensure certification info is set
-            # First check if we have structured certification fields that weren't used
-            if hasattr(entry, 'certification') and not entry.certification:
+            # First check if we have structured certification fields that weren't used or were generically populated
+            has_generic_cert = hasattr(entry, 'certification') and entry.certification and entry.certification.strip() == "The Entry is certified."
+            
+            if (hasattr(entry, 'certification') and not entry.certification) or has_generic_cert:
                 # Check for structured fields (certification_official, certification_date)
                 if 'certification_official' in raw_entry or 'certification_date' in raw_entry:
                     from .entry_schema import _build_certification_string
                     built_cert = _build_certification_string(raw_entry)
-                    if built_cert:
+                    if built_cert and built_cert != "The Entry is certified.":
                         entry.certification = built_cert
-                # Fall back to direct certification field if present
+                # Fall back to direct certification field if present and not generic (or if we only have generic)
                 elif 'certification' in raw_entry and raw_entry['certification']:
-                    entry.certification = raw_entry['certification']
+                    if not entry.certification or raw_entry['certification'].strip() != "The Entry is certified.":
+                        entry.certification = raw_entry['certification']
             
             # Set entry_status from raw entry (certified, rejected, not_accepted)
             if hasattr(entry, 'entry_status') and 'entry_status' in raw_entry:

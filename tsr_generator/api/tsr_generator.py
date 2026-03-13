@@ -69,7 +69,7 @@ def generate_tsr_from_pdf(pdf_path, output_path, logger=None):
             }
             for entry in entries
         ]
-        findings = generate_findings_table(pdf_text, entries_for_findings)
+        findings = generate_findings_table(pdf_text, entries_for_findings, land_details)
         
         # Ensure output directory exists
         output_dir = os.path.dirname(output_path)

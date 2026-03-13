@@ -101,6 +101,8 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         number_para.underline = True
         number_para.font.size = Pt(12)  # Header text size
         
+        profile = (land_details or {}).get("tsr_profile", "final_sample_v1")
+
         # Add the reference number and date
         current_date = datetime.now().strftime('%d %b %Y')
         survey_number = sanitize_text(land_details.get('survey_number', '13'))
@@ -108,7 +110,13 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         village_prefix = land_details.get('village_name', 'N/A')[:3].upper()
         district_prefix = land_details.get('district_name', 'N/A')[:3].upper()
         taluka_prefix = land_details.get('taluka_name', 'N/A')[:3].upper()
-        ref_text = ref_para.add_run(f"Ref. No. ABREL/GUJ/{district_prefix}/{taluka_prefix}/{village_prefix}/{survey_number}                    Dated: {current_date}")
+        if profile == "final_sample_v1":
+            report_date = sanitize_text(land_details.get("report_date")) or current_date
+            ref_text_val = f"Ref. No. ABREL/GUJ/{taluka_prefix}/{village_prefix}/{survey_number}\t\t\t\tDated :{report_date}"
+        else:
+            ref_text_val = f"Ref. No. ABREL/GUJ/{district_prefix}/{taluka_prefix}/{village_prefix}/{survey_number}                    Dated: {current_date}"
+
+        ref_text = ref_para.add_run(ref_text_val)
         ref_text.bold = True
         
 
@@ -123,16 +131,41 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         doc.add_paragraph("To")
         address_para = doc.add_paragraph()
         address_para.paragraph_format.left_indent = Inches(0.5)
-        address_para.add_run("Aditya Birla Renewable Energy Ltd.\nA-2, Aditya Birla Centre, S.K. Ahire Marg,\nWorli, Mumbai-400030.\n")
+        if profile == "final_sample_v1":
+            client_name = sanitize_text(land_details.get("client_name")) or "ABREL SPV 2 Limited"
+            client_cin = sanitize_text(land_details.get("client_cin")) or "(CIN: U40108MH2020PLC352631),"
+            client_address = sanitize_text(land_details.get("client_address")) or "A-2, Aditya Birla Centre, S.K. Ahire Marg,\nWorli, Mumbai-400030."
+            address_para.add_run(f"{client_name}\n{client_cin}\n{client_address}\n")
+            kind_attn = sanitize_text(land_details.get("kind_attn")) or "Kind Attn.: Mr. Rahul Patil"
+            doc.add_paragraph(kind_attn)
+            re_line = sanitize_text(land_details.get("re_line")) or f"Re:\tEmail Dated {sanitize_text(land_details.get('reference_email_date')) or '21.11.2023'} in connection with land situated at Village- {sanitize_text(land_details.get('village_name', 'Not Available'))}, Taluka-{sanitize_text(land_details.get('taluka_name', 'Not Available'))}, District- {sanitize_text(land_details.get('district_name', 'Not Available'))} (Gujrat)."
+            doc.add_paragraph(re_line)
+        else:
+            address_para.add_run("Aditya Birla Renewable Energy Ltd.\nA-2, Aditya Birla Centre, S.K. Ahire Marg,\nWorli, Mumbai-400030.\n")
         
         # Add introduction
         doc.add_paragraph("Dear Sir,")
-        intro_text = f"     We have been engaged for the Title Investigation of land situated at Village- {sanitize_text(land_details.get('village_name', 'Not Available'))}, Taluka-{sanitize_text(land_details.get('taluka_name', 'Not Available'))}, District- {sanitize_text(land_details.get('district_name', 'Not Available'))}. Our detailed report and findings are as under:"
-        
+        if profile == "final_sample_v1":
+            intro_text = (
+                f"We have been engaged as per above subject reference for the Title Investigation of land situated at "
+                f"Village- {sanitize_text(land_details.get('village_name', 'Not Available'))}, "
+                f"Taluka-{sanitize_text(land_details.get('taluka_name', 'Not Available'))}, "
+                f"District- {sanitize_text(land_details.get('district_name', 'Not Available'))} (Gujrat). "
+                f"Our detailed report and findings are as under: -"
+            )
+        else:
+            intro_text = f"     We have been engaged for the Title Investigation of land situated at Village- {sanitize_text(land_details.get('village_name', 'Not Available'))}, Taluka-{sanitize_text(land_details.get('taluka_name', 'Not Available'))}, District- {sanitize_text(land_details.get('district_name', 'Not Available'))}. Our detailed report and findings are as under:"
+
         doc.add_paragraph(intro_text)
         
         # Section 1: Property Details
-        add_section_heading(doc, "1.  Description, nature, and area of land with survey/plot numbers", numbered=True)
+        add_section_heading(
+            doc,
+            "Description, nature, and area of land with survey/plot numbers" if profile == "final_sample_v1" else "1.  Description, nature, and area of land with survey/plot numbers",
+            numbered=True,
+        )
+        if profile == "final_sample_v1":
+            doc.add_paragraph("The Borrower has acquired/purchased the Immovable Properties description whereof (including the names of the Title Holders/Sellers) have been tabulated hereinbelow:")
         
         # Create property details table
         property_table = doc.add_table(rows=1, cols=5)
@@ -148,7 +181,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
             property_table.rows[0].cells[i].width = width_in_inches
         
         # Add headers
-        headers = ["SN", "Nature of Land", "Total Area in Hectare / Sq. Mtr", "Survey Number", "Name of the Title Holder"]
+        headers = ["SN", "Nature\tof Land", "Total Area in Hectare / Sq. Mtr", "Survey Number", "Name of the Title Holder"] if profile == "final_sample_v1" else ["SN", "Nature of Land", "Total Area in Hectare / Sq. Mtr", "Survey Number", "Name of the Title Holder"]
         header_cells = property_table.rows[0].cells
         for i, header in enumerate(headers):
             header_cells[i].text = header
@@ -166,7 +199,14 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         
         nature = sanitize_text(land_details.get('nature_of_land'))
        
-        if 'old tenure' in nature.lower() and 'ju. sh.' in nature.lower():
+        if profile == "final_sample_v1":
+            if 'new tenure' in nature.lower():
+                row[1].text = "New Tenure  Agricultural"
+            elif 'old tenure' in nature.lower():
+                row[1].text = "Old Tenure  Agricultural"
+            else:
+                row[1].text = nature
+        elif 'old tenure' in nature.lower() and 'ju. sh.' in nature.lower():
             row[1].text = "Old Tenure\nAgricultural Use"
         elif 'new tenure' in nature.lower():
             row[1].text = "New Tenure\nAgricultural Use"
@@ -192,7 +232,11 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         old_survey = sanitize_text(land_details.get('old_survey_number'))
         # Only include old survey number if it's available and not "Not Available"
         if old_survey and old_survey.lower() != "not available":
-            row[3].text = f"{survey}\n(old Survey no. {old_survey})"
+            if profile == "final_sample_v1":
+                # Keep on one line to match sample TSR
+                row[3].text = f"{survey} (old Survey No. {old_survey})"
+            else:
+                row[3].text = f"{survey}\n(old Survey no. {old_survey})"
         else:
             row[3].text = survey
         
@@ -241,7 +285,11 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         
         # Section 2: Documents Scrutinized
         doc.add_paragraph()
-        add_section_heading(doc, "2.  Details/Description of document scrutinized", numbered=True)
+        add_section_heading(
+            doc,
+            "Details/Description of document scrutinized" if profile == "final_sample_v1" else "2.  Details/Description of document scrutinized",
+            numbered=True,
+        )
         
         # Create documents table
         docs_table = doc.add_table(rows=1, cols=3)
@@ -257,7 +305,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
             docs_table.rows[0].cells[i].width = width_in_inches
         
         # Add headers
-        doc_headers = ["Type of the Document/Detail of the Document", "Digitally Certified True Copy/Online Perusal", "Details of Sub-Registrar's office."]
+        doc_headers = ["Type of the Document/Detail of the Document", "Digitally Certified True Copy/Online Perusal", "Details of Sub-Registrar’s office."] if profile == "final_sample_v1" else ["Type of the Document/Detail of the Document", "Digitally Certified True Copy/Online Perusal", "Details of Sub-Registrar's office."]
         for i, header in enumerate(doc_headers):
             docs_table.rows[0].cells[i].text = header
             docs_table.rows[0].cells[i].paragraphs[0].runs[0].bold = True
@@ -274,8 +322,9 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
             ("Old & New Village Form no. 6 starting from the year 1958 till latest version available.", "Online", "Not Applicable"),
             ("Village Form No. 8A", "Online", "Not Applicable"),
             ("Old Scanned Village Form No. 7/12 starting from the year 1952 to 2004", "Online", "Not Applicable"),
-            ("Encumbrance Certificate for a period of 30 Years", "Digital Certified copy", sanitize_text(land_details.get('taluka_name', 'Not Available')))
         ]
+        if profile != "final_sample_v1" and (land_details or {}).get("include_encumbrance_certificate", True):
+            standard_docs.append(("Encumbrance Certificate for a period of 30 Years", "Digital Certified copy", sanitize_text(land_details.get('taluka_name', 'Not Available'))))
         
         for doc_type, perusal, office in standard_docs:
             row = docs_table.add_row().cells

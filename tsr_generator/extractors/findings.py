@@ -164,6 +164,8 @@ def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None,
     logger = logging.getLogger(__name__)
     logger.debug("Generating findings with dynamic encumbrance detection")
     
+    profile = (land_details or {}).get("tsr_profile", "final_sample_v1")
+
     # Detect active encumbrances and rejected entries
     active_encumbrances, active_entry_nums = detect_active_encumbrances(entries or [])
     rejected_entries = detect_rejected_entries(entries or [])
@@ -172,12 +174,22 @@ def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None,
     has_rejected = len(rejected_entries) > 0
     
     # Generate dynamic encumbrance text
-    if has_encumbrances:
-        encumbrance_text = f"30 years.\n\nAs per revenue records there is charge subsisting over the land (Entry No. {', '.join(active_entry_nums)})."
-        charge_detail_text = f"As per revenue records there is charge subsisting over the land. Active loan/mortgage entries: {', '.join(active_entry_nums)}."
+    if profile == "final_sample_v1":
+        # Match the hand-typed "Final TSR Sample" phrasing more closely
+        encumbrance_period = (land_details or {}).get("encumbrance_period_years", "13")
+        if has_encumbrances:
+            encumbrance_text = f"{encumbrance_period} years.  As per revenue records there is charge subsisting over the land."
+            charge_detail_text = "As per revenue records there is charge subsisting over the land."
+        else:
+            encumbrance_text = f"{encumbrance_period} years.  As per revenue records there is no charge subsisting over the land."
+            charge_detail_text = "As per revenue records there is no charge subsisting over the land."
     else:
-        encumbrance_text = "30 years.\n\nAs per revenue records there is no charge subsisting over the land."
-        charge_detail_text = "As per revenue records there is no charge subsisting over the land."
+        if has_encumbrances:
+            encumbrance_text = f"30 years.\n\nAs per revenue records there is charge subsisting over the land (Entry No. {', '.join(active_entry_nums)})."
+            charge_detail_text = f"As per revenue records there is charge subsisting over the land. Active loan/mortgage entries: {', '.join(active_entry_nums)}."
+        else:
+            encumbrance_text = "30 years.\n\nAs per revenue records there is no charge subsisting over the land."
+            charge_detail_text = "As per revenue records there is no charge subsisting over the land."
     
     # Generate conditional title conclusion
     caveats = []
@@ -186,10 +198,16 @@ def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None,
     if has_rejected:
         caveats.append(f"rejected entries ({', '.join(rejected_entries)}) in the chain of title")
     
-    if caveats:
-        title_conclusion = f"The title of the land is clear and marketable subject to {' and '.join(caveats)}."
+    if profile == "final_sample_v1":
+        # Keep conclusion simple (sample TSR uses a shorter caveat)
+        title_conclusion = "The title of the land is clear and marketable Subject to bank charge." if has_encumbrances else "The title of the land is clear and marketable."
+        final_conclusion_row_18 = "The title of the land is clear and marketable subject to point 17 of Table No. 3 above."
     else:
-        title_conclusion = "The title of the land is clear and marketable."
+        if caveats:
+            title_conclusion = f"The title of the land is clear and marketable subject to {' and '.join(caveats)}."
+        else:
+            title_conclusion = "The title of the land is clear and marketable."
+        final_conclusion_row_18 = title_conclusion
     
     # Standard findings with dynamic content
     findings = [

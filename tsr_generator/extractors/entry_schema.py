@@ -163,7 +163,10 @@ def _build_certification_string(entry_dict: Dict[str, Any]) -> str:
     cert_date = entry_dict.get('certification_date', '').strip()
     
     if not status:
-        return ""
+        if official or cert_date:
+            status = 'certified'
+        else:
+            return ""
     
     # Fix: If LLM put a full sentence in certification_status instead of a keyword,
     # extract just the keyword (e.g. "The Entry is certified by..." -> "certified")

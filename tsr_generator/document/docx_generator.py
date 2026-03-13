@@ -210,14 +210,17 @@ def add_chain_of_title_section(document, entries, entry_table, has_borewell=Fals
             if entry:
                 # Existing entry logic
                 safe_date = entry.date if getattr(entry, 'date', '') else ""
-                header_text = f"Entry No. {entry.entry_number} Dated {safe_date}: "
+                header_text = f"Entry No. {entry.entry_number} Dated {safe_date} "
                 header_run = entry_para.add_run(header_text)
                 header_run.bold = True
                 header_run.font.name = 'Times New Roman'
                 header_run.font.size = Pt(12.5)
                 
                 # Add description
-                description = entry.formatted_description
+                description = entry.formatted_description or ""
+                description = description.strip()
+                if description and not description.startswith("That"):
+                    description = f"That {description}"
                 desc_run = entry_para.add_run(description)
                 desc_run.font.name = 'Times New Roman'
                 desc_run.font.size = Pt(12.5)
@@ -235,7 +238,6 @@ def add_chain_of_title_section(document, entries, entry_table, has_borewell=Fals
                     entry.entry_status = entry.entry_status or "certified"
                 
                 if hasattr(entry, 'certification') and entry.certification:
-                    cert_para = row_cells[1].add_paragraph()
                     
                     # Determine status word based on entry_status
                     status_word = "certified"  # default
@@ -300,14 +302,11 @@ def add_chain_of_title_section(document, entries, entry_table, has_borewell=Fals
                         else:
                             # No official found, use simple format
                             certification_text = f"The Entry is {status_word}."
-                    
-                    cert_run = cert_para.add_run(certification_text)
+
+                    # Append certification in the SAME paragraph (matches sample TSR layout)
+                    cert_run = entry_para.add_run(" " + certification_text)
                     cert_run.font.name = 'Times New Roman'
                     cert_run.font.size = Pt(12.5)
-                    
-                    # Format certification paragraph
-                    cert_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
-                    cert_para.paragraph_format.line_spacing = 1.15
             else:
                 # Placeholder logic
                 header_text = f"Entry No. {num} Dated : "
@@ -729,4 +728,4 @@ def add_findings_table(doc, findings):
                 for run in paragraph.runs:
                     run.font.name = 'Times New Roman'
                     run.font.size = Pt(12.5)
-                paragraph.paragraph_format.line_spacing = 1
+                paragraph.paragraph_format.line_spacing = 1.15
