@@ -30,7 +30,7 @@ class JSONTranslationSystem:
         # Use a cheaper/faster model for simple translation matching tasks
         # Falls back to the main model if not set
         translation_model = os.getenv('GEMINI_TRANSLATION_MODEL', 
-                                       os.getenv('GEMINI_MODEL_NAME', 'gemini-2.0-flash-lite'))
+                                       os.getenv('GEMINI_MODEL_NAME', 'gemini-2.0-flash'))
         self.llm = ChatGoogleGenerativeAI(
             model=translation_model,
             google_api_key=os.getenv('GEMINI_API_KEY'),
@@ -38,9 +38,24 @@ class JSONTranslationSystem:
         )
         self.logger = logging.getLogger(__name__)
         
-        # Build reverse lookup cache for fast English → Gujarati
-        self.english_to_gujarati = self._build_reverse_lookup()
-        self.logger.info(f"Loaded {len(self.english_to_gujarati)} translations from {json_path}")
+        # Build context-aware reverse lookup caches for fast English → Gujarati.
+        # Separate caches per context prevent collisions where a village and a
+        # taluka share the same English name (e.g. both called "Dhanera").
+        self._district_cache: Dict[str, str] = {}
+        self._taluka_cache: Dict[str, str] = {}
+        self._village_cache: Dict[str, str] = {}
+        self._build_reverse_lookup()
+        # Unified view used only for AI candidate scoring / legacy callers.
+        self.english_to_gujarati = {
+            **self._district_cache,
+            **self._taluka_cache,
+            **self._village_cache,
+        }
+        self.logger.info(
+            f"Loaded {len(self.english_to_gujarati)} translations from {json_path} "
+            f"(districts={len(self._district_cache)}, talukas={len(self._taluka_cache)}, "
+            f"villages={len(self._village_cache)})"
+        )
     
     def _load_json(self) -> Dict:
         """Load the hierarchy JSON"""
@@ -54,26 +69,22 @@ class JSONTranslationSystem:
             self.logger.error(f"Invalid JSON in {self.json_path}: {e}")
             return {}
     
-    def _build_reverse_lookup(self) -> Dict[str, str]:
-        """Build English → Gujarati lookup cache"""
-        cache = {}
-        
+    def _build_reverse_lookup(self) -> None:
+        """Build context-aware English → Gujarati lookup caches (one per context)."""
         for guj_district, district_data in self.hierarchy.items():
             # District mappings
             for eng_name in district_data.get('english_names', []):
-                cache[eng_name.lower().strip()] = guj_district
+                self._district_cache[eng_name.lower().strip()] = guj_district
             
             # Taluka mappings
             for guj_taluka, taluka_data in district_data.get('talukas', {}).items():
                 for eng_name in taluka_data.get('english_names', []):
-                    cache[eng_name.lower().strip()] = guj_taluka
+                    self._taluka_cache[eng_name.lower().strip()] = guj_taluka
                 
                 # Village mappings
                 for guj_village, eng_names in taluka_data.get('villages', {}).items():
                     for eng_name in eng_names:
-                        cache[eng_name.lower().strip()] = guj_village
-        
-        return cache
+                        self._village_cache[eng_name.lower().strip()] = guj_village
     
     def translate(self, english_text: str, context: str = 'village') -> str:
         """
@@ -102,7 +113,18 @@ class JSONTranslationSystem:
         if cache_key in self._translation_cache:
             return self._translation_cache[cache_key]
         
-        # Try exact match in cache
+        # Try exact match in the context-specific cache first (no collision risk)
+        context_cache = {
+            'district': self._district_cache,
+            'taluka': self._taluka_cache,
+            'village': self._village_cache,
+        }.get(context, {})
+        gujarati = context_cache.get(normalized)
+        if gujarati:
+            self._translation_cache[cache_key] = gujarati
+            return gujarati
+        
+        # Fallback: try unified cache with context validation (legacy behaviour)
         gujarati = self.english_to_gujarati.get(normalized)
         if gujarati:
             # Validate the result matches the expected context
@@ -361,8 +383,15 @@ Best match:"""
             
             if updated:
                 self._save_json()
-                # Update cache
-                self.english_to_gujarati[english_name.lower().strip()] = gujarati_name
+                # Update both the unified cache and the context-specific cache
+                key = english_name.lower().strip()
+                self.english_to_gujarati[key] = gujarati_name
+                if context == 'district':
+                    self._district_cache[key] = gujarati_name
+                elif context == 'taluka':
+                    self._taluka_cache[key] = gujarati_name
+                elif context == 'village':
+                    self._village_cache[key] = gujarati_name
                 self.logger.info(f"Added spelling variation: '{english_name}' → '{gujarati_name}'")
         
         except Exception as e:
