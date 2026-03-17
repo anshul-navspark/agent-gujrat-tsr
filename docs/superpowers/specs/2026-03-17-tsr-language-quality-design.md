@@ -4,7 +4,7 @@
 
 ## Problem
 
-Comparison of 29 AI-generated vs manually-generated TSR pairs revealed systematic language, content, and formatting differences that reduce the legal quality of AI output. This spec addresses the 6 confirmed changes (3 dropped after sample validation).
+Comparison of 59 AI-generated vs manually-generated TSR pairs revealed systematic language, content, and formatting differences that reduce the legal quality of AI output. Full comparison confirmed: 100% release phrasing divergence, 74% date format gap (AI 26% four-digit vs manual 95%), 90% loss of certification metadata, and universal Note row content mismatch.
 
 ## Scope
 
@@ -12,10 +12,13 @@ Comparison of 29 AI-generated vs manually-generated TSR pairs revealed systemati
 
 1. LLM prompt improvements for richer extraction
 2. RELEASE entry template refinement
-3. Document formatting fixes (headers, dashes, dates, observation numbering)
+3. Document formatting fixes (headers, dashes, dates, observation numbering, area format)
 4. Findings table cross-referencing of chain-of-title row numbers
-5. Note row with specific entry numbers for active charges
+5. Note row with specific entry numbers for active charges (remove borewell)
 6. Property table name list de-numbering
+7. "Not related to present survey" classification (feature-flagged)
+8. Translation fixes ("Province Officer", entry type examples)
+9. Chain of title first column numbering removal
 
 ### Out of Scope (Dropped)
 
@@ -25,6 +28,9 @@ Comparison of 29 AI-generated vs manually-generated TSR pairs revealed systemati
 - Bank name dotted abbreviation (e.g., "I.C.I.C.I.") — too fragile, source PDFs inconsistent
 - Survey number format changes — manual versions themselves inconsistent
 - Sub-registrar jurisdiction "Dessa and Dhanera" — requires external data not in PDF
+- Skeleton entries (empty descriptions) — caused by handwritten content in source PDFs, not extractable
+- DILR correction notes — manually added by advocate, not AI-detectable
+- Stamp duty notes — manually added by advocate, not AI-detectable
 
 ---
 
@@ -61,6 +67,27 @@ Add specific instruction for PROMULGATION entries:
 #### 1e. Certification Structured Fields
 Reinforce that `certification_official` and `certification_date` must always be extracted when visible:
 > "Always extract the certifying officer designation and place (e.g., 'C.O. Jadiya', 'Mamlatdar Dhanera') into certification_official, and the certification date (DD/MM/YYYY) into certification_date. These are required fields for all certified/rejected entries."
+
+#### 1f. "Not Related to Present Survey" Classification (Feature-Flagged)
+Add prompt instruction:
+> "If an entry clearly pertains to survey numbers different from the subject survey number, classify it as NOT RELATED with description: 'This Entry is not related to Present Survey Number.'"
+
+**Feature flag:** Add a constant `CLASSIFY_NOT_RELATED_ENTRIES = True` at module level in `unified_extractor.py`. When `True`, include this instruction in the prompt. When `False`, omit it. This allows disabling the behavior if it proves counterproductive (e.g., over-classifying entries as not related).
+
+#### 1g. Entry Type Examples — Government and Family Distribution
+Add to `DESCRIPTION_EXAMPLES`:
+> - ORDER (government allotment): `"That Government survey was conducted and land bearing Survey No. X was allotted to [Name]."`
+> - PARTITION (family distribution): `"That Family members distributed their land among themselves as follows:-"`
+
+These entry types exist in the classification rules (ORDER, PARTITION) but lacked explicit examples, causing the LLM to skip or misformat them.
+
+#### 1h. "Province Officer" Translation
+Add to `FORMATTING_RULES`:
+> "Translate 'Prant Officer' / 'પ્રાંત અધિકારી' as 'Province Officer'. Use 'Province Officer' and 'Province court' consistently."
+
+#### 1i. Remove Rule 5 "Keep descriptions SHORT"
+Remove or soften `FORMATTING_RULES` rule 5: `"Keep descriptions SHORT and DIRECT - one sentence if possible"`. This rule causes the LLM to over-condense entries, producing descriptions that are 57% the length of manual versions. Replace with:
+> "Keep descriptions direct and factual. Include all legally relevant details. Do not add commentary or explanatory sentences."
 
 ---
 
@@ -105,9 +132,15 @@ Already addressed in Component 1c — change numbered list to plain line-break-s
 #### 3f. Property Table Name List
 Remove numbering from title holder names in the property table (`tsr_document.py`). Currently: `1. Name\n2. Name`. Change to: `Name\nName`.
 
+#### 3g. Area Format
+Remove the word "Hectare" from the area display. Change format from `1-84-20 Hectare i.e.(18420 Sq. Mts)` to `1-84-20 - i.e. (18420) Sq. Mts)` to match manual versions. Apply in `tsr_document.py` where area values are formatted for the property table.
+
+#### 3h. Chain of Title First Column
+Remove row numbering (1., 2., 3., ...) from the first column of the chain of title table. Manual versions leave this column empty. Apply in `docx_generator.py` in `add_chain_of_title_section()`.
+
 ---
 
-### Component 4: Findings Cross-Referencing
+### Component 4: Findings Cross-Referencing and Note Row
 
 **Files:** `tsr_generator/extractors/findings.py`, `tsr_generator/document/docx_generator.py`, `tsr_generator/document/tsr_document.py`, `tsr_generator/api/tsr_generator_optimized.py`
 
@@ -149,13 +182,15 @@ The `final_sample_v1` profile branch (lines 201-204 of `findings.py`) should be 
 
 Where `{numbers}` lists the specific active charge entry numbers. When bank names are available from the entry data, include them: `(528 JVB & 6342 ICICI)`.
 
-When no encumbrances: keep current "clear and marketable" text. Borewell note remains as a separate line when applicable.
+When no encumbrances: keep current "clear and marketable" text.
+
+**Remove borewell note entirely from the Note row.** The `has_borewell` field and the borewell paragraph in `docx_generator.py` (lines 339-346) should be removed. The borewell detection in `unified_extractor.py` (line 191) and the `has_borewell` field in the JSON schema (line 167) should also be removed. The LLM was over-detecting borewells (57/59 AI docs vs 0/59 manual docs), and the manual TSRs never include this note.
 
 #### Interface Changes
 
 `add_chain_of_title_section()` signature changes:
-- **Current:** returns `None`
-- **New:** returns `dict[str, int]` mapping entry numbers to row indices
+- **Current:** `add_chain_of_title_section(document, entries, entry_table, has_borewell=False)` returns `None`
+- **New:** `add_chain_of_title_section(document, entries, entry_table)` returns `dict[str, int]` mapping entry numbers to row indices. `has_borewell` parameter removed.
 
 `generate_findings_table()` signature changes:
 - **Current:** `generate_findings_table(pdf_text: str, entries=None, land_details=None)`
@@ -171,11 +206,11 @@ The orchestrator (`create_tsr_document` or the optimized generator) threads the 
 
 | File | Changes |
 |------|---------|
-| `tsr_generator/extractors/unified_extractor.py` | Prompt constants: date format, Khata numbers, succession phrasing, promulgation detail, certification fields. Modify `_normalize_date_str()` to preserve/expand to 4-digit years. |
-| `tsr_generator/document/docx_generator.py` | RELEASE template word order, remove "said", section headers, en-dashes, heir name formatting (remove numbering, remove death date), entry-to-row mapping return, certification date post-processing |
-| `tsr_generator/document/tsr_document.py` | Section header style, property table name de-numbering, thread entry-to-row mapping |
-| `tsr_generator/extractors/findings.py` | Cross-reference rows 5/18 with dynamic row numbers (replace hardcoded "point 17"), Note row with entry numbers, accept `entry_to_row_map` param, add period to SN values |
-| `tsr_generator/api/tsr_generator_optimized.py` | Thread entry_to_row_map through orchestration |
+| `tsr_generator/extractors/unified_extractor.py` | Prompt constants: date format, Khata numbers, succession phrasing, promulgation detail, certification fields, "not related" classification (feature-flagged), government/family examples, "Province Officer" translation, soften "keep SHORT" rule. Modify `_normalize_date_str()` to expand to 4-digit years. Remove `has_borewell` from JSON schema and prompt. |
+| `tsr_generator/document/docx_generator.py` | RELEASE template word order, remove "said". Heir name formatting (remove numbering, remove death date). Remove borewell note (lines 339-346). Remove first column row numbering. Section headers remove inline numbers. En-dashes. Entry-to-row mapping return value. Certification date post-processing. |
+| `tsr_generator/document/tsr_document.py` | Section header style. Property table name de-numbering. Area format (remove "Hectare"). Remove `has_borewell` usage. Thread entry-to-row mapping. |
+| `tsr_generator/extractors/findings.py` | Cross-reference rows 5/18 with dynamic row numbers (replace hardcoded "point 17"). Note row with entry numbers. Accept `entry_to_row_map` param. Add period to SN values. |
+| `tsr_generator/api/tsr_generator_optimized.py` | Thread entry_to_row_map through orchestration. Remove `has_borewell` passing. |
 | `tsr_generator/api/tsr_generator.py` | Backward-compatible: no changes needed (new param defaults to None) |
 | `services/ai_batch_service.py` | Backward-compatible: no changes needed (new param defaults to None) |
 
@@ -185,6 +220,7 @@ The orchestrator (`create_tsr_document` or the optimized generator) threads the 
 - **Unit tests for date normalization:** Verify `_normalize_date_str()` correctly expands 2-digit years (00→2000, 30→2030, 31→1931, 99→1999) and preserves 4-digit years
 - **Unit test for entry-to-row mapping:** Verify `add_chain_of_title_section()` returns correct mapping of entry numbers to row indices
 - **Unit test for findings cross-referencing:** Verify rows 5 and 18 produce "subject to point N in table no. 3 above" with correct N when `entry_to_row_map` is provided, and fall back to generic text when `None`
+- **Unit test for feature flag:** Verify `CLASSIFY_NOT_RELATED_ENTRIES` flag controls inclusion of the "not related" prompt instruction
 - **Integration test:** Process S.No. 980 PDF through the pipeline and compare output against manual S.No. 980 sample
 - **Regression test:** Process 2-3 additional PDFs (e.g., S.No. 979, 1099) to verify prompt changes don't degrade extraction quality
-- Verify: RELEASE entries use formal phrasing, section headers have no inline numbers, observations cross-reference correct row numbers, Note row lists entry numbers, dates are 4-digit, heir names are line-separated, property table names are unnumbered
+- Verify: RELEASE entries use formal phrasing, section headers have no inline numbers, observations cross-reference correct row numbers, Note row lists entry numbers (no borewell), dates are 4-digit, heir names are line-separated, property table names are unnumbered, area format matches manual, first column empty, "Province Officer" used consistently
