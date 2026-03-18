@@ -457,16 +457,16 @@ def construct_description_from_fields(entry):
         
         # Standard format for Release/Relinquishment entries
         if hasattr(entry, 'is_loan_release') and entry.is_loan_release:
-            # For loan redemption entries
-            description = f"That upon receiving an application from said {releasee_names} for removing the charge of {releasor_names}"
-            
+            # For loan redemption entries — formal legal phrasing
+            description = f"That upon receiving an application from {releasee_names} for removing the charge of {releasor_names}"
+
             if hasattr(entry, 'branch') and entry.branch:
                 description += f", {entry.branch} Branch"
-            
-            if entry.reference_to_original:
-                description += f". Entry No. {entry.reference_to_original}"
-            
+
             description += ". The said exemption of burden has been recorded."
+
+            if entry.reference_to_original:
+                description += f" Entry No. {entry.reference_to_original}."
         else:
             # For regular relinquishment entries
             description = f"That reflects that {releasor_names} relinquished their respective share in favour of {releasee_names}."
@@ -494,18 +494,15 @@ def construct_description_from_fields(entry):
         
         description += "came to be mutated in his legal heirs which are as follows:-"
         
-        # Format heirs as a numbered list
+        # Format heirs as plain line-break-separated list (no numbering)
         if heirs:
             description += "\n"
-            for i, heir in enumerate(heirs, 1):
-                description += f"{i}. {heir.name}"
-                if i < len(heirs):
+            for i, heir in enumerate(heirs):
+                description += heir.name
+                if i < len(heirs) - 1:
                     description += "\n"
         else:
             description += " No heirs specified."
-        
-        if entry.death_date:
-            description += f"\nDate of death: {entry.death_date}."
         
         return description
     
