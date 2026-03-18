@@ -6,6 +6,7 @@ from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
 from tsr_generator.extractors.findings import detect_active_encumbrances
+from tsr_generator.extractors.unified_extractor import _normalize_date_str
 
 def add_table_with_header(doc, headers, rows, style=None, col_widths=None):
     """
@@ -264,7 +265,8 @@ def add_chain_of_title_section(document, entries, entry_table):
                         # Use the structured data to build the string
                         official_name = getattr(entry, 'certification_official', '') or ""
                         cert_date = getattr(entry, 'certification_date', '') or ""
-                        
+                        cert_date = _normalize_date_str(cert_date)
+
                         # Clean up
                         official_name = official_name.strip()
                         if official_name.endswith(','): official_name = official_name[:-1]
@@ -292,7 +294,8 @@ def add_chain_of_title_section(document, entries, entry_table):
                             official_name = re.sub(r'[.,;:]+$', '', official_name)
                             
                             if date_match:
-                                certification_text = f"The Entry is {status_word} by {official_name} on {date_match.group(1)}."
+                                expanded_date = _normalize_date_str(date_match.group(1))
+                                certification_text = f"The Entry is {status_word} by {official_name} on {expanded_date}."
                             else:
                                 # Check for special cases
                                 if "not legible" in entry.certification.lower() or "illegible" in entry.certification.lower():
