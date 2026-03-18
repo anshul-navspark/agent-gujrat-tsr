@@ -133,10 +133,12 @@ Already addressed in Component 1c — change numbered list to plain line-break-s
 Remove numbering from title holder names in the property table (`tsr_document.py`). Currently: `1. Name\n2. Name`. Change to: `Name\nName`.
 
 #### 3g. Area Format
-Remove the word "Hectare" from the area display. Change format from `1-84-20 Hectare i.e.(18420 Sq. Mts)` to `1-84-20 - i.e. (18420) Sq. Mts)` to match manual versions. Apply in `tsr_document.py` where area values are formatted for the property table.
+Remove the word "Hectare" from the area display in the property table. The current code in `tsr_document.py` (line 228) formats area as `{area} i.e.({sq_meters} Sq. Mts)`. The LLM prompt (`FORMATTING_RULES` rule 12) instructs the LLM to include "Hectare" in the `total_area` field value itself. Two changes needed:
+1. Update `FORMATTING_RULES` rule 12 to NOT include "Hectare" in the area value (e.g., output `1-84-20` not `1-84-20 Hectare`)
+2. Update the property table formatting in `tsr_document.py` to produce: `1-84-20 - i.e. (18420 Sq. Mts)` (add dash separator, add space before parenthesis) matching manual format.
 
 #### 3h. Chain of Title First Column
-Remove row numbering (1., 2., 3., ...) from the first column of the chain of title table. Manual versions leave this column empty. Apply in `docx_generator.py` in `add_chain_of_title_section()`.
+Remove row numbering (1., 2., 3., ...) from the first column of the chain of title table, **including the Note row**. Manual versions leave this column empty throughout. Apply in `docx_generator.py` in `add_chain_of_title_section()` — both the entry rows (line ~186) and the Note row (line ~327).
 
 ---
 
@@ -172,6 +174,8 @@ Where `{N}` is the row number of the active charge entry in the chain of title t
 
 The `final_sample_v1` profile branch (lines 201-204 of `findings.py`) should be updated to use dynamic cross-references instead of the hardcoded "point 17". Both profile paths should produce the same cross-referenced output.
 
+**When no encumbrances:** Rows 5 and 18 should fall back to `"The title of the land is clear and marketable."` (no cross-reference needed). This applies to all profiles including `final_sample_v1`.
+
 #### Note Row (End of Chain of Title)
 
 **Current:**
@@ -191,6 +195,7 @@ When no encumbrances: keep current "clear and marketable" text.
 `add_chain_of_title_section()` signature changes:
 - **Current:** `add_chain_of_title_section(document, entries, entry_table, has_borewell=False)` returns `None`
 - **New:** `add_chain_of_title_section(document, entries, entry_table)` returns `dict[str, int]` mapping entry numbers to row indices. `has_borewell` parameter removed.
+- **Empty entries edge case:** When `entries` is empty or `None`, return `{}` (empty dict), not `None`, to avoid `TypeError` in callers.
 
 `generate_findings_table()` signature changes:
 - **Current:** `generate_findings_table(pdf_text: str, entries=None, land_details=None)`
