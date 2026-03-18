@@ -336,14 +336,14 @@ def extract_all_unified(pdf_text: str) -> UnifiedExtractionResult:
 
 def _normalize_date_str(date_str: str) -> str:
     """
-    Normalize common date formats to DD/MM/YY.
-    Accepts DD/MM/YY or DD/MM/YYYY (or with '-') and converts to 2-digit year.
+    Normalize common date formats to DD/MM/YYYY.
+    Accepts DD/MM/YY or DD/MM/YYYY (or with '-') and expands to 4-digit year.
+    Heuristic: 00-30 -> 2000-2030, 31-99 -> 1931-1999.
     """
     if not date_str:
         return ""
 
     s = str(date_str).strip()
-    # Common separators
     m = re.fullmatch(r'(\d{1,2})[/-](\d{1,2})[/-](\d{2}|\d{4})', s)
     if not m:
         return s
@@ -352,9 +352,13 @@ def _normalize_date_str(date_str: str) -> str:
     dd = dd.zfill(2)
     mm = mm.zfill(2)
 
-    # Convert 4-digit year to 2-digit year
-    if len(yy) == 4:
-        yy = yy[2:]  # Take last 2 digits
+    # Expand 2-digit year to 4-digit
+    if len(yy) == 2:
+        yy_int = int(yy)
+        if yy_int <= 30:
+            yy = f"20{yy}"
+        else:
+            yy = f"19{yy}"
 
     return f"{dd}/{mm}/{yy}"
 
