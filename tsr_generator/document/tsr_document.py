@@ -9,6 +9,7 @@ from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT, WD_TABLE_ALIGNMENT
 import re
 
 from tsr_generator.utils.text_utils import sanitize_text
+from tsr_generator.extractors.findings import generate_findings_table
 from tsr_generator.document.docx_generator import (
     add_section_heading,
     add_chain_of_title_section,
@@ -358,7 +359,6 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
 
         # Regenerate findings with cross-references if mutation data available
         if mutation_entries is not None and entry_to_row_map:
-            from tsr_generator.extractors.findings import generate_findings_table
             findings = generate_findings_table("", mutation_entries, land_details, entry_to_row_map)
 
         # Add Findings table

@@ -205,17 +205,13 @@ def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None,
             else:
                 point_ref = f"point {' and '.join(row_numbers)} in table no. 3 above"
             title_conclusion = f"The title of the land is clear and marketable subject to {point_ref}."
-            final_conclusion_row_18 = title_conclusion
         else:
             title_conclusion = "The title of the land is clear and marketable Subject to bank charge."
-            final_conclusion_row_18 = title_conclusion
     elif has_encumbrances:
         # Fallback when no entry_to_row_map provided
         title_conclusion = "The title of the land is clear and marketable Subject to bank charge."
-        final_conclusion_row_18 = title_conclusion
     else:
         title_conclusion = "The title of the land is clear and marketable."
-        final_conclusion_row_18 = title_conclusion
     
     # Standard findings with dynamic content
     findings = [
@@ -327,7 +323,7 @@ def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None,
         {
             'sn': '18.',
             'particular': "Findings on absolute, clear, and marketable title of the immovable property proposed to be mortgaged",
-            'observation': final_conclusion_row_18  # DYNAMIC
+            'observation': title_conclusion  # DYNAMIC
         }
     ]
     

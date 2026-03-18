@@ -330,15 +330,15 @@ def add_chain_of_title_section(document, entries, entry_table):
     # Detect active encumbrances for note row
     entry_dicts = []
     for entry in entries:
-        entry_dict = {
+        entry_type = getattr(entry, 'type', '')
+        if hasattr(entry_type, 'value'):
+            entry_type = entry_type.value
+        entry_dicts.append({
             'entry_number': str(getattr(entry, 'entry_number', '')),
-            'type': getattr(entry, 'type', ''),
+            'type': str(entry_type),
             'entry_status': getattr(entry, 'entry_status', ''),
-            'description': getattr(entry, 'formatted_description', ''),
-        }
-        if hasattr(entry_dict['type'], 'value'):
-            entry_dict['type'] = entry_dict['type'].value
-        entry_dicts.append(entry_dict)
+            'description': getattr(entry, 'formatted_description', '') or getattr(entry, 'description', ''),
+        })
 
     active_encumbrances, active_entry_nums = detect_active_encumbrances(entry_dicts)
 
