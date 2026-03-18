@@ -149,7 +149,7 @@ def detect_rejected_entries(entries: List[Dict]) -> List[str]:
     return rejected
 
 
-def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None, land_details: Optional[Dict[str, str]] = None) -> List[Dict[str, str]]:
+def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None, land_details: Optional[Dict[str, str]] = None, entry_to_row_map: Optional[Dict[str, int]] = None) -> List[Dict[str, str]]:
     """
     Generate findings for the TSR report with dynamic encumbrance detection.
     
@@ -191,28 +191,36 @@ def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None,
             encumbrance_text = "30 years.\n\nAs per revenue records there is no charge subsisting over the land."
             charge_detail_text = "As per revenue records there is no charge subsisting over the land."
     
-    # Generate conditional title conclusion
-    caveats = []
-    if has_encumbrances:
-        caveats.append("point no. 3 of table no. 4")
-    if has_rejected:
-        caveats.append(f"rejected entries ({', '.join(rejected_entries)}) in the chain of title")
-    
-    if profile == "final_sample_v1":
-        # Keep conclusion simple (sample TSR uses a shorter caveat)
-        title_conclusion = "The title of the land is clear and marketable Subject to bank charge." if has_encumbrances else "The title of the land is clear and marketable."
-        final_conclusion_row_18 = "The title of the land is clear and marketable subject to point 17 of Table No. 3 above."
-    else:
-        if caveats:
-            title_conclusion = f"The title of the land is clear and marketable subject to {' and '.join(caveats)}."
+    # Generate conditional title conclusion with dynamic cross-references
+    if has_encumbrances and entry_to_row_map:
+        # Resolve active encumbrance entry numbers to their chain-of-title row numbers
+        row_numbers = []
+        for entry_num in active_entry_nums:
+            if entry_num in entry_to_row_map:
+                row_numbers.append(str(entry_to_row_map[entry_num]))
+
+        if row_numbers:
+            if len(row_numbers) == 1:
+                point_ref = f"point {row_numbers[0]} in table no. 3 above"
+            else:
+                point_ref = f"point {' and '.join(row_numbers)} in table no. 3 above"
+            title_conclusion = f"The title of the land is clear and marketable subject to {point_ref}."
+            final_conclusion_row_18 = title_conclusion
         else:
-            title_conclusion = "The title of the land is clear and marketable."
+            title_conclusion = "The title of the land is clear and marketable Subject to bank charge."
+            final_conclusion_row_18 = title_conclusion
+    elif has_encumbrances:
+        # Fallback when no entry_to_row_map provided
+        title_conclusion = "The title of the land is clear and marketable Subject to bank charge."
+        final_conclusion_row_18 = title_conclusion
+    else:
+        title_conclusion = "The title of the land is clear and marketable."
         final_conclusion_row_18 = title_conclusion
     
     # Standard findings with dynamic content
     findings = [
         {
-            'sn': '1',
+            'sn': '1.',
             'particular': "a) Whether the records of registrar office or revenue authorities relevant to the property in question are available for verification through any online portal or computer system?",
             'observation': "YES"
         },
@@ -227,7 +235,7 @@ def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None,
             'observation': "No.\nOnline verification can be done only for E-Stamp Papers.\n\nThe records of registrar can only be accessed online if the registration number of a deed is available."
         },
         {
-            'sn': '2',
+            'sn': '2.',
             'particular': "a) Immoveable Properties falls within the jurisdiction of which sub-registrar office?",
             'observation': land_details.get('taluka_name', 'Not Available') if land_details else "Not Available"
         },
@@ -242,84 +250,84 @@ def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None,
             'observation': "No.\n\nSearch is to be made at jurisdictional Sub Registrar's offices, as all entries and conveyance are recorded there relating to the property(s)."
         },
         {
-            'sn': '3',
+            'sn': '3.',
             'particular': "The period covered under the Encumbrances Certificate and the name of the person in whose favour the encumbrance is created and if so, satisfaction of charge, if any.",
             'observation': encumbrance_text  # DYNAMIC
         },
         {
-            'sn': '4',
+            'sn': '4.',
             'particular': "Additional aspects relevant for investigation of title as per local laws.",
             'observation': "Mutation entries reflected in Form 6, Form 7, Form 8A, Form 12 were individually investigated in respect of the proposed property, whereas no such restriction is found, and it is in order."
         },
         {
-            'sn': '5',
+            'sn': '5.',
             'particular': "Additional suggestions if any to safeguard the interest of PFC/ensuring the perfection of security.",
             'observation': title_conclusion  # DYNAMIC
         },
         {
-            'sn': '6',
+            'sn': '6.',
             'particular': "The specific persons who are required to create mortgage/to deposit documents creating mortgage.",
             'observation': "Not Applicable"
         },
         {
-            'sn': '7',
+            'sn': '7.',
             'particular': "Current land use -- Agriculture/ Residential/industrial/commercial",
             'observation': "Agricultural"
         },
         {
-            'sn': '8',
+            'sn': '8.',
             'particular': "Requirement of Change in Land Use and position as per policy of the state",
             'observation': "Prior permission of the Collector is required for the industrial use of agricultural land."
         },
         {
-            'sn': '9',
+            'sn': '9.',
             'particular': "Permission under the urban land (Ceiling and Regulation) Act,1976",
             'observation': "No such requirement is stated in the revenue records. However, if the company intends to purchase more than 25 Acres of land in a particular village, then prior permission of Industries Commissioner would be required. However, if the company is acquiring the land by way of lease, then no urban land ceiling clearance is required."
         },
         {
-            'sn': '10',
+            'sn': '10.',
             'particular': "Details of creation of charge or redemption for a minimum period of 13 year and subsisting charges, as per encumbrance certificate for the last 13 year.",
             'observation': charge_detail_text  # DYNAMIC
         },
         {
-            'sn': '11',
+            'sn': '11.',
             'particular': "Additional documents required.",
             'observation': "It is as per the standard operating procedure of the Financial Institution."
         },
         {
-            'sn': '12',
+            'sn': '12.',
             'particular': "Findings based on ROC Search and list of encumbrances",
             'observation': "Not Applicable"
         },
         {
-            'sn': '13',
+            'sn': '13.',
             'particular': "Pending litigation before any court of law/ forum in respect of the property.",
             'observation': "As per updated revenue records there is no pending litigation on the land."
         },
         {
-            'sn': '14',
+            'sn': '14.',
             'particular': "Availability of No encumbrance certificate from the concerned Registrar of Assurances.",
             'observation': "Not Applicable"
         },
         {
-            'sn': '15',
+            'sn': '15.',
             'particular': "Any minor's interest if involved in the property proposed to be mortgaged or any other claims. If minor's interest is involved, what precautions are to be taken to protect PFC's interest as a mortgagee",
             'observation': "Not Applicable"
         },
         {
-            'sn': '16',
+            'sn': '16.',
             'particular': "Whether the property is acquired under Land Acquisition Act, 1894 and applicability of other State Legislation",
             'observation': "As per revenue records, the property is not acquired under Land Acquisition Act"
         },
         {
-            'sn': '17',
+            'sn': '17.',
             'particular': "Any other special enactment which is applicable to the property proposed to be mortgaged and affects the title",
             'observation': "No"
         },
         {
-            'sn': '18',
+            'sn': '18.',
             'particular': "Findings on absolute, clear, and marketable title of the immovable property proposed to be mortgaged",
-            'observation': title_conclusion  # DYNAMIC
+            'observation': final_conclusion_row_18  # DYNAMIC
         }
     ]
     
