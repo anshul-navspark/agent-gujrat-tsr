@@ -5,6 +5,7 @@ from docx.shared import Pt, Inches
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+from tsr_generator.extractors.findings import detect_active_encumbrances
 
 def add_table_with_header(doc, headers, rows, style=None, col_widths=None):
     """
@@ -323,12 +324,34 @@ def add_chain_of_title_section(document, entries, entry_table):
             logger.error(f"Error adding entry {num} to table: {str(e)}")
             continue
 
-    # After the loop, add the note entry
+    # Detect active encumbrances for note row
+    entry_dicts = []
+    for entry in entries:
+        entry_dict = {
+            'entry_number': str(getattr(entry, 'entry_number', '')),
+            'type': getattr(entry, 'type', ''),
+            'entry_status': getattr(entry, 'entry_status', ''),
+            'description': getattr(entry, 'formatted_description', ''),
+        }
+        if hasattr(entry_dict['type'], 'value'):
+            entry_dict['type'] = entry_dict['type'].value
+        entry_dicts.append(entry_dict)
+
+    active_encumbrances, active_entry_nums = detect_active_encumbrances(entry_dicts)
+
     note_row_cells = table.add_row().cells
-    # First column: empty (no numbering)
+    # First column: empty
 
     note_para_1 = note_row_cells[1].paragraphs[0]
-    note_run_1 = note_para_1.add_run("Note:- The title of the land is clear and marketable.")
+
+    if active_entry_nums:
+        # Format entry numbers with bank names when available
+        entry_refs = ", ".join(active_entry_nums)
+        note_text = f"Note:- The title of the land is clear and marketable subject to bank charge. (Entry No. {entry_refs})"
+    else:
+        note_text = "Note:- The title of the land is clear and marketable."
+
+    note_run_1 = note_para_1.add_run(note_text)
     note_run_1.bold = True
     note_run_1.font.name = 'Times New Roman'
     note_run_1.font.size = Pt(12.5)
