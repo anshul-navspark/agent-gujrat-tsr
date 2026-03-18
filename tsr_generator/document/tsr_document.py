@@ -215,17 +215,18 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         else:
             row[1].text = nature
         
-        # Format area display as "X-XX-XX i.e. (XXXXX Sq. Mts)"
+        # Format area display as "X-XX-XX - i.e. (XXXXX Sq. Mts)"
         area = sanitize_text(land_details.get('total_area'))
+        # Strip "Hectare" if the LLM included it
+        area = re.sub(r'\s*Hectare\s*', ' ', area).strip()
         # Check if area already has the format we want
         if ' i.e.' not in area and not re.search(r'\(\d+ Sq\. Mts\)', area):
             # Try to extract numeric values if in format like "2-55-98"
             area_match = re.search(r'(\d+)-(\d+)-(\d+)', area)
             if area_match:
                 hectares, acres, guntha = map(int, area_match.groups())
-                # Calculate square meters (approximate conversion)
                 sq_meters = int((hectares * 10000) + (acres * 100) + guntha)
-                area = f"{area} i.e.({sq_meters} Sq. Mts)"
+                area = f"{area} - i.e. ({sq_meters} Sq. Mts)"
         row[2].text = area
         
         survey = sanitize_text(land_details.get('survey_number'))
@@ -246,14 +247,14 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         # Clean up the owner string to remove brackets and quotes
         owner = owner.replace('[', '').replace(']', '').replace("'", "")
         
-        # Format as a numbered list for multiple owners, plain text for single owner
+        # Format as plain list for multiple owners (no numbering)
         if ',' in owner:  # Multiple owners separated by commas
             owners = [name.strip() for name in owner.split(',')]
-            
+
             owner_text = ""
-            for i, name in enumerate(owners, 1):
+            for name in owners:
                 if name and name.strip():  # Only add non-empty names
-                    owner_text += f"{i}. {name}\n"
+                    owner_text += f"{name}\n"
         else:
             # Single owner - no numbering
             if owner and owner.strip():  # Only add non-empty names
