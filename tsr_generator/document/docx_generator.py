@@ -678,7 +678,7 @@ def add_findings_table(doc, findings):
     
     # Add section heading
     doc.add_paragraph()
-    add_section_heading(doc, "4.  Findings & opinion based our title investigation:-", numbered=True)
+    add_section_heading(doc, "Findings & opinion based our title investigation:-", numbered=True)
     
     # Create and format the table
     table = doc.add_table(rows=1, cols=3)

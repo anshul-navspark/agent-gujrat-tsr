@@ -129,9 +129,10 @@ def generate_tsr_from_pdf_optimized(
 
         logger.debug(f"Extracted: land_details, {len(entry_table)} entry numbers, {len(entries)} detailed entries")
 
-        # Generate findings with dynamic encumbrance detection
+        # Generate placeholder findings — will be regenerated with cross-references
+        # inside create_tsr_document after chain of title table is built
         logger.debug("Generating findings with encumbrance analysis")
-        findings = generate_findings_table(pdf_text, unified_result.mutation_entries, land_details)
+        findings = generate_findings_table("", unified_result.mutation_entries, land_details)
 
         # Ensure output directory exists
         output_dir = os.path.dirname(output_path)
@@ -141,7 +142,7 @@ def generate_tsr_from_pdf_optimized(
 
         # Create DOCX report
         logger.debug(f"Creating DOCX report: {output_path}")
-        output_file = create_tsr_document(entry_table, entries, land_details, findings, output_path)
+        output_file = create_tsr_document(entry_table, entries, land_details, findings, output_path, mutation_entries=unified_result.mutation_entries)
         logger.debug(f"Report generated successfully: {output_file}")
 
         # Build entry type statistics

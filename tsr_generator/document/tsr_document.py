@@ -15,7 +15,7 @@ from tsr_generator.document.docx_generator import (
     add_findings_table
 )
 
-def create_tsr_document(entry_table, entries, land_details, findings, output_path):
+def create_tsr_document(entry_table, entries, land_details, findings, output_path, mutation_entries=None):
     """
     Create a TSR document with the extracted information
     
@@ -355,7 +355,12 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         # Add Chain of Title section
         doc.add_paragraph()
         entry_to_row_map = add_chain_of_title_section(doc, entries, entry_table)
-        
+
+        # Regenerate findings with cross-references if mutation data available
+        if mutation_entries is not None and entry_to_row_map:
+            from tsr_generator.extractors.findings import generate_findings_table
+            findings = generate_findings_table("", mutation_entries, land_details, entry_to_row_map)
+
         # Add Findings table
         add_findings_table(doc, findings)
         
