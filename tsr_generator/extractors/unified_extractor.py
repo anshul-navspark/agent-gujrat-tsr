@@ -35,6 +35,9 @@ logger = logging.getLogger(__name__)
 # Model configuration
 MODEL_NAME = os.getenv('GEMINI_MODEL_NAME', 'gemini-3-pro-preview')
 
+# Feature flag: classify entries about other survey numbers as NOT RELATED
+CLASSIFY_NOT_RELATED_ENTRIES = True
+
 
 # =============================================================================
 # STATIC PROMPT CONSTANTS - These are separated to visualize token overhead
@@ -58,26 +61,27 @@ Entry Type Classification:
 
 # Formatting rules (~150 tokens)
 FORMATTING_RULES = """
-Formatting Rules - USE COMPACT LANGUAGE:
+Formatting Rules:
 1. ALL descriptions MUST start with "That" (except NOT RELATED, PROMULGATION)
 2. DO NOT use honorifics like "Shri", "Smt", "Mr.", "Mrs."
 3. DO NOT use "account holder", "mortgaged his total land", "of [village] village"
 4. DO NOT include sentences like "This encumbrance entry was recorded based on..." or "This inheritance entry was made..."
-5. Keep descriptions SHORT and DIRECT - one sentence if possible
+5. Keep descriptions direct and factual. Include all legally relevant details. Do not add commentary or explanatory sentences.
 6. Amounts: "Rs. X/-" or "Rs. X,XXX/-"
 7. ALWAYS use "Survey No." instead of "Khata No." or "Account No."
-8. Documents: "document no. X dated DD/MM/YY"
+8. Documents: "document no. X dated DD/MM/YYYY"
 9. Translate "Paiki" or "Part" or "part" or "pk" as "p" in survey numbers (e.g. "150/p1")
 10. IMPORTANT: Preserve "/" in survey numbers (e.g., "387/p3" NOT "387p3")
 11. Use caste titles only when part of the name: Thakor, Patel, Kanbi, Choudhary, Rabari, Vadher, Solanki
-12. Measurements: Use "Acre/Guntha" or "Hectare". REPLACE "H.Are.SqMt." with "Hectare".
-   - Example: Convert "1-88-48 H.Are.SqMt. i.e.(18848 Sq. Mts)" to "1-88-48 Hectare (i.e. 18848 Sq. Mts)"
+12. Measurements: Use "Acre/Guntha" or "Hectare" in descriptions. For the total_area field, output ONLY the numeric format (e.g., "1-88-48") WITHOUT the word "Hectare".
 13. Translate "bhen" or "ben" suffix as "ben" (e.g. "Shantiben")
-14. Lists: "which are as follows:-" + bullet points (Use "•" not "*")
+14. Lists: "which are as follows:-" followed by names on separate lines
 15. OMIT sentences like "This entry was made based on..." or "This inheritance entry was made...". Keep descriptions concise.
 16. LOAN entries: Do NOT include agreement date. Only describe the loan, borrower, lender, amount, and land details.
 17. OLD SURVEY NUMBERS: If there is a PROMULGATION entry (re-survey), use "old Survey No." for all entries BEFORE the promulgation entry. Use "Survey No." for entries AFTER promulgation. If there is NO promulgation entry, use "Survey No." (without "old").
-18. BOREWELL NAMING: Use "Borewell-1", "Borewell-2", etc. instead of "Bore-1", "Bore-2". Always use the full word "Borewell".
+18. Always use 4-digit years (DD/MM/YYYY). Never use 2-digit years (DD/MM/YY).
+19. Include Khata number in parentheses after each survey number when visible in the source document, e.g., "5/2(28), 193p1(28)". If no Khata number is visible, omit parentheses.
+20. Translate "Prant Officer" / "પ્રાંત અધિકારી" as "Province Officer". Use "Province Officer" and "Province court" consistently.
 """
 
 # Certification patterns (~150 tokens)
@@ -91,10 +95,10 @@ CRITICAL - Translate Gujarati status words in certification:
 | પ્રમાણિત | certified | "certified" |
 
 Certification output formats:
-- If રદ found: "The Entry is cancelled by [Name] on DD/MM/YY." + entry_status: "rejected"
-- If ના મંજૂર or નામંજુર found: "The Entry is not accepted by [Name] on DD/MM/YY." + entry_status: "not_accepted"  
-- If પ્રમાણિત found: "The Entry is certified by [Name] on DD/MM/YY." + entry_status: "certified"
-- IMPORTANT: If the document shows a 2-digit year (e.g., 30/09/05), still extract it as DD/MM/YY; it will be normalized later.
+- If રદ found: "The Entry is cancelled by [Name] on DD/MM/YYYY." + entry_status: "rejected"
+- If ના મંજૂર or નામંજુર found: "The Entry is not accepted by [Name] on DD/MM/YYYY." + entry_status: "not_accepted"
+- If પ્રમાણિત found: "The Entry is certified by [Name] on DD/MM/YYYY." + entry_status: "certified"
+- Always output certification dates in 4-digit year format (DD/MM/YYYY).
 - Default if unclear: entry_status: "" (empty)
 
 SPECIAL RULE FOR PROMULGATION ENTRIES: 
@@ -102,13 +106,19 @@ SPECIAL RULE FOR PROMULGATION ENTRIES:
 - Do NOT include certifier name or certification date for promulgation entries.
 
 IMPORTANT: Do NOT output "certified" if the Gujarati text contains રદ, ના મંજૂર, or નામંજુર!
+
+CERTIFICATION EXTRACTION IS REQUIRED:
+- certification_official and certification_date are REQUIRED fields for all certified/rejected entries when visible in the source document.
+- Always extract the certifying officer designation and place (e.g., "C.O. Jadiya", "Mamlatdar Dhanera") into certification_official.
+- Always extract the certification date in DD/MM/YYYY format into certification_date.
+- Do NOT output just "The Entry is certified." if officer name or date is visible in the document.
 """
 
 # Minimal description examples - COMPACT format
 DESCRIPTION_EXAMPLES = """
-Example descriptions (COMPACT - follow these exact patterns):
+Example descriptions (follow these exact patterns):
 
-LOAN (correct): "That Mer Deva Depa took a loan of Rs. 20,000/- on land bearing old Survey No. 373/p1, 359, 390, 389 (215) from Bank of India, Modhvada Branch."
+LOAN (correct): "That Mer Deva Depa took a loan of Rs. 20,000/- on land bearing old Survey No. 373/p1, 359, 390, 389(215) from Bank of India, Modhvada Branch."
 LOAN (wrong - includes agreement date): "That Mer Deva Depa took a loan of Rs. 20,000/- from Bank of India, Modhvada Branch based on an agreement dated 14/05/2005." - DO NOT include agreement date!
 LOAN (wrong - too verbose): "That account holder Shri Mer Deva Depa of Keshav village mortgaged his total land of 6-21-20 Hectare of Keshav village, Khata No. 215, bearing Survey No. 390, with Bank of India, Modhwada branch, to obtain a loan of Rs. 20,000/-. This encumbrance entry was recorded based on the agreement dated 14/05/2005."
 
@@ -118,12 +128,16 @@ IMPORTANT for LOAN entries:
 - Just state: borrower name, loan amount, survey numbers, bank name and branch
 
 Other patterns:
-- DEATH: "That upon demise of [Name], land bearing Survey No. X mutated to heirs: [list]"
-- SALE: "That [Seller] sold Survey No. X to [Buyer] for Rs. X/- vide document no. Y dated Z."
-- PARTITION: "That [Name] distributed land as follows:- [bullet list]"
-- RELEASE: "That charge of [Bank] removed on application of [Name]. Ref Entry No. X."
-- ORDER: "That as per Taluka Circular No. X dated Y, Survey No. Z allotted to [Name]."
-- NOT RELATED: "This entry is not related to present survey no."
+- DEATH: "That upon the demise of [Name], his share in land bearing old Survey No. X(Khata), Y(Khata) came to be mutated in the names of his legal heirs which are as follows:
+[Heir1Name]
+[Heir2Name]"
+- SALE: "That [Seller] sold Survey No. X to [Buyer] for Rs. X/- vide document no. Y dated DD/MM/YYYY."
+- PARTITION: "That Family members distributed their land among themselves as follows:-"
+- RELEASE: "That upon receiving an application from [Name] for removing the charge of [Bank], [Branch]. The said exemption of burden has been recorded. Entry No. X."
+- ORDER (government allotment): "That Government survey was conducted and land bearing Survey No. X was allotted to [Name]."
+- ORDER (circular): "That as per Taluka Circular No. X dated Y, Survey No. Z allotted to [Name]."
+- NOT RELATED: "This Entry is not related to Present Survey Number."
+- PROMULGATION: Extract the FULL procedural text. Include: issuing authority, court name, all order numbers with dates, public notice and objection period, Mamlatdar preparation, Province Office verification, finalization, page/survey range. Do NOT summarize.
 """
 
 
@@ -151,6 +165,12 @@ def build_unified_prompt(pdf_text: str, entry_numbers_hint: List[str] = None) ->
     if entry_numbers_hint:
         entry_hint_text = f"\nCandidate entry numbers detected: {', '.join(entry_numbers_hint)}"
 
+    not_related_instruction = ""
+    if CLASSIFY_NOT_RELATED_ENTRIES:
+        not_related_instruction = """
+NOT RELATED ENTRIES: If an entry clearly pertains to survey numbers different from the subject survey number being investigated, classify it as NOT RELATED with description: "This Entry is not related to Present Survey Number."
+"""
+
     return f"""Extract ALL information from this Gujarat land record in ONE response.
 
 OUTPUT FORMAT - Return ONLY valid JSON with this exact structure:
@@ -163,8 +183,7 @@ OUTPUT FORMAT - Return ONLY valid JSON with this exact structure:
     "old_survey_number": "",
     "total_area": "",
     "nature_of_land": "",
-    "owner": "",
-    "has_borewell": false
+    "owner": ""
   }},
   "entry_numbers": [],
   "mutation_entries": [
@@ -188,7 +207,6 @@ EXTRACTION INSTRUCTIONS:
    - For "survey_number", translate "Paiki" or "Part" or "part" to "p"(e.g. "150/p1").
    - For "old_survey_number", look for re-survey promulgation entries (Entry 3888-type) that map old→new survey numbers.
      Extract the old survey number. If found, format as just the number (e.g. "258" not "Old Survey No. 258").
-   - For "has_borewell", set to true if any entry or document mentions a Borewell (બોરવેલ, બોર, કૂવો, Bore, Borewell, tubewell). Set to false otherwise.
 
 2. ENTRY NUMBERS: Extract from "Entry Details" table. Output as array of number strings.
    - Remove asterisks (*) and trailing Gujarati text
@@ -197,7 +215,7 @@ EXTRACTION INSTRUCTIONS:
 
 3. MUTATION ENTRIES: For each entry number, extract:
    - entry_number: The numeric entry number
-   - date: Format as DD/MM/YY if available, else ""
+   - date: Format as DD/MM/YYYY (4-digit year) if available, else ""
    - type: One of: LOAN, DEATH, RELEASE, LOAN CLOSE, SALE, PARTITION, PERSONS ADD, TO TRANSFER, EXCHANGE, LIFETIME DISTRIBUTION, NOT RELATED, ORDER, RELINQUISHMENT, PROMULGATION
    - description: MUST BE IN ENGLISH. Translate all Gujarati.
    - entry_status: One of: "certified", "rejected", "not_accepted". Look for Gujarati keywords નામંજૂર (rejected), રદ (cancelled). Default to "certified" if the entry says "certified" or "The Entry is certified".
@@ -218,7 +236,7 @@ EXTRACTION INSTRUCTIONS:
 {FORMATTING_RULES}
 {DESCRIPTION_EXAMPLES}
 {CERTIFICATION_PATTERNS}
-
+{not_related_instruction}
 For entries with only a number in the table (no details), include with empty fields:
 {{"entry_number": "X", "date": "", "type": "", "description": "", "entry_status": "", "certification_status": "", "certification_official": "", "certification_date": ""}}
 
