@@ -105,26 +105,30 @@ def add_section_heading(doc, text, level=1, numbered=True):
     
     return heading
 
-def add_chain_of_title_section(document, entries, entry_table, has_borewell=False):
+def add_chain_of_title_section(document, entries, entry_table):
     """
     Add Chain of Title section with a two-column table format where:
-    - First column (0.42 inches): Auto-numbered entries (1., 2., etc.)
+    - First column (0.42 inches): empty (manual versions leave this column empty)
     - Second column (5.85 inches): Entry details including entry number, date, description, and certification
-    
+
     Args:
         document: The document object to add the section to
         entries: List of entry objects to include in the Chain of Title section
+        entry_table: List of entry numbers to include
+
+    Returns:
+        dict: Mapping of entry number to row index
     """
     logger = logging.getLogger(__name__)
     logger.debug("Adding Chain of Title section with two-column format")
     
     # Add section heading
-    add_section_heading(document, "3.  Chain of Title", numbered=True)
-    
+    add_section_heading(document, "Chain of Title", numbered=True)
+
     if not entries:
         paragraph = document.add_paragraph()
         paragraph.add_run("No entries found in the document.").italic = True
-        return
+        return {}
     
     # Create a table for Chain of Title - two columns
     table = document.add_table(rows=0, cols=2)
@@ -151,7 +155,7 @@ def add_chain_of_title_section(document, entries, entry_table, has_borewell=Fals
     # First column is empty
     
     # Second column: Add explanatory text
-    header_text = "Brief history and flow of title with respect to Immovable Properties -- For 30 Year Period - Based on perusal of the documents referred in S. No. 2 above."
+    header_text = "Brief history and flow of title with respect to Immovable Properties \u2013 For 30 Year Period - Based on perusal of the documents referred in S. No. 2 above."
     header_para = header_row_cells[1].paragraphs[0]
     header_run = header_para.add_run(header_text)
     header_run.bold = True
@@ -184,10 +188,12 @@ def add_chain_of_title_section(document, entries, entry_table, has_borewell=Fals
     sorted_numbers = sorted(list(all_entry_numbers), key=lambda x: int(x) if x.isdigit() else float('inf'))
     
     # Iterate through all numbers and add rows
+    entry_to_row_map = {}
     row_index = 0
     for row_index, num in enumerate(sorted_numbers, 1):
         try:
             entry = entry_map.get(num)
+            entry_to_row_map[num] = row_index
             
             # Add a new row
             row_cells = table.add_row().cells
@@ -196,12 +202,7 @@ def add_chain_of_title_section(document, entries, entry_table, has_borewell=Fals
             for j, width in enumerate(col_widths):
                 table.rows[-1].cells[j].width = Inches(width)
             
-            # First column: Auto-numbered entry
-            num_para = row_cells[0].paragraphs[0]
-            num_run = num_para.add_run(f"{row_index}.")
-            num_run.bold = True
-            num_run.font.name = 'Times New Roman'
-            num_run.font.size = Pt(12.5)
+            # First column: empty (manual versions leave this column empty)
             row_cells[0].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
             
             # Second column: Entry details
@@ -324,11 +325,7 @@ def add_chain_of_title_section(document, entries, entry_table, has_borewell=Fals
 
     # After the loop, add the note entry
     note_row_cells = table.add_row().cells
-    note_para = note_row_cells[0].paragraphs[0]
-    note_run = note_para.add_run(f"{row_index + 1}.")
-    note_run.bold = True
-    note_run.font.name = 'Times New Roman'
-    note_run.font.size = Pt(12.5)
+    # First column: empty (no numbering)
 
     note_para_1 = note_row_cells[1].paragraphs[0]
     note_run_1 = note_para_1.add_run("Note:- The title of the land is clear and marketable.")
@@ -336,17 +333,10 @@ def add_chain_of_title_section(document, entries, entry_table, has_borewell=Fals
     note_run_1.font.name = 'Times New Roman'
     note_run_1.font.size = Pt(12.5)
 
-    # Add borewell statement in the note if applicable
-    if has_borewell:
-        borewell_para = note_row_cells[1].add_paragraph()
-        borewell_run = borewell_para.add_run("There is a Borewell on the land.")
-        borewell_run.bold = True
-        borewell_run.font.name = 'Times New Roman'
-        borewell_run.font.size = Pt(12.5)
-        borewell_para.paragraph_format.line_spacing = 1.15
-
     # Add some space after the table
     document.add_paragraph()
+
+    return entry_to_row_map
 
 def construct_description_from_fields(entry):
     """

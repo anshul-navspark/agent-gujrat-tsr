@@ -161,7 +161,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         # Section 1: Property Details
         add_section_heading(
             doc,
-            "Description, nature, and area of land with survey/plot numbers" if profile == "final_sample_v1" else "1.  Description, nature, and area of land with survey/plot numbers",
+            "Description, nature, and area of land with survey/plot numbers",
             numbered=True,
         )
         if profile == "final_sample_v1":
@@ -279,15 +279,11 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         for i, width in enumerate(col_widths):
             row[i].width = Inches(width)
         
-        # Check if land has Borewell (extracted from Gujarati text by LLM)
-        has_borewell = land_details.get('has_borewell', False)
-        has_borewell = has_borewell and str(has_borewell).lower() not in ['false', 'no', '', 'none']
-        
         # Section 2: Documents Scrutinized
         doc.add_paragraph()
         add_section_heading(
             doc,
-            "Details/Description of document scrutinized" if profile == "final_sample_v1" else "2.  Details/Description of document scrutinized",
+            "Details/Description of document scrutinized",
             numbered=True,
         )
         
@@ -355,9 +351,9 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
             for i, width in enumerate(col_widths):
                 row[i].width = Inches(width)
         
-        # Add Chain of Title section (pass has_borewell to include in note)
+        # Add Chain of Title section
         doc.add_paragraph()
-        add_chain_of_title_section(doc, entries, entry_table, has_borewell=has_borewell)
+        entry_to_row_map = add_chain_of_title_section(doc, entries, entry_table)
         
         # Add Findings table
         add_findings_table(doc, findings)
