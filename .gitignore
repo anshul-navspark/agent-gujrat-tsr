@@ -56,3 +56,6 @@ deprecated
 *.docx
 *.zip
 *.pdf
+
+# Worktrees
+.worktrees
