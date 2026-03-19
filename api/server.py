@@ -93,6 +93,7 @@ class LandRecordRequest(BaseModel):
     taluka: str
     village: str
     survey_number: str
+    output_format: str = "zip"  # Added to support returning just docx
 
 
 @app.post("/generate-tsr")
@@ -264,26 +265,38 @@ def process_record(
                 pdf_filename = file_service.generate_filename(core_request, file_type='pdf', prefix='Original')
                 zip_filename = file_service.generate_filename(core_request, file_type='zip', prefix='TSR_Package')
                 
-                # Create ZIP file using file service
-                files_to_zip = {docx_filename: docx_content}
-                if pdf_content:
-                    files_to_zip[pdf_filename] = pdf_content
-                
-                zip_content = file_service.create_zip(files_to_zip, zip_filename)
-                
-                # Prepare filename for header
-                encoded_filename = quote(zip_filename)
-                zip_filename_ascii = f"TSR_Package_{os.urandom(4).hex()}.zip"
-                
-                return Response(
-                    content=zip_content,
-                    media_type='application/zip',
-                    headers={
-                        'Content-Disposition': f"attachment; filename=\"{zip_filename_ascii}\"; filename*=UTF-8''{encoded_filename}",
-                        'X-Cache-Status': 'HIT',
-                        'X-Cache-Timestamp': cache_metadata.get('timestamp', '')
-                    }
-                )
+                if getattr(request, 'output_format', 'zip') == 'docx':
+                    encoded_filename = quote(docx_filename)
+                    return Response(
+                        content=docx_content,
+                        media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        headers={
+                            'Content-Disposition': f"attachment; filename=\"{docx_filename}\"; filename*=UTF-8''{encoded_filename}",
+                            'X-Cache-Status': 'HIT',
+                            'X-Cache-Timestamp': cache_metadata.get('timestamp', '')
+                        }
+                    )
+                else:
+                    # Create ZIP file using file service
+                    files_to_zip = {docx_filename: docx_content}
+                    if pdf_content:
+                        files_to_zip[pdf_filename] = pdf_content
+                    
+                    zip_content = file_service.create_zip(files_to_zip, zip_filename)
+                    
+                    # Prepare filename for header
+                    encoded_filename = quote(zip_filename)
+                    zip_filename_ascii = f"TSR_Package_{os.urandom(4).hex()}.zip"
+                    
+                    return Response(
+                        content=zip_content,
+                        media_type='application/zip',
+                        headers={
+                            'Content-Disposition': f"attachment; filename=\"{zip_filename_ascii}\"; filename*=UTF-8''{encoded_filename}",
+                            'X-Cache-Status': 'HIT',
+                            'X-Cache-Timestamp': cache_metadata.get('timestamp', '')
+                        }
+                    )
             else:
                 # Cache miss - log it explicitly
                 logger.info(
@@ -409,27 +422,38 @@ def process_record(
         pdf_filename = file_service.generate_filename(core_request, file_type='pdf', prefix='Original')
         zip_filename = file_service.generate_filename(core_request, file_type='zip', prefix='TSR_Package')
         
-        # Create ZIP file using file service
-        files_to_zip = {docx_filename: docx_content}
-        if pdf_content:
-            files_to_zip[pdf_filename] = pdf_content
-        
-        zip_content = file_service.create_zip(files_to_zip, zip_filename)
-        
-        # Prepare filename for header
-        encoded_filename = quote(zip_filename)
-        
-        # Create ASCII-safe fallback filename
-        zip_filename_ascii = f"TSR_Package_{os.urandom(4).hex()}.zip"
-        
-        return Response(
-            content=zip_content,
-            media_type='application/zip',
-            headers={
-                'Content-Disposition': f"attachment; filename=\"{zip_filename_ascii}\"; filename*=UTF-8''{encoded_filename}",
-                'X-Cache-Status': 'MISS'
-            }
-        )
+        if getattr(request, 'output_format', 'zip') == 'docx':
+            encoded_filename = quote(docx_filename)
+            return Response(
+                content=docx_content,
+                media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                headers={
+                    'Content-Disposition': f"attachment; filename=\"{docx_filename}\"; filename*=UTF-8''{encoded_filename}",
+                    'X-Cache-Status': 'MISS'
+                }
+            )
+        else:
+            # Create ZIP file using file service
+            files_to_zip = {docx_filename: docx_content}
+            if pdf_content:
+                files_to_zip[pdf_filename] = pdf_content
+            
+            zip_content = file_service.create_zip(files_to_zip, zip_filename)
+            
+            # Prepare filename for header
+            encoded_filename = quote(zip_filename)
+            
+            # Create ASCII-safe fallback filename
+            zip_filename_ascii = f"TSR_Package_{os.urandom(4).hex()}.zip"
+            
+            return Response(
+                content=zip_content,
+                media_type='application/zip',
+                headers={
+                    'Content-Disposition': f"attachment; filename=\"{zip_filename_ascii}\"; filename*=UTF-8''{encoded_filename}",
+                    'X-Cache-Status': 'MISS'
+                }
+            )
         
     except HTTPException:
         file_service.cleanup_temp_file(pdf_path)
