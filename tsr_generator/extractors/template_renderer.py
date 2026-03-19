@@ -573,4 +573,11 @@ def render_entry_description(entry_type: str, fields: Dict[str, Any]) -> str:
     if renderer is None:
         logger.debug("No renderer registered for entry type '%s'", entry_type)
         return ""
-    return renderer(fields)
+    result = renderer(fields)
+    logger.debug(
+        "Render: type=%s -> %d chars%s",
+        entry_type,
+        len(result),
+        " (empty)" if not result else "",
+    )
+    return result

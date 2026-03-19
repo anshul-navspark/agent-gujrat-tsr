@@ -1,78 +1,159 @@
 import logging
-from typing import List, Dict, Any, Optional, Tuple
+import re
+from typing import List, Dict, Any, Optional, Tuple, Union
 
 
-def detect_active_encumbrances(entries: List[Dict]) -> Tuple[List[Dict], List[str]]:
+def _get_field(entry, key: str, default: str = "") -> str:
+    """Get a field from either a dataclass entry or a dict."""
+    if isinstance(entry, dict):
+        return str(entry.get(key, default))
+    return str(getattr(entry, key, default) or default)
+
+
+def _get_entry_type_str(entry) -> str:
+    """Get the entry type as an uppercase string."""
+    if isinstance(entry, dict):
+        raw = entry.get('type', '')
+    else:
+        raw = getattr(entry, 'type', '')
+    if hasattr(raw, 'value'):
+        raw = raw.value
+    return str(raw).upper().replace(' ', '_')
+
+
+def _get_lender_from_entry(entry) -> Optional[str]:
+    """
+    Get lender name from a structured entry object or dict.
+    Prefers structured 'lender' field; falls back to regex on description.
+    """
+    # Try structured field first (works for both dataclass and dict)
+    lender = None
+    if isinstance(entry, dict):
+        lender = entry.get('lender', '') or ''
+    else:
+        lender = getattr(entry, 'lender', '') or ''
+
+    if lender and lender.strip():
+        return lender.strip()
+
+    # For SEIZURE entries, try 'bank' field
+    if isinstance(entry, dict):
+        bank = entry.get('bank', '') or ''
+    else:
+        bank = getattr(entry, 'bank', '') or ''
+    if bank and bank.strip():
+        return bank.strip()
+
+    # Fallback to regex extraction from description
+    description = _get_field(entry, 'description') or _get_field(entry, 'formatted_description')
+    return _extract_lender_name(description) if description else None
+
+
+def _get_reference_entry_number(entry) -> Optional[str]:
+    """Get reference entry number from structured field or regex fallback."""
+    # Try structured field
+    ref = None
+    if isinstance(entry, dict):
+        ref = entry.get('reference_entry_number', '') or ''
+    else:
+        ref = getattr(entry, 'reference_entry_number', '') or ''
+        if not ref:
+            ref = getattr(entry, 'reference_to_original', '') or ''
+
+    if ref and ref.strip():
+        return ref.strip()
+
+    # Fallback: regex on description
+    description = _get_field(entry, 'description') or _get_field(entry, 'formatted_description')
+    if description:
+        match = re.search(r'Entry\s*(?:No\.?)?\s*(\d+)', description, re.IGNORECASE)
+        if match:
+            return match.group(1)
+
+    return None
+
+
+def detect_active_encumbrances(entries: List) -> Tuple[List, List[str]]:
     """
     Detect active encumbrances (loans/mortgages without matching releases).
-    
-    Enhanced logic:
-    1. Match releases to loans by explicit entry number references
-    2. Match releases to loans by lender/bank name + chronological order
-    3. A release clears all previous loans from the same lender
-    
+
+    Accepts both typed entry dataclass objects (new pipeline) and plain dicts
+    (old pipeline) for backward compatibility.
+
+    Matching strategy:
+    1. Match releases to loans by explicit reference_entry_number
+    2. Match releases to loans by lender name + chronological order
+    3. SEIZURE entries are NOT separate encumbrances (enforcement on existing loan)
+
     Args:
-        entries: List of extracted mutation entries with type and entry_number
-        
+        entries: List of entry objects (dataclass) or dicts.
+
     Returns:
         Tuple of (active_encumbrance_entries, active_entry_numbers)
     """
     logger = logging.getLogger(__name__)
-    
+
     if not entries:
         return [], []
-    
-    import re
-    
+
     # Sort entries by entry number (chronological order)
-    sorted_entries = sorted(entries, key=lambda x: int(x.get('entry_number', '0')) if str(x.get('entry_number', '')).isdigit() else 0)
-    
+    def _sort_key(e):
+        num = _get_field(e, 'entry_number', '0')
+        return int(num) if num.isdigit() else 0
+
+    sorted_entries = sorted(entries, key=_sort_key)
+
     # Track loans and releases
-    loans = []  # List of (entry_number, entry_dict, lender_name)
+    loans = []  # List of (entry_number, entry, lender_name)
     released_entry_numbers = set()
-    
+
     for entry in sorted_entries:
-        entry_type = str(entry.get('type', '')).upper()
-        entry_number = str(entry.get('entry_number', ''))
-        description = str(entry.get('description', ''))
-        
-        # Identify loan/mortgage entries
-        if entry_type in ['LOAN', 'MORTGAGE'] or 'took a loan' in description.lower():
-            # Extract lender/bank name from description
-            lender = _extract_lender_name(description)
+        entry_type = _get_entry_type_str(entry)
+        entry_number = _get_field(entry, 'entry_number')
+
+        # Identify LOAN/MORTGAGE entries
+        if entry_type in ('LOAN', 'MORTGAGE'):
+            lender = _get_lender_from_entry(entry)
             loans.append((entry_number, entry, lender))
-            logger.debug(f"Loan Entry {entry_number}: lender={lender}")
-        
-        # Identify release entries
-        elif entry_type in ['RELEASE', 'LOAN CLOSE'] or 'removing the charge' in description.lower() or 'exemption of burden' in description.lower():
-            # Strategy 1: Look for explicit "Entry No. X" references
-            ref_matches = re.findall(r'Entry\s*(?:No\.?)?\s*(\d+)', description, re.IGNORECASE)
-            for ref in ref_matches:
+            logger.debug("Loan Entry %s: lender=%s", entry_number, lender)
+
+        # Identify RELEASE entries
+        elif entry_type in ('RELEASE', 'LOAN_CLOSE'):
+            # Strategy 1: explicit reference entry number
+            ref = _get_reference_entry_number(entry)
+            if ref:
                 released_entry_numbers.add(ref)
-                logger.debug(f"Release Entry {entry_number}: explicitly clears Entry {ref}")
-            
-            # Strategy 2: Match by lender name (clears all previous loans from same lender)
-            release_lender = _extract_lender_name(description)
+                logger.debug("Release Entry %s: explicitly clears Entry %s", entry_number, ref)
+
+            # Strategy 2: match by lender name
+            release_lender = _get_lender_from_entry(entry)
             if release_lender:
-                # Find all previous loans from this lender
-                for loan_num, loan_entry, loan_lender in loans:
+                for loan_num, _loan_entry, loan_lender in loans:
                     if loan_lender and _lenders_match(loan_lender, release_lender):
-                        # Only clear loans that came BEFORE this release
-                        if int(loan_num) < int(entry_number) if loan_num.isdigit() and entry_number.isdigit() else True:
+                        if loan_num.isdigit() and entry_number.isdigit():
+                            if int(loan_num) < int(entry_number):
+                                released_entry_numbers.add(loan_num)
+                                logger.debug(
+                                    "Release Entry %s: clears Entry %s (same lender: %s)",
+                                    entry_number, loan_num, release_lender,
+                                )
+                        else:
                             released_entry_numbers.add(loan_num)
-                            logger.debug(f"Release Entry {entry_number}: clears Entry {loan_num} (same lender: {release_lender})")
-    
+
     # Find active loans (not released)
     active_encumbrances = []
     active_entry_numbers = []
-    
+
     for entry_num, entry, lender in loans:
         if entry_num not in released_entry_numbers:
             active_encumbrances.append(entry)
             active_entry_numbers.append(entry_num)
-            logger.debug(f"Active encumbrance: Entry {entry_num} (lender: {lender})")
-    
-    logger.info(f"Detected {len(active_encumbrances)} active encumbrances from {len(loans)} loan entries")
+            logger.debug("Active encumbrance: Entry %s (lender: %s)", entry_num, lender)
+
+    logger.info(
+        "Detected %d active encumbrances from %d loan entries",
+        len(active_encumbrances), len(loans),
+    )
     return active_encumbrances, active_entry_numbers
 
 
@@ -129,23 +210,23 @@ def _lenders_match(lender1: str, lender2: str) -> bool:
     return False
 
 
-def detect_rejected_entries(entries: List[Dict]) -> List[str]:
+def detect_rejected_entries(entries: List) -> List[str]:
     """
     Detect entries that were rejected or not accepted.
-    
+
     Args:
-        entries: List of extracted mutation entries
-        
+        entries: List of entry objects (dataclass) or dicts.
+
     Returns:
         List of rejected entry numbers
     """
     rejected = []
-    
+
     for entry in entries:
-        status = str(entry.get('entry_status', '')).lower()
-        if status in ['rejected', 'not_accepted', 'not accepted']:
-            rejected.append(str(entry.get('entry_number', '')))
-    
+        status = _get_field(entry, 'entry_status').lower()
+        if status in ('rejected', 'not_accepted', 'not accepted'):
+            rejected.append(_get_field(entry, 'entry_number'))
+
     return rejected
 
 

@@ -212,7 +212,13 @@ def parse_pass1_response(response: str) -> Dict:
             # Normalize type
             raw_type = entry.get("type", "")
             if raw_type:
-                entry["type"] = normalize_entry_type(str(raw_type))
+                normalised = normalize_entry_type(str(raw_type))
+                if normalised != str(raw_type).upper().replace(' ', '_'):
+                    logger.debug(
+                        "Pass 1: Entry %s type normalised: %s -> %s",
+                        entry.get("entry_number", "?"), raw_type, normalised,
+                    )
+                entry["type"] = normalised
 
             # Normalize dates
             if "date" in entry:

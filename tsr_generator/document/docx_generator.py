@@ -308,8 +308,9 @@ def add_chain_of_title_section(document, entries, entry_table):
                             # No official found, use simple format
                             certification_text = f"The Entry is {status_word}."
 
-                    # Append certification in the SAME paragraph (matches sample TSR layout)
-                    cert_run = entry_para.add_run(" " + certification_text)
+                    # Certification on new line immediately after description (no gap)
+                    entry_para.add_run("\n")
+                    cert_run = entry_para.add_run(certification_text)
                     cert_run.font.name = 'Times New Roman'
                     cert_run.font.size = Pt(12.5)
             else:
@@ -327,20 +328,8 @@ def add_chain_of_title_section(document, entries, entry_table):
             logger.error(f"Error adding entry {num} to table: {str(e)}")
             continue
 
-    # Detect active encumbrances for note row
-    entry_dicts = []
-    for entry in entries:
-        entry_type = getattr(entry, 'type', '')
-        if hasattr(entry_type, 'value'):
-            entry_type = entry_type.value
-        entry_dicts.append({
-            'entry_number': str(getattr(entry, 'entry_number', '')),
-            'type': str(entry_type),
-            'entry_status': getattr(entry, 'entry_status', ''),
-            'description': getattr(entry, 'formatted_description', '') or getattr(entry, 'description', ''),
-        })
-
-    active_encumbrances, active_entry_nums = detect_active_encumbrances(entry_dicts)
+    # Detect active encumbrances for note row (accepts dataclass objects directly)
+    active_encumbrances, active_entry_nums = detect_active_encumbrances(entries)
 
     note_row_cells = table.add_row().cells
     # First column: empty
