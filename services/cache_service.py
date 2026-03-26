@@ -600,47 +600,211 @@ class CacheService:
             return False
 
 
+class LocalCacheService:
+    """
+    Local filesystem cache service with the same interface as CacheService.
+
+    Stores cached records under LOCAL_CACHE_DIR (default: ~/.cache/gujrat_tsr_agent/cache).
+    Used automatically when GCS_CACHE_BUCKET is not configured.
+    """
+
+    DEFAULT_TTL_DAYS = 7
+    DEFAULT_CACHE_DIR = os.path.join(Path.home(), ".cache", "gujrat_tsr_agent", "cache")
+
+    def __init__(
+        self,
+        cache_dir: Optional[str] = None,
+        ttl_days: int = DEFAULT_TTL_DAYS,
+        logger: Optional[logging.Logger] = None
+    ):
+        self.cache_dir = cache_dir or os.getenv("LOCAL_CACHE_DIR", self.DEFAULT_CACHE_DIR)
+        self.ttl_days = ttl_days
+        self.logger = logger or logging.getLogger(__name__)
+        os.makedirs(self.cache_dir, exist_ok=True)
+        self.logger.info(f"Local cache service initialized at: {self.cache_dir}")
+
+    def generate_cache_key_from_translated(
+        self,
+        translated_district: str,
+        translated_taluka: str,
+        translated_village: str,
+        survey_number: str
+    ) -> str:
+        components = [
+            translated_district.strip().lower(),
+            translated_taluka.strip().lower(),
+            translated_village.strip().lower(),
+            survey_number.strip().lower()
+        ]
+        key_string = "|".join(components)
+        return hashlib.sha256(key_string.encode()).hexdigest()[:32]
+
+    def _entry_dir(self, cache_key: str) -> str:
+        return os.path.join(self.cache_dir, cache_key)
+
+    def _is_cache_valid(self, metadata: Dict[str, Any]) -> bool:
+        try:
+            cached_time = datetime.fromisoformat(metadata.get("timestamp", ""))
+            return datetime.now(timezone.utc) < cached_time + timedelta(days=self.ttl_days)
+        except (ValueError, TypeError):
+            return False
+
+    def get_cached_record_by_key(
+        self,
+        cache_key: str
+    ) -> Optional[Tuple[bytes, Optional[bytes], Dict[str, Any]]]:
+        entry = self._entry_dir(cache_key)
+        metadata_path = os.path.join(entry, "metadata.json")
+        docx_path = os.path.join(entry, "tsr.docx")
+
+        if not os.path.exists(metadata_path):
+            self.logger.debug(f"Local cache miss: {cache_key}")
+            return None
+
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                metadata = json.load(f)
+        except Exception as e:
+            self.logger.warning(f"Could not read local cache metadata: {e}")
+            return None
+
+        if not self._is_cache_valid(metadata):
+            self.logger.info(f"Local cache expired for key {cache_key}")
+            self._cleanup_cache(cache_key)
+            return None
+
+        if not os.path.exists(docx_path):
+            self.logger.warning(f"Local cache incomplete: missing DOCX for {cache_key}")
+            return None
+
+        with open(docx_path, "rb") as f:
+            docx_content = f.read()
+
+        pdf_content = None
+        pdf_path = os.path.join(entry, "original.pdf")
+        if os.path.exists(pdf_path):
+            with open(pdf_path, "rb") as f:
+                pdf_content = f.read()
+
+        self.logger.info(f"Local cache HIT for key {cache_key}")
+        return (docx_content, pdf_content, metadata)
+
+    def cache_record_by_key(
+        self,
+        cache_key: str,
+        original_request: LandRecordRequest,
+        translated_district: str,
+        translated_taluka: str,
+        translated_village: str,
+        docx_content: bytes,
+        pdf_content: Optional[bytes] = None,
+        additional_metadata: Optional[Dict[str, Any]] = None
+    ) -> bool:
+        try:
+            entry = self._entry_dir(cache_key)
+            os.makedirs(entry, exist_ok=True)
+
+            metadata = {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "original_district": original_request.district,
+                "original_taluka": original_request.taluka,
+                "original_village": original_request.village,
+                "survey_number": original_request.survey_number,
+                "translated_district": translated_district,
+                "translated_taluka": translated_taluka,
+                "translated_village": translated_village,
+                "ttl_days": self.ttl_days,
+                "docx_size": len(docx_content),
+                "pdf_size": len(pdf_content) if pdf_content else 0,
+                **(additional_metadata or {})
+            }
+
+            with open(os.path.join(entry, "metadata.json"), "w", encoding="utf-8") as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+            with open(os.path.join(entry, "tsr.docx"), "wb") as f:
+                f.write(docx_content)
+
+            if pdf_content:
+                with open(os.path.join(entry, "original.pdf"), "wb") as f:
+                    f.write(pdf_content)
+
+            self.logger.info(
+                f"Locally cached record {cache_key}: "
+                f"DOCX={len(docx_content)} bytes, PDF={len(pdf_content) if pdf_content else 0} bytes"
+            )
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to write local cache: {e}")
+            return False
+
+    def _cleanup_cache(self, cache_key: str) -> None:
+        import shutil
+        entry = self._entry_dir(cache_key)
+        try:
+            if os.path.exists(entry):
+                shutil.rmtree(entry)
+        except Exception as e:
+            self.logger.warning(f"Failed to clean up local cache {cache_key}: {e}")
+
+    def get_cache_stats(self) -> Dict[str, Any]:
+        try:
+            entries = [d for d in os.listdir(self.cache_dir)
+                       if os.path.isdir(os.path.join(self.cache_dir, d))]
+            total_size = sum(
+                os.path.getsize(os.path.join(self.cache_dir, e, f))
+                for e in entries
+                for f in os.listdir(os.path.join(self.cache_dir, e))
+                if os.path.isfile(os.path.join(self.cache_dir, e, f))
+            )
+            return {
+                "total_cached_records": len(entries),
+                "total_size_bytes": total_size,
+                "total_size_mb": round(total_size / (1024 * 1024), 2),
+                "cache_dir": self.cache_dir,
+                "ttl_days": self.ttl_days
+            }
+        except Exception as e:
+            return {"error": str(e)}
+
+    def check_and_clear_docx_if_new_version(self, current_version: str) -> bool:
+        return False
+
+
 # Singleton instance
-_cache_service: Optional[CacheService] = None
+_cache_service = None
 
 
 def get_cache_service(
     bucket_name: Optional[str] = None,
     ttl_days: int = CacheService.DEFAULT_TTL_DAYS,
     logger: Optional[logging.Logger] = None
-) -> Optional[CacheService]:
+):
     """
     Get or create the global cache service instance.
-    
-    Args:
-        bucket_name: GCS bucket name (required on first call, or from env var)
-        ttl_days: Cache TTL in days
-        logger: Optional logger instance
-        
-    Returns:
-        CacheService instance, or None if bucket not configured
+
+    Returns GCS CacheService if GCS_CACHE_BUCKET is set,
+    otherwise falls back to LocalCacheService.
     """
     global _cache_service
-    
+
     if _cache_service is not None:
         return _cache_service
-    
-    # Get bucket name from argument or environment
+
     bucket_name = bucket_name or os.getenv("GCS_CACHE_BUCKET")
-    
-    if not bucket_name:
-        logging.getLogger(__name__).warning(
-            "Cache service not initialized: GCS_CACHE_BUCKET not configured"
-        )
-        return None
-    
-    try:
-        _cache_service = CacheService(
-            bucket_name=bucket_name,
-            ttl_days=ttl_days,
-            logger=logger
-        )
-        return _cache_service
-    except Exception as e:
-        logging.getLogger(__name__).error(f"Failed to initialize cache service: {e}")
-        return None
+
+    if bucket_name:
+        try:
+            _cache_service = CacheService(
+                bucket_name=bucket_name,
+                ttl_days=ttl_days,
+                logger=logger
+            )
+            return _cache_service
+        except Exception as e:
+            logging.getLogger(__name__).error(f"Failed to initialize GCS cache, falling back to local: {e}")
+
+    # Fallback to local filesystem cache
+    _cache_service = LocalCacheService(ttl_days=ttl_days, logger=logger)
+    return _cache_service
