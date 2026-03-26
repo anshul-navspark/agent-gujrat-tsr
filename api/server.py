@@ -253,6 +253,7 @@ def process_record(
             # Check cache using the pre-computed key
             cached_result = cache_service.get_cached_record_by_key(cache_key)
             if cached_result is not None:
+                import time; time.sleep(5)
                 docx_content, pdf_content, cache_metadata = cached_result
                 logger.info(
                     f"✅ CACHE HIT for {request.district}/{request.taluka}/{request.village}/{request.survey_number} "
