@@ -146,6 +146,7 @@ Other patterns:
 - RELEASE: "That upon receiving an application from [Name] for removing the charge of [Bank], [Branch]. The said exemption of burden has been recorded. Entry No. X."
 - ORDER (government allotment): "That Government survey was conducted and land bearing Survey No. X was allotted to [Name]."
 - ORDER (circular): "That as per Taluka Circular No. X dated Y, Survey No. Z allotted to [Name]."
+- ORDER (error correction): When an order contains corrections for MULTIPLE survey numbers, ONLY include the correction(s) relevant to the subject survey number being investigated. Omit corrections for other survey numbers. Example: "Vide order was passed by the Mamlatdar, Abdasa, vide No. E-Dhara/Record Promulgation/Error Correction/08 dated 30/09/2008, in land bearing Survey No. 26, remove entry 56 and add 165."
 - NOT RELATED: "This Entry is not related to Present Survey Number."
 - PROMULGATION: Extract the FULL procedural text. Include: issuing authority, court name, all order numbers with dates, public notice and objection period, Mamlatdar preparation, Province Office verification, finalization, page/survey range. Do NOT summarize.
 """
