@@ -500,38 +500,81 @@ class FormFiller:
         except TimeoutException:
             self.logger.warning("Survey dropdown options did not populate in time")
             
+        # Build a list of candidate strings to try, including paiki variants.
+        # Gujarat AnyRoR may display "569/p1" as "569/1", "569 પૈકી 1", "569 paiki 1",
+        # "569pk1", or with Gujarati digits. Picking the wrong/first option silently
+        # has caused the wrong parcel (e.g. Gauchar wasteland) to be scraped, so we
+        # try several normalised forms and fail loudly if none match.
+        candidates = self._build_survey_candidates(survey_block_number)
+
         try:
-            result = self.select_dropdown_option(CONFIG['SURVEY_DROPDOWN_ID'], survey_block_number, partial_match=True)
-            if result:
-                self.logger.debug("Survey/Block Number selected successfully")
-            else:
-                self.logger.warning(f"Survey/Block Number not found matching: {survey_block_number}")
-                
-                # If not found by partial match, try to select the first option as fallback
-                dropdown = self.wait.until(
-                    EC.element_to_be_clickable((By.ID, CONFIG['SURVEY_DROPDOWN_ID']))
-                )
-                select = Select(dropdown)
-                if len(select.options) > 1:  # Skip the first option if it's a placeholder
-                    select.select_by_index(1)
-                    self.logger.debug("Selected first available Survey/Block Number as fallback")
+            for candidate in candidates:
+                if self.select_dropdown_option(
+                    CONFIG['SURVEY_DROPDOWN_ID'], candidate, partial_match=True
+                ):
+                    self.logger.debug(
+                        f"Survey/Block Number selected successfully via candidate: {candidate}"
+                    )
                     return True
-            return result
+
+            # No candidate matched. Log the available options to aid debugging
+            # and return False rather than silently selecting the first option,
+            # which previously caused the wrong parcel to be scraped.
+            try:
+                dropdown = self.driver.find_element(By.ID, CONFIG['SURVEY_DROPDOWN_ID'])
+                available = [o.text.strip() for o in Select(dropdown).options]
+            except Exception:
+                available = []
+            self.logger.error(
+                f"Survey/Block Number '{survey_block_number}' not found. "
+                f"Tried candidates: {candidates}. Available options: {available}"
+            )
+            return False
         except Exception as e:
             self.logger.error(f"Error selecting survey number: {str(e)}")
-            # Try to select the first option as fallback
-            try:
-                dropdown = self.wait.until(
-                    EC.element_to_be_clickable((By.ID, CONFIG['SURVEY_DROPDOWN_ID']))
-                )
-                select = Select(dropdown)
-                if len(select.options) > 1:  # Skip the first option if it's a placeholder
-                    select.select_by_index(1)
-                    self.logger.debug("Selected first available Survey/Block Number as fallback after error")
-                    return True
-            except Exception as inner_e:
-                self.logger.error(f"Error in fallback survey selection: {str(inner_e)}")
             return False
+
+    def _build_survey_candidates(self, survey_block_number):
+        """Generate candidate strings for matching a paiki survey number in the dropdown.
+
+        Examples for input "569/p1":
+            ["569/p1", "569/1", "569 પૈકી 1", "569 paiki 1", "569pk1", "5691", "569"]
+
+        For non-paiki inputs (e.g. "568"), returns just [survey_block_number].
+        The base value is always tried first so existing behaviour is preserved.
+        """
+        s = str(survey_block_number).strip()
+        candidates = [s]
+
+        # Detect paiki forms: "569/p1", "569/P2", "569p1", "569pk1"
+        import re
+        m = re.match(r"^(\d+)\s*/?\s*p(?:k)?\s*(\d+)$", s, re.IGNORECASE)
+        if m:
+            base, part = m.group(1), m.group(2)
+            gujarati_digits = str.maketrans("0123456789", "૦૧૨૩૪૫૬૭૮૯")
+            base_g = base.translate(gujarati_digits)
+            part_g = part.translate(gujarati_digits)
+            variants = [
+                # AnyRoR commonly uses Latin "p" + Gujarati digit, e.g. "569/p૧"
+                f"{base}/p{part_g}",
+                f"{base_g}/p{part_g}",
+                f"{base}/{part_g}",
+                f"{base}/{part}",
+                f"{base} પૈકી {part}",
+                f"{base} પેકી {part}",
+                f"{base} paiki {part}",
+                f"{base} Paiki {part}",
+                f"{base}pk{part}",
+                f"{base}/p{part}",
+                f"{base}/P{part}",
+                f"{base}{part}",
+                f"{base_g} પૈકી {part_g}",
+            ]
+            for v in variants:
+                if v not in candidates:
+                    candidates.append(v)
+
+        return candidates
     
     def solve_captcha(self):
         """

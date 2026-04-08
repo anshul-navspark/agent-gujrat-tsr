@@ -316,8 +316,8 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
             ("Village Form No. 8A", "Online", "Not Applicable"),
             ("Old Scanned Village Form No. 7/12 starting from the year 1952 to 2004", "Online", "Not Applicable"),
         ]
-        if profile != "final_sample_v1" and (land_details or {}).get("include_encumbrance_certificate", True):
-            standard_docs.append(("Encumbrance Certificate for a period of 30 Years", "Digital Certified copy", sanitize_text(land_details.get('taluka_name', 'Not Available'))))
+        if (land_details or {}).get("include_encumbrance_certificate", True):
+            standard_docs.append(("Encumbrance Certificate for a period of 30 Years", "Digital Certified copy", sanitize_text((land_details or {}).get('taluka_name', 'Not Available'))))
         
         for doc_type, perusal, office in standard_docs:
             row = docs_table.add_row().cells

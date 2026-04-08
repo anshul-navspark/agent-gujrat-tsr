@@ -43,7 +43,7 @@ from ..utils.retry_utils import retry_with_backoff, RetryableError
 logger = logging.getLogger(__name__)
 
 # Model configuration
-MODEL_NAME = os.getenv('GEMINI_MODEL_NAME', 'gemini-3-pro-preview')
+MODEL_NAME = os.getenv('GEMINI_MODEL_NAME', 'gemini-3.1-pro-preview')
 
 # Feature flag: classify entries about other survey numbers as NOT RELATED
 CLASSIFY_NOT_RELATED_ENTRIES = True
@@ -136,6 +136,7 @@ IMPORTANT for LOAN entries:
 - DO NOT include "agreement dated" or "based on an agreement"
 - DO NOT include total land area or hectare measurements in loan descriptions
 - Just state: borrower name, loan amount, survey numbers, bank name and branch
+- INCLUDE ALL survey numbers listed in the entry's "Other Rights" / બોજા / બીજા હક્ક column, NOT only the subject survey number. A single loan entry frequently encumbers many surveys belonging to the same khata (e.g. "421(608), 422(608), 423(608), 500(608), 501(608), 568(608), 574(715), 602(608), 603(608), 608(608), 609(608)") — output the COMPLETE list exactly as it appears in the source, in the same order, with the khata number in parentheses after each. Do NOT filter, deduplicate, or drop survey numbers just because they differ from the subject survey. The same rule applies to RELEASE / LOAN CLOSE entries that reference the same multi-survey charge.
 
 Other patterns:
 - DEATH: "That upon the demise of [Name], his share in land bearing old Survey No. X(Khata), Y(Khata) came to be mutated in the names of his legal heirs which are as follows:
@@ -146,7 +147,7 @@ Other patterns:
 - RELEASE: "That upon receiving an application from [Name] for removing the charge of [Bank], [Branch]. The said exemption of burden has been recorded. Entry No. X."
 - ORDER (government allotment): "That Government survey was conducted and land bearing Survey No. X was allotted to [Name]."
 - ORDER (circular): "That as per Taluka Circular No. X dated Y, Survey No. Z allotted to [Name]."
-- ORDER (error correction): When an order contains corrections for MULTIPLE survey numbers, ONLY include the correction(s) relevant to the subject survey number being investigated. Omit corrections for other survey numbers. Example: "Vide order was passed by the Mamlatdar, Abdasa, vide No. E-Dhara/Record Promulgation/Error Correction/08 dated 30/09/2008, in land bearing Survey No. 26, remove entry 56 and add 165."
+- ORDER (error correction): Include ALL survey numbers and corrections listed in the order exactly as they appear in the source. Do NOT filter or omit corrections for other survey numbers. Example: "Vide order was passed by the Mamlatdar, Abdasa, vide No. E-Dhara/Record Promulgation/Error Correction/08 dated 30/09/2008, in land bearing Survey No. 26, remove entry 56 and add 165."
 - NOT RELATED: "This Entry is not related to Present Survey Number."
 - PROMULGATION: Extract the FULL procedural text. Include: issuing authority, court name, all order numbers with dates, public notice and objection period, Mamlatdar preparation, Province Office verification, finalization, page/survey range. Do NOT summarize.
 """
@@ -835,6 +836,14 @@ def _filter_description_to_subject_survey(description: str, aliases: set) -> str
 
     original = description
 
+    # --- Strategy 1: comma-separated "Survey No. A, B, C ..." list ---
+    # Match a "Survey No(s)." header followed by a comma-list of >=3 tokens
+    # (tokens can include parenthesised resurvey numbers like "569/p2(922)").
+    list_header_re = re.compile(
+        r"(Survey\s+Nos?\.\s*)"
+        r"((?:[^\s,()]+(?:\([^)]*\))?)(?:\s*,\s*[^\s,()]+(?:\([^)]*\))?){2,})"
+    )
+
     def _token_base(tok: str) -> str:
         # Strip a trailing "(...)" resurvey qualifier to get the base survey id.
         return re.sub(r"\([^)]*\)$", "", tok).strip()
@@ -844,12 +853,6 @@ def _filter_description_to_subject_survey(description: str, aliases: set) -> str
         # Exact match only — substring matching would let parent "569" match
         # sibling subdivisions like "569/p1".
         return base in aliases or tok in aliases
-
-    # --- Strategy 1: comma-separated "Survey No. A, B, C ..." list ---
-    list_header_re = re.compile(
-        r"(Survey\s+Nos?\.\s*)"
-        r"((?:[^\s,()]+(?:\([^)]*\))?)(?:\s*,\s*[^\s,()]+(?:\([^)]*\))?){2,})"
-    )
 
     def _keep_in_list(match: "re.Match") -> str:
         header = match.group(1)
@@ -990,6 +993,34 @@ def extract_all_structured(pdf_text: str) -> StructuredExtractionResult:
 
         # ---- Merge & Render ----
         merged_dicts = _merge_pass2_into_entries(classified_entries, pass2_fields)
+
+        # Trim multi-survey listings in descriptions down to the subject survey.
+        # Runs after merge so it operates on the final rendered description.
+        # Safe by construction: falls back to original text if no match.
+        try:
+            subject_survey = ""
+            sns = pass1_land.get("survey_numbers") if isinstance(pass1_land, dict) else None
+            if sns:
+                subject_survey = str(sns[0])
+            aliases = _compute_survey_aliases(subject_survey, pdf_text)
+            if aliases:
+                trimmed = 0
+                for ed in merged_dicts:
+                    desc = ed.get("description", "")
+                    if not desc:
+                        continue
+                    new_desc = _filter_description_to_subject_survey(desc, aliases)
+                    if new_desc != desc:
+                        ed["description"] = new_desc
+                        trimmed += 1
+                if trimmed:
+                    logger.info(
+                        "Survey filter: trimmed %d/%d entry descriptions to subject survey %s",
+                        trimmed, len(merged_dicts), subject_survey,
+                    )
+        except Exception as e:
+            logger.warning("Survey filter skipped due to error: %s", e)
+
         result.mutation_entries = merged_dicts  # raw dicts for backward compat
 
         # Create typed entry objects
