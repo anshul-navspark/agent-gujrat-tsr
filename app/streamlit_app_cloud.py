@@ -77,7 +77,7 @@ logging.basicConfig(
 # USE_INPROCESS=true runs the FastAPI app inside this Streamlit process
 # (no remote backend). Used when GCP Cloud Run is unavailable and the
 # Streamlit Cloud container should serve everything itself.
-use_inprocess = str(st.secrets.get("USE_INPROCESS", "false")).lower() in ("1", "true", "yes")
+use_inprocess = str(st.secrets.get("USE_INPROCESS", "true")).lower() in ("1", "true", "yes")
 api_url = st.secrets.get("API_URL", "https://agent-gujarat-tsr-642363716512.asia-south1.run.app")
 api_timeout = int(st.secrets.get("API_TIMEOUT", 1200))
 max_retries = int(st.secrets.get("API_MAX_RETRIES", 2))
