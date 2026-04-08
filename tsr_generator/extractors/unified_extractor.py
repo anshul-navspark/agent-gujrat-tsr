@@ -345,6 +345,34 @@ def extract_all_unified(pdf_text: str) -> UnifiedExtractionResult:
             result.mutation_entries = parsed_data.get('mutation_entries', [])
             _normalize_mutation_entries(result.mutation_entries)
 
+            # Trim multi-survey listings in entry descriptions down to the
+            # subject survey. Safe by construction — falls back to original
+            # text if filtering would produce nothing meaningful.
+            try:
+                subject_survey = (result.land_details or {}).get("survey_number", "")
+                # land_details may hold a comma-joined string; use the first one
+                if subject_survey and "," in subject_survey:
+                    subject_survey = subject_survey.split(",")[0].strip()
+                aliases = _compute_survey_aliases(subject_survey, pdf_text)
+                if aliases:
+                    trimmed = 0
+                    for ed in result.mutation_entries:
+                        for key in ("description", "formatted_description", "raw_description"):
+                            desc = ed.get(key, "") if isinstance(ed, dict) else ""
+                            if not desc:
+                                continue
+                            new_desc = _filter_description_to_subject_survey(desc, aliases)
+                            if new_desc != desc:
+                                ed[key] = new_desc
+                                trimmed += 1
+                    if trimmed:
+                        logger.info(
+                            "Survey filter: trimmed %d field(s) to subject survey %s",
+                            trimmed, subject_survey,
+                        )
+            except Exception as e:
+                logger.warning("Survey filter skipped due to error: %s", e)
+
             # Ensure all pre-detected entry numbers are included
             # NO: Do not force include hints as they might be years/survey numbers (false positives)
             # _ensure_all_entries_included(result, entry_numbers_hint)
@@ -764,6 +792,96 @@ def _convert_land_details_for_compat(pass1_land: Dict) -> Dict[str, str]:
             compat[key] = translate_gujarati_text(compat[key])
 
     return compat
+
+
+def _compute_survey_aliases(subject_survey: str, pdf_text: str) -> set:
+    """
+    Build a match set for the subject survey, including parent and
+    parenthetical resurvey aliases actually observed in the PDF.
+
+    E.g. subject "569/p2" in a PDF containing "569/p2(922)" and "569(320)"
+    yields {"569/p2", "569", "569p2", "569/p2(922)", "569(320)", "922", "320"}.
+    """
+    aliases: set = set()
+    if not subject_survey:
+        return aliases
+    s = subject_survey.strip()
+    aliases.add(s)
+    aliases.add(s.replace(" ", ""))
+    aliases.add(s.replace("/", ""))
+    # Parent survey (strip "/pN" subdivision suffix)
+    parent = re.sub(r"/p\d+$", "", s, flags=re.IGNORECASE)
+    if parent and parent != s:
+        aliases.add(parent)
+    # Parenthetical resurvey aliases from the PDF text, e.g. "569/p2(922)"
+    for alias in list(aliases):
+        for m in re.finditer(re.escape(alias) + r"\((\d+)\)", pdf_text):
+            aliases.add(m.group(0))
+            aliases.add(m.group(1))
+    return {a for a in aliases if a}
+
+
+def _filter_description_to_subject_survey(description: str, aliases: set) -> str:
+    """
+    Trim multi-survey listings in an entry description down to fragments that
+    reference the subject survey (per the alias match set).
+
+    Safety valve: if filtering would leave the description empty or materially
+    shorter than a sentence, return the original text unchanged. This means
+    the filter can only trim verbose entries, never silently drop information.
+    """
+    if not description or not aliases:
+        return description
+
+    original = description
+
+    def _token_base(tok: str) -> str:
+        # Strip a trailing "(...)" resurvey qualifier to get the base survey id.
+        return re.sub(r"\([^)]*\)$", "", tok).strip()
+
+    def _token_matches(tok: str) -> bool:
+        base = _token_base(tok)
+        # Exact match only — substring matching would let parent "569" match
+        # sibling subdivisions like "569/p1".
+        return base in aliases or tok in aliases
+
+    # --- Strategy 1: comma-separated "Survey No. A, B, C ..." list ---
+    list_header_re = re.compile(
+        r"(Survey\s+Nos?\.\s*)"
+        r"((?:[^\s,()]+(?:\([^)]*\))?)(?:\s*,\s*[^\s,()]+(?:\([^)]*\))?){2,})"
+    )
+
+    def _keep_in_list(match: "re.Match") -> str:
+        header = match.group(1)
+        list_part = match.group(2)
+        tokens = [t.strip() for t in list_part.split(",")]
+        kept = [t for t in tokens if _token_matches(t)]
+        if not kept:
+            return match.group(0)  # fallback: leave untouched
+        return header + ", ".join(kept)
+
+    description = list_header_re.sub(_keep_in_list, description)
+
+    # --- Strategy 2: repeated "Survey No. X old area ... new area ..." rows ---
+    row_re = re.compile(
+        r"Survey\s+No\.\s*(\S+?)\s+old\s+area\s+[\d.\-]+\s+new\s+area\s+[\d.\-]+\.?",
+        re.IGNORECASE,
+    )
+    rows = list(row_re.finditer(description))
+    if len(rows) > 1:
+        kept_rows = [
+            m.group(0) for m in rows
+            if _token_matches(m.group(1))
+        ]
+        if kept_rows:
+            start = rows[0].start()
+            end = rows[-1].end()
+            description = description[:start] + " ".join(kept_rows) + description[end:]
+
+    # Safety valve — never return something truncated into meaninglessness.
+    if len(description.strip()) < 20:
+        return original
+    return description
 
 
 def extract_all_structured(pdf_text: str) -> StructuredExtractionResult:

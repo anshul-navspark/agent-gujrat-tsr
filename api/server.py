@@ -94,6 +94,7 @@ class LandRecordRequest(BaseModel):
     village: str
     survey_number: str
     output_format: str = "zip"  # Added to support returning just docx
+    skip_cache: bool = False  # When true, bypass cache read and write
 
 
 @app.post("/generate-tsr")
@@ -241,7 +242,7 @@ def process_record(
     # ===== CACHE CHECK =====
     # Check cache using translated (Gujarati) values for the cache key
     # This ensures cache hits work correctly regardless of English spelling variations
-    if cache_service is not None:
+    if cache_service is not None and not request.skip_cache:
         try:
             # Generate cache key from translated Gujarati values
             cache_key = cache_service.generate_cache_key_from_translated(
@@ -398,7 +399,7 @@ def process_record(
         
         # ===== CACHE STORE =====
         # Store the result in cache using translated values for the key
-        if cache_service is not None:
+        if cache_service is not None and not request.skip_cache:
             try:
                 # Use same cache key generation as lookup (based on translated Gujarati values)
                 cache_service.cache_record_by_key(
