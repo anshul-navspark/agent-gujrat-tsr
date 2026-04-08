@@ -487,7 +487,9 @@ def debug_environment():
         "python_version": platform.python_version(),
         "environment_variables": {
             "GEMINI_API_KEY": "SET" if os.getenv("GEMINI_API_KEY") else "NOT SET",
-            "GEMINI_MODEL_NAME": os.getenv("GEMINI_MODEL_NAME", "default: gemini-2.5-flash"),
+            "GEMINI_MODEL_NAME": os.getenv("GEMINI_MODEL_NAME", "default: gemini-3.1-pro-preview"),
+            "CAPTCHA_MODEL_NAME": os.getenv("CAPTCHA_MODEL_NAME", "default: gemini-3-flash-preview"),
+            "GEMINI_TRANSLATION_MODEL": os.getenv("GEMINI_TRANSLATION_MODEL", "default: gemini-3.1-flash-lite-preview"),
             "CHROME_BIN": os.getenv("CHROME_BIN", "NOT SET"),
             "CHROMEDRIVER_PATH": os.getenv("CHROMEDRIVER_PATH", "NOT SET"),
             "GCS_CACHE_BUCKET": os.getenv("GCS_CACHE_BUCKET", "NOT SET"),

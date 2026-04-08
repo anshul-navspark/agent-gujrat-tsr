@@ -218,3 +218,123 @@ class TSRAPIClient:
             return error_data.get('detail', f"HTTP {response.status_code}")
         except:
             return f"HTTP {response.status_code}: {response.text[:200]}"
+
+
+class InProcessTSRClient(TSRAPIClient):
+    """
+    Drop-in replacement for TSRAPIClient that runs the FastAPI app in-process
+    via fastapi.testclient.TestClient. No HTTP, no remote backend — used when
+    the Streamlit app must serve everything itself (e.g. Streamlit Community
+    Cloud hosting without GCP Cloud Run).
+
+    Preserves the exact API semantics (caching, translation, scraping) because
+    it invokes the real FastAPI handlers via ASGI.
+    """
+
+    def __init__(self, timeout: int = 1200, max_retries: int = 2):
+        # api_url is a marker so the session-state equality check in
+        # streamlit_app_cloud.py still works.
+        super().__init__(api_url="inprocess://local", timeout=timeout, max_retries=max_retries)
+        from fastapi.testclient import TestClient
+        from api.server import app
+        self._client = TestClient(app)
+        self.logger.info("InProcessTSRClient initialized — using in-process FastAPI app")
+
+    def health_check(self) -> bool:
+        try:
+            r = self._client.get("/health")
+            return r.status_code == 200
+        except Exception as e:
+            self.logger.error(f"In-process health check failed: {e}")
+            return False
+
+    def process_record(
+        self,
+        district: str,
+        taluka: str,
+        village: str,
+        survey_number: str,
+    ) -> APIResponse:
+        payload = {
+            "district": district,
+            "taluka": taluka,
+            "village": village,
+            "survey_number": survey_number,
+        }
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                self.logger.info(
+                    f"Processing record in-process (attempt {attempt + 1}/{self.max_retries + 1}): "
+                    f"{district}, {taluka}, {village}, {survey_number}"
+                )
+                response = self._client.post(
+                    "/process-record",
+                    json=payload,
+                    timeout=self.timeout,
+                )
+
+                if response.status_code == 200:
+                    cache_status = response.headers.get("x-cache-status", "UNKNOWN")
+                    cache_timestamp = response.headers.get("x-cache-timestamp", "")
+                    if cache_status == "HIT":
+                        self.logger.info(f"✅ CACHE HIT (cached: {cache_timestamp})")
+                    elif cache_status == "MISS":
+                        self.logger.info("❌ CACHE MISS - Record fetched from source")
+
+                    docx_content = None
+                    pdf_content = None
+                    content_type = response.headers.get("content-type", "")
+                    if "application/zip" in content_type:
+                        try:
+                            with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+                                for filename in zf.namelist():
+                                    if filename.endswith(".docx") and not filename.startswith("~"):
+                                        docx_content = zf.read(filename)
+                                    elif filename.endswith(".pdf"):
+                                        pdf_content = zf.read(filename)
+                        except Exception as e:
+                            self.logger.error(f"Failed to extract ZIP response: {e}")
+                            return APIResponse(
+                                success=False,
+                                error=f"Failed to process response: {str(e)}",
+                                status_code=200,
+                            )
+                    else:
+                        docx_content = response.content
+
+                    return APIResponse(
+                        success=True,
+                        docx_content=docx_content,
+                        pdf_content=pdf_content,
+                        status_code=200,
+                        cache_hit=(cache_status == "HIT"),
+                    )
+
+                # Non-200
+                try:
+                    error_msg = response.json().get("detail", f"HTTP {response.status_code}")
+                except Exception:
+                    error_msg = f"HTTP {response.status_code}: {response.text[:200]}"
+                self.logger.error(f"In-process API returned error: {error_msg}")
+
+                if 400 <= response.status_code < 500:
+                    return APIResponse(success=False, error=error_msg, status_code=response.status_code)
+
+                if attempt < self.max_retries:
+                    wait_time = 2 ** attempt
+                    self.logger.warning(f"Retrying in {wait_time} seconds...")
+                    time.sleep(wait_time)
+                    continue
+
+                return APIResponse(success=False, error=error_msg, status_code=response.status_code)
+
+            except Exception as e:
+                error_msg = f"In-process call error: {str(e)}"
+                self.logger.error(error_msg)
+                if attempt < self.max_retries:
+                    time.sleep(2 ** attempt)
+                    continue
+                return APIResponse(success=False, error=error_msg)
+
+        return APIResponse(success=False, error="Max retries exceeded")

@@ -18,13 +18,28 @@ if _project_root not in sys.path:
 import streamlit as st
 import pandas as pd
 
-# Set up environment variables for translation utils if needed
-if "GEMINI_API_KEY" in st.secrets:
-    os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
+# Bridge Streamlit secrets -> os.environ so the rest of the codebase (scraper,
+# captcha solver, extractors, translation utils — all of which read via
+# os.getenv) picks them up without any further changes. This matters especially
+# in in-process mode, where there is no Cloud Run env block setting these.
+_SECRET_ENV_KEYS = (
+    "GEMINI_API_KEY",
+    "GEMINI_MODEL_NAME",
+    "CAPTCHA_MODEL_NAME",
+    "USE_OPTIMIZED_EXTRACTION",
+    "GCS_CACHE_BUCKET",
+    "HEADLESS",
+    "MAX_WORKERS",
+    "CHROME_BIN",
+    "CHROMEDRIVER_PATH",
+)
+for _k in _SECRET_ENV_KEYS:
+    if _k in st.secrets and st.secrets[_k] not in (None, ""):
+        os.environ[_k] = str(st.secrets[_k])
 
 # Import core services and components (AFTER sys.path is set up)
 from core.models import LandRecordRequest as CoreLandRecordRequest
-from app.api_client import TSRAPIClient, APIResponse
+from app.api_client import TSRAPIClient, InProcessTSRClient, APIResponse
 from services.file_service import get_file_service
 
 # Component imports
@@ -59,16 +74,27 @@ logging.basicConfig(
 )
 
 # Configuration from secrets
+# USE_INPROCESS=true runs the FastAPI app inside this Streamlit process
+# (no remote backend). Used when GCP Cloud Run is unavailable and the
+# Streamlit Cloud container should serve everything itself.
+use_inprocess = str(st.secrets.get("USE_INPROCESS", "false")).lower() in ("1", "true", "yes")
 api_url = st.secrets.get("API_URL", "https://agent-gujarat-tsr-642363716512.asia-south1.run.app")
 api_timeout = int(st.secrets.get("API_TIMEOUT", 1200))
 max_retries = int(st.secrets.get("API_MAX_RETRIES", 2))
 max_workers = int(st.secrets.get("MAX_WORKERS", 30))
 
+effective_api_url = "inprocess://local" if use_inprocess else api_url
+
 # Initialize API client if needed
-if st.session_state.api_client is None or st.session_state.api_client.api_url != api_url:
-    st.session_state.api_client = TSRAPIClient(
-        api_url=api_url, timeout=api_timeout, max_retries=max_retries
-    )
+if st.session_state.api_client is None or st.session_state.api_client.api_url != effective_api_url:
+    if use_inprocess:
+        st.session_state.api_client = InProcessTSRClient(
+            timeout=api_timeout, max_retries=max_retries
+        )
+    else:
+        st.session_state.api_client = TSRAPIClient(
+            api_url=api_url, timeout=api_timeout, max_retries=max_retries
+        )
 
 # Initialize file service (global singleton)
 file_service = get_file_service()

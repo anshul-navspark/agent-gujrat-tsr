@@ -66,7 +66,9 @@ GCS-based with 7-day TTL. Cache key is SHA256 of district+taluka+village+survey_
 ## Key Environment Variables
 
 - `GEMINI_API_KEY` — required, Google Gemini API key
-- `GEMINI_MODEL_NAME` — default: `gemini-3-pro-preview`
+- `GEMINI_MODEL_NAME` — main extraction model, default: `gemini-3.1-pro-preview`
+- `CAPTCHA_MODEL_NAME` — captcha solver model, default: `gemini-3-flash-preview`
+- `GEMINI_TRANSLATION_MODEL` — translation lookup model, default: `gemini-3.1-flash-lite-preview`
 - `USE_OPTIMIZED_EXTRACTION` — default: `true`
 - `GCS_CACHE_BUCKET` — optional, enables GCS caching
 - `HEADLESS` — browser headless mode for scraping

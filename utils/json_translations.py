@@ -29,8 +29,7 @@ class JSONTranslationSystem:
         self.hierarchy = self._load_json()
         # Use a cheaper/faster model for simple translation matching tasks
         # Falls back to the main model if not set
-        translation_model = os.getenv('GEMINI_TRANSLATION_MODEL', 
-                                       os.getenv('GEMINI_MODEL_NAME', 'gemini-2.0-flash'))
+        translation_model = os.getenv('GEMINI_TRANSLATION_MODEL', 'gemini-3.1-flash-lite-preview')
         self.llm = ChatGoogleGenerativeAI(
             model=translation_model,
             google_api_key=os.getenv('GEMINI_API_KEY'),
