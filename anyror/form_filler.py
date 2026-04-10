@@ -37,66 +37,71 @@ class FormFiller:
         self.logger = logger or logging.getLogger(__name__)
     
     def navigate_to_form(self):
-        """Navigate to the AnyRoR form page."""
+        """Navigate to the AnyRoR form page with retry logic for slow connections."""
         self.logger.debug(f"Navigating to AnyRoR website: {CONFIG['URL']}")
         
-        try:
-            # First try the direct land record URL
-            self.driver.get(CONFIG['URL'])
-            time.sleep(2)  # Wait for initial load
-            
-            # Check if we need to navigate to the correct page
-            current_url = self.driver.current_url
-            if 'LandRecordRural.aspx' not in current_url:
-                self.logger.debug("Not on land record page, trying alternative navigation")
-                
-                # Try clicking the land record link if present
-                try:
-                    land_record_link = self.driver.find_element(By.XPATH, "//a[contains(text(), 'Land Record')]")
-                    land_record_link.click()
-                    time.sleep(2)
-                except Exception as e:
-                    self.logger.warning(f"Could not find land record link: {str(e)}")
-            
-            # Wait for the page to load and verify we're on the correct page
+        max_nav_retries = 3
+        for attempt in range(max_nav_retries):
             try:
-                # Wait for the land record type dropdown
-                self.wait.until(
-                    EC.presence_of_element_located((By.ID, CONFIG['LAND_RECORD_TYPE_ID']))
-                )
+                # First try the direct land record URL
+                # If first attempt times out, try using JavaScript navigation on the second
+                if attempt == 0:
+                    self.driver.get(CONFIG['URL'])
+                else:
+                    self.logger.warning(f"Retry attempt {attempt+1}: Navigating via JavaScript")
+                    self.driver.execute_script(f"window.location.href = '{CONFIG['URL']}';")
                 
-                # Log the current URL and page title for debugging
-                self.logger.debug(f"Current URL: {self.driver.current_url}")
-                self.logger.debug(f"Page Title: {self.driver.title}")
+                # Check for "invalid response" or "site under maintenance" common issues
+                time.sleep(3)  # Wait for initial load
                 
-                # Check if the dropdown is actually visible
-                dropdown = self.driver.find_element(By.ID, CONFIG['LAND_RECORD_TYPE_ID'])
-                if not dropdown.is_displayed():
-                    self.logger.warning("Land record dropdown is present but not visible")
+                # Check if we need to navigate to the correct page
+                current_url = self.driver.current_url
+                if 'LandRecordRural.aspx' not in current_url:
+                    self.logger.debug("Not on land record page, trying alternative navigation")
                     
-                # Get all dropdown options for debugging
-                select = Select(dropdown)
-                options = [f"{o.get_attribute('value')}: {o.text}" for o in select.options]
-                self.logger.debug(f"Available options in land record dropdown: {options}")
+                    # Try clicking the land record link if present
+                    try:
+                        land_record_link = self.driver.find_element(By.XPATH, "//a[contains(text(), 'Land Record')]")
+                        land_record_link.click()
+                        time.sleep(2)
+                    except Exception as e:
+                        self.logger.warning(f"Could not find land record link: {str(e)}")
                 
-            except Exception as e:
-                self.logger.error(f"Error waiting for land record form: {str(e)}")
-                self.logger.error(traceback.format_exc())
-                
-                # Try to get the page source for debugging
+                # Wait for the page to load and verify we're on the correct page
                 try:
-                    self.logger.debug(f"Page source: {self.driver.page_source[:1000]}...")
-                except:
-                    pass
-                
-                raise
+                    # Wait for the land record type dropdown
+                    self.wait.until(
+                        EC.presence_of_element_located((By.ID, CONFIG['LAND_RECORD_TYPE_ID']))
+                    )
+                    
+                    # Log the current URL and page title for debugging
+                    self.logger.debug(f"Current URL: {self.driver.current_url}")
+                    self.logger.debug(f"Page Title: {self.driver.title}")
+                    
+                    # Check if the dropdown is actually visible
+                    dropdown = self.driver.find_element(By.ID, CONFIG['LAND_RECORD_TYPE_ID'])
+                    if not dropdown.is_displayed():
+                        self.logger.warning("Land record dropdown is present but not visible")
+                        
+                    # Get all dropdown options for debugging
+                    select = Select(dropdown)
+                    options = [f"{o.get_attribute('value')}: {o.text}" for o in select.options]
+                    self.logger.debug(f"Available options in land record dropdown: {options}")
+                    
+                    # If we reach here, navigation was successful
+                    self.logger.debug("Successfully navigated to the land record form page")
+                    return
+                    
+                except Exception as e:
+                    self.logger.error(f"Error waiting for land record form (attempt {attempt+1}): {str(e)}")
+                    if attempt == max_nav_retries - 1:
+                        raise
             
-            self.logger.debug("Successfully navigated to the land record form page")
-            
-        except Exception as e:
-            self.logger.error(f"Error navigating to form page: {str(e)}")
-            self.logger.error(traceback.format_exc())
-            raise
+            except Exception as e:
+                self.logger.error(f"Navigation attempt {attempt+1} failed: {str(e)}")
+                if attempt == max_nav_retries - 1:
+                    raise
+                time.sleep(2 ** attempt)  # Exponential backoff
     
     def select_land_record_type(self):
         """Select the land record type."""

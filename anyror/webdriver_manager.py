@@ -141,12 +141,17 @@ class WebDriverManager:
         chrome_options.add_argument("--disable-extensions")
         chrome_options.add_argument("--disable-browser-side-navigation")
         chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+        
+        # CRITICAL FOR STREAMLIT CLOUD: Use 'eager' strategy so we don't wait for 
+        # slow tracking scripts/images to finish before returning control to Python.
+        chrome_options.page_load_strategy = 'eager'
+        
         chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
         chrome_options.add_experimental_option("useAutomationExtension", False)
         
         return chrome_options
     
-    def initialize_webdriver(self, headless=True, timeout=30):
+    def initialize_webdriver(self, headless=True, timeout=120):
         """Initialize and return a Chrome WebDriver with various fallback mechanisms."""
         self.headless = headless  # Store headless setting
         
@@ -173,7 +178,8 @@ class WebDriverManager:
                 try:
                     driver = approach(chrome_options)
                     if driver:
-                        # Set script timeout
+                        # Set timeouts
+                        driver.set_page_load_timeout(timeout)
                         driver.set_script_timeout(timeout)
                         # Test if driver is responsive
                         driver.execute_script("return document.readyState")
