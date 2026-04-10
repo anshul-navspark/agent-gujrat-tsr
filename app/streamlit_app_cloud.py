@@ -56,8 +56,17 @@ st.set_page_config(page_title="Gujarat TSR Agent", page_icon="📄", layout="cen
 # You can define ALLOWED_EMAILS in your Streamlit Secrets.
 allowed_emails = st.secrets.get("ALLOWED_EMAILS", ["your-github-email@example.com"])
 is_owner = False
-if hasattr(st, "user") and st.user.email in allowed_emails:
-    is_owner = True
+
+# Safely check for st.user and the email attribute
+if hasattr(st, "user") and st.user:
+    try:
+        user_email = st.user.get("email")
+        if user_email in allowed_emails:
+            is_owner = True
+    except (KeyError, AttributeError):
+        # Fallback if email is not available in user info
+        pass
+
 # Fallback for local testing or explicit secret
 if st.secrets.get("DEV_MODE", "false").lower() == "true":
     is_owner = True
