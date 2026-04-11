@@ -116,7 +116,7 @@ class ScrapingService(IScrapingService):
         """Close the scraper and clean up resources."""
         if self._scraper:
             try:
-                self._scraper.web_driver_manager.close()
+                self._scraper.cleanup()
                 self.logger.debug("Closed scraper")
             except Exception as e:
                 self.logger.warning(f"Error closing scraper: {e}")

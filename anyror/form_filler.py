@@ -36,71 +36,102 @@ class FormFiller:
         self.captcha_solver = captcha_solver
         self.logger = logger or logging.getLogger(__name__)
     
+    def _log_page_diagnostics(self, context: str):
+        """Log diagnostic info about the current page state for debugging Cloud failures."""
+        try:
+            current_url = self.driver.current_url
+            page_title = self.driver.title
+            ready_state = self.driver.execute_script("return document.readyState")
+            body_length = self.driver.execute_script("return document.body ? document.body.innerHTML.length : 0")
+            select_ids = self.driver.execute_script(
+                "return Array.from(document.querySelectorAll('select')).map(s => s.id)"
+            )
+            self.logger.error(
+                f"[{context}] URL={current_url} | title={page_title} | "
+                f"readyState={ready_state} | bodyLen={body_length} | selects={select_ids}"
+            )
+            # If the body is tiny, the page probably didn't load at all
+            if body_length < 500:
+                snippet = self.driver.execute_script(
+                    "return document.body ? document.body.innerHTML.substring(0, 500) : '(no body)'"
+                )
+                self.logger.error(f"[{context}] Page body snippet: {snippet}")
+        except Exception as diag_err:
+            self.logger.error(f"[{context}] Failed to collect diagnostics: {diag_err}")
+
     def navigate_to_form(self):
         """Navigate to the AnyRoR form page with retry logic for slow connections."""
-        self.logger.debug(f"Navigating to AnyRoR website: {CONFIG['URL']}")
-        
+        self.logger.info(f"Navigating to AnyRoR website: {CONFIG['URL']}")
+
         max_nav_retries = 3
         for attempt in range(max_nav_retries):
             try:
-                # First try the direct land record URL
-                # If first attempt times out, try using JavaScript navigation on the second
-                if attempt == 0:
+                if attempt > 0:
+                    self.logger.warning(f"Retry attempt {attempt+1}/{max_nav_retries}")
+                    # On retry, do a fresh driver.get() instead of JS navigation
+                    # JS navigation doesn't trigger a full page reload and can leave
+                    # the page in a broken state if the previous load timed out
+                    self.driver.delete_all_cookies()
+
+                try:
                     self.driver.get(CONFIG['URL'])
-                else:
-                    self.logger.warning(f"Retry attempt {attempt+1}: Navigating via JavaScript")
-                    self.driver.execute_script(f"window.location.href = '{CONFIG['URL']}';")
-                
-                # Check for "invalid response" or "site under maintenance" common issues
-                time.sleep(3)  # Wait for initial load
-                
+                except TimeoutException:
+                    # page_load_timeout fired - the page is still loading but we
+                    # can check what we have so far (eager strategy may have given
+                    # us a partial DOM)
+                    self.logger.warning(
+                        f"Page load timed out on attempt {attempt+1}, "
+                        f"checking if DOM is usable anyway"
+                    )
+
+                # Wait for initial load
+                time.sleep(3)
+
                 # Check if we need to navigate to the correct page
                 current_url = self.driver.current_url
                 if 'LandRecordRural.aspx' not in current_url:
-                    self.logger.debug("Not on land record page, trying alternative navigation")
-                    
-                    # Try clicking the land record link if present
+                    self.logger.warning(f"Not on land record page (URL: {current_url}), trying alternative navigation")
+
                     try:
                         land_record_link = self.driver.find_element(By.XPATH, "//a[contains(text(), 'Land Record')]")
                         land_record_link.click()
                         time.sleep(2)
                     except Exception as e:
                         self.logger.warning(f"Could not find land record link: {str(e)}")
-                
+
                 # Wait for the page to load and verify we're on the correct page
+                # Use a shorter per-attempt timeout (30s) so retries happen faster
+                per_attempt_wait = WebDriverWait(self.driver, 30)
                 try:
-                    # Wait for the land record type dropdown
-                    self.wait.until(
+                    per_attempt_wait.until(
                         EC.presence_of_element_located((By.ID, CONFIG['LAND_RECORD_TYPE_ID']))
                     )
-                    
-                    # Log the current URL and page title for debugging
-                    self.logger.debug(f"Current URL: {self.driver.current_url}")
-                    self.logger.debug(f"Page Title: {self.driver.title}")
-                    
-                    # Check if the dropdown is actually visible
+
+                    self.logger.info(f"Page loaded: URL={self.driver.current_url}, title={self.driver.title}")
+
                     dropdown = self.driver.find_element(By.ID, CONFIG['LAND_RECORD_TYPE_ID'])
                     if not dropdown.is_displayed():
                         self.logger.warning("Land record dropdown is present but not visible")
-                        
-                    # Get all dropdown options for debugging
+
                     select = Select(dropdown)
                     options = [f"{o.get_attribute('value')}: {o.text}" for o in select.options]
                     self.logger.debug(f"Available options in land record dropdown: {options}")
-                    
-                    # If we reach here, navigation was successful
-                    self.logger.debug("Successfully navigated to the land record form page")
+
+                    self.logger.info("Successfully navigated to the land record form page")
                     return
-                    
+
                 except Exception as e:
+                    self._log_page_diagnostics(f"attempt {attempt+1}")
                     self.logger.error(f"Error waiting for land record form (attempt {attempt+1}): {str(e)}")
                     if attempt == max_nav_retries - 1:
                         raise
-            
+
             except Exception as e:
-                self.logger.error(f"Navigation attempt {attempt+1} failed: {str(e)}")
                 if attempt == max_nav_retries - 1:
+                    self._log_page_diagnostics("final failure")
+                    self.logger.error(f"Navigation attempt {attempt+1} failed: {str(e)}")
                     raise
+                self.logger.error(f"Navigation attempt {attempt+1} failed: {str(e)}")
                 time.sleep(2 ** attempt)  # Exponential backoff
     
     def select_land_record_type(self):

@@ -56,12 +56,10 @@ class AnyRoRScraper:
                 self.logger.warning(f"AnyRoRScraper: Error during cleanup: {e}")
             finally:
                 self.driver = None
-        
-        if self.web_driver_manager:
-            try:
-                self.web_driver_manager.close()
-            except Exception as e:
-                self.logger.warning(f"AnyRoRScraper: Error closing WebDriverManager: {e}")
+                # Clear the web_driver_manager's reference too so its close()
+                # doesn't try to quit the same driver again
+                if self.web_driver_manager:
+                    self.web_driver_manager.driver = None
     
     def fetch_land_record(self, district_name, taluka_name, village_name, survey_block_number, output_path):
         """
