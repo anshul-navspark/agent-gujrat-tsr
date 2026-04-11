@@ -59,9 +59,61 @@ class FormFiller:
         except Exception as diag_err:
             self.logger.error(f"[{context}] Failed to collect diagnostics: {diag_err}")
 
+    def _preflight_check(self):
+        """Check if the AnyRoR site is reachable via plain HTTP before using Chrome.
+
+        This distinguishes between Chrome-specific issues (sandbox, proxy config)
+        and system-wide network problems (DNS, firewall, geo-blocking).
+        Logs results but does not block - purely diagnostic.
+        """
+        import socket
+        import urllib.request
+        import urllib.error
+        url = CONFIG['URL']
+        host = 'anyror.gujarat.gov.in'
+
+        # Step 1: DNS resolution
+        try:
+            ip = socket.getaddrinfo(host, 443, socket.AF_INET)[0][4][0]
+            self.logger.info(f"Preflight DNS OK: {host} -> {ip}")
+        except socket.gaierror as e:
+            self.logger.error(f"Preflight DNS FAILED: {host} cannot be resolved: {e}")
+            return False
+
+        # Step 2: TCP connection
+        try:
+            sock = socket.create_connection((host, 443), timeout=10)
+            sock.close()
+            self.logger.info(f"Preflight TCP OK: {host}:443 is reachable")
+        except (socket.timeout, OSError) as e:
+            self.logger.error(f"Preflight TCP FAILED: {host}:443 connection failed: {e}")
+            return False
+
+        # Step 3: HTTP request
+        try:
+            req = urllib.request.Request(url, method='HEAD')
+            req.add_header('User-Agent', 'Mozilla/5.0')
+            resp = urllib.request.urlopen(req, timeout=15)
+            self.logger.info(f"Preflight HTTP OK: {url} returned HTTP {resp.status}")
+            return True
+        except urllib.error.URLError as e:
+            self.logger.error(f"Preflight HTTP FAILED: {url} is unreachable: {e}")
+            return False
+        except Exception as e:
+            self.logger.warning(f"Preflight inconclusive: {e}")
+            return True
+
     def navigate_to_form(self):
         """Navigate to the AnyRoR form page with retry logic for slow connections."""
         self.logger.info(f"Navigating to AnyRoR website: {CONFIG['URL']}")
+
+        # Diagnostic: check if the site is reachable outside Chrome
+        site_reachable = self._preflight_check()
+        if not site_reachable:
+            self.logger.error(
+                "AnyRoR site is unreachable via Python. This is a network/DNS issue, "
+                "not a Chrome issue. The site may block cloud IPs."
+            )
 
         max_nav_retries = 3
         for attempt in range(max_nav_retries):
