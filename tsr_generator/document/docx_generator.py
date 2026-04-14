@@ -107,6 +107,21 @@ def add_section_heading(doc, text, level=1, numbered=True):
     
     return heading
 
+def _number_names_after_follows(description: str) -> str:
+    """Number newline-separated names that appear after 'as follows:' or 'as follows:-' in entry descriptions."""
+    pattern = re.compile(r'(as follows:[-]?\s*\n)((?:.+\n?)+?)(\nThe Entry is|\Z)', re.IGNORECASE)
+
+    def replacer(m):
+        prefix = m.group(1)
+        names_block = m.group(2)
+        suffix = m.group(3)
+        names = [n for n in names_block.splitlines() if n.strip()]
+        numbered = "\n".join(f"{i}. {n.strip()}" for i, n in enumerate(names, 1))
+        return prefix + numbered + suffix
+
+    return pattern.sub(replacer, description)
+
+
 def add_chain_of_title_section(document, entries, entry_table):
     """
     Add Chain of Title section with a two-column table format where:
@@ -204,8 +219,13 @@ def add_chain_of_title_section(document, entries, entry_table):
             for j, width in enumerate(col_widths):
                 table.rows[-1].cells[j].width = Inches(width)
             
-            # First column: empty (manual versions leave this column empty)
+            # First column: row number
             row_cells[0].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+            num_para = row_cells[0].paragraphs[0]
+            num_run = num_para.add_run(f"{row_index}.")
+            num_run.bold = True
+            num_run.font.name = 'Times New Roman'
+            num_run.font.size = Pt(12.5)
             
             # Second column: Entry details
             entry_para = row_cells[1].paragraphs[0]
@@ -213,7 +233,8 @@ def add_chain_of_title_section(document, entries, entry_table):
             if entry:
                 # Existing entry logic
                 safe_date = entry.date if getattr(entry, 'date', '') else ""
-                header_text = f"Entry No. {entry.entry_number} Dated {safe_date} "
+                date_str = f" {safe_date}" if safe_date else ""
+                header_text = f"Entry No. {entry.entry_number} Dated{date_str} "
                 header_run = entry_para.add_run(header_text)
                 header_run.bold = True
                 header_run.font.name = 'Times New Roman'
@@ -224,14 +245,15 @@ def add_chain_of_title_section(document, entries, entry_table):
                 description = description.strip()
                 if description and not description.startswith("That"):
                     description = f"That {description}"
+                description = _number_names_after_follows(description)
                 desc_run = entry_para.add_run(description)
                 desc_run.font.name = 'Times New Roman'
                 desc_run.font.size = Pt(12.5)
                 
                 # Format the entry paragraph
-                entry_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+                entry_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
                 entry_para.paragraph_format.line_spacing = 1.15
-                
+
                 # Add certification: use existing cert or default for non-promulgation entries
                 _entry_type_val = entry.type.value if hasattr(entry.type, 'value') else str(entry.type)
                 _skip_cert_types = ['Promulgation', 'Not Related', 'PROMULGATION', 'NOT_RELATED']
@@ -308,11 +330,16 @@ def add_chain_of_title_section(document, entries, entry_table):
                             # No official found, use simple format
                             certification_text = f"The Entry is {status_word}."
 
-                    # Certification on new line immediately after description (no gap)
-                    entry_para.add_run("\n")
-                    cert_run = entry_para.add_run(certification_text)
+                    # Certification in a separate paragraph to avoid justification stretching
+                    # the last line of the description (soft line breaks cause JUSTIFY to
+                    # stretch that line; a true paragraph end does not).
+                    cert_para = row_cells[1].add_paragraph()
+                    cert_run = cert_para.add_run(certification_text)
                     cert_run.font.name = 'Times New Roman'
                     cert_run.font.size = Pt(12.5)
+                    cert_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+                    cert_para.paragraph_format.line_spacing = 1.15
+                    cert_para.paragraph_format.space_before = Pt(0)
             else:
                 # Placeholder logic
                 header_text = f"Entry No. {num} Dated : "
