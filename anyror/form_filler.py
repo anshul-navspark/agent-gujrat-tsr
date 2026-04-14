@@ -60,48 +60,84 @@ class FormFiller:
             self.logger.error(f"[{context}] Failed to collect diagnostics: {diag_err}")
 
     def _preflight_check(self):
-        """Check if the AnyRoR site is reachable via plain HTTP before using Chrome.
+        """Check if the AnyRoR site is reachable via Python and Chrome.
 
-        This distinguishes between Chrome-specific issues (sandbox, proxy config)
-        and system-wide network problems (DNS, firewall, geo-blocking).
-        Logs results but does not block - purely diagnostic.
+        Tests both Python sockets (informational) and Chrome's own network stack
+        (authoritative for scraping).  On IPv6-only hosts (e.g. Streamlit Cloud)
+        the Python TCP check may fail while Chrome succeeds via NAT64 — the Chrome
+        result is what determines the return value.
         """
         import socket
         import urllib.request
         import urllib.error
         url = CONFIG['URL']
         host = 'anyror.gujarat.gov.in'
+        python_ok = False
 
-        # Step 1: DNS resolution
+        # Step 1: DNS resolution — AF_UNSPEC so DNS64 returns NAT64-mapped
+        # addresses on IPv6-only hosts instead of raw IPv4.
         try:
-            ip = socket.getaddrinfo(host, 443, socket.AF_INET)[0][4][0]
-            self.logger.info(f"Preflight DNS OK: {host} -> {ip}")
+            addrs = socket.getaddrinfo(host, 443, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            addr_strs = [sa[0] for (af, _st, _pr, _cn, sa) in addrs]
+            self.logger.info(f"Preflight DNS OK: {host} -> {addr_strs}")
         except socket.gaierror as e:
             self.logger.error(f"Preflight DNS FAILED: {host} cannot be resolved: {e}")
-            return False
+            addrs = []
 
-        # Step 2: TCP connection
-        try:
-            sock = socket.create_connection((host, 443), timeout=10)
-            sock.close()
-            self.logger.info(f"Preflight TCP OK: {host}:443 is reachable")
-        except (socket.timeout, OSError) as e:
-            self.logger.error(f"Preflight TCP FAILED: {host}:443 connection failed: {e}")
-            return False
+        # Step 2: TCP connection — try every resolved address so NAT64-mapped
+        # IPv6 addresses are attempted on IPv6-only hosts.
+        if addrs:
+            for af, socktype, proto, _cn, sa in addrs:
+                try:
+                    sock = socket.socket(af, socktype, proto)
+                    sock.settimeout(10)
+                    sock.connect(sa)
+                    sock.close()
+                    self.logger.info(f"Preflight TCP OK: {host}:443 reachable via {sa[0]}")
+                    python_ok = True
+                    break
+                except OSError as e:
+                    self.logger.warning(f"Preflight TCP: {sa[0]}:{sa[1]} failed: {e}")
+            if not python_ok:
+                self.logger.error(
+                    f"Preflight TCP FAILED: {host}:443 unreachable from Python "
+                    f"(all addresses tried). May be an IPv6-only host without NAT64."
+                )
 
-        # Step 3: HTTP request
+        # Step 3: Python HTTP (only if TCP worked — otherwise skip to Chrome)
+        if python_ok:
+            try:
+                req = urllib.request.Request(url, method='HEAD')
+                req.add_header('User-Agent', 'Mozilla/5.0')
+                resp = urllib.request.urlopen(req, timeout=15)
+                self.logger.info(f"Preflight HTTP OK: {url} returned HTTP {resp.status}")
+            except Exception as e:
+                self.logger.warning(f"Preflight HTTP FAILED: {url}: {e}")
+                python_ok = False
+
+        # Step 4: Chrome connectivity test (authoritative).
+        # Uses JavaScript fetch() so there are no navigation side-effects.
+        # Chrome has its own network stack and may reach the site via NAT64
+        # even when Python sockets cannot.
         try:
-            req = urllib.request.Request(url, method='HEAD')
-            req.add_header('User-Agent', 'Mozilla/5.0')
-            resp = urllib.request.urlopen(req, timeout=15)
-            self.logger.info(f"Preflight HTTP OK: {url} returned HTTP {resp.status}")
-            return True
-        except urllib.error.URLError as e:
-            self.logger.error(f"Preflight HTTP FAILED: {url} is unreachable: {e}")
-            return False
+            script = """
+            var done = arguments[0];
+            fetch(arguments[1], {method: 'HEAD', mode: 'no-cors', cache: 'no-store'})
+                .then(function() { done({ok: true, error: null}); })
+                .catch(function(e) { done({ok: false, error: e.toString()}); });
+            """
+            result = self.driver.execute_async_script(script, url)
+            if result and result.get('ok'):
+                self.logger.info("Preflight Chrome OK: fetch() reached the site")
+                return True
+            else:
+                err = result.get('error') if result else 'no result'
+                self.logger.error(f"Preflight Chrome FAILED: fetch() error: {err}")
         except Exception as e:
-            self.logger.warning(f"Preflight inconclusive: {e}")
-            return True
+            self.logger.warning(f"Preflight Chrome test inconclusive: {e}")
+
+        # Fall back to Python result if Chrome test was inconclusive
+        return python_ok
 
     def navigate_to_form(self):
         """Navigate to the AnyRoR form page with retry logic for slow connections."""
@@ -111,8 +147,8 @@ class FormFiller:
         site_reachable = self._preflight_check()
         if not site_reachable:
             self.logger.error(
-                "AnyRoR site is unreachable via Python. This is a network/DNS issue, "
-                "not a Chrome issue. The site may block cloud IPs."
+                "AnyRoR site is unreachable via both Python and Chrome. "
+                "Likely cause: IPv6-only host without NAT64, or site blocking cloud IPs."
             )
 
         max_nav_retries = 3
