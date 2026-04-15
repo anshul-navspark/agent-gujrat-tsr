@@ -122,6 +122,80 @@ def _number_names_after_follows(description: str) -> str:
     return pattern.sub(replacer, description)
 
 
+def _parse_survey_correction_table(description):
+    """Detect the 'Survey No. / Error / Correction' inline-table pattern in an entry description.
+
+    Returns (pre_text, rows, post_text) where rows is a list of dicts with keys
+    'survey_no', 'error', 'correction', or None if the pattern is not present.
+    """
+    MARKER = "Survey No. / Error / Correction"
+    idx = description.find(MARKER)
+    if idx == -1:
+        return None
+
+    pre_text = description[:idx].rstrip(": ")
+    after_marker = description[idx + len(MARKER):].strip()
+
+    # Each entry looks like: "98/p10 ! 98/p25 / Survey No. 98/p10"
+    row_re = re.compile(
+        r'(\S+/\S+)\s*!\s*(\S+/\S+)\s*/\s*Survey No\.\s*(\S+?)(?=[,\.])'
+    )
+    rows = []
+    last_end = 0
+    for m in row_re.finditer(after_marker):
+        rows.append({
+            'survey_no': m.group(1),
+            'error': m.group(2),
+            'correction': f"Survey No. {m.group(3)}",
+        })
+        last_end = m.end()
+
+    if not rows:
+        return None
+
+    post_text = after_marker[last_end:].lstrip('., ').strip()
+    return pre_text, rows, post_text
+
+
+def _add_nested_table_to_cell(cell, document, headers, rows_data):
+    """Insert a small bordered table inside a table cell.
+
+    Creates the table in the document body, then moves its XML element
+    into the cell before the cell's final paragraph (Word requires tc
+    to end with a w:p element).
+    """
+    from docx.oxml.ns import qn
+
+    nested = document.add_table(rows=0, cols=len(headers))
+    nested.style = 'Table Grid'
+
+    # Header row
+    hdr_row = nested.add_row()
+    for i, hdr in enumerate(headers):
+        c = hdr_row.cells[i]
+        c.paragraphs[0].clear()
+        run = c.paragraphs[0].add_run(hdr)
+        run.bold = True
+        run.font.name = 'Times New Roman'
+        run.font.size = Pt(11)
+
+    # Data rows
+    for rd in rows_data:
+        dr = nested.add_row()
+        for i, val in enumerate(rd.values()):
+            c = dr.cells[i]
+            c.paragraphs[0].clear()
+            run = c.paragraphs[0].add_run(val)
+            run.font.name = 'Times New Roman'
+            run.font.size = Pt(11)
+
+    # Move tbl XML from document body into the cell (before last w:p)
+    tbl_el = nested._tbl
+    tbl_el.getparent().remove(tbl_el)
+    last_p = cell._tc.findall(qn('w:p'))[-1]
+    cell._tc.insert(list(cell._tc).index(last_p), tbl_el)
+
+
 def add_chain_of_title_section(document, entries, entry_table):
     """
     Add Chain of Title section with a two-column table format where:
@@ -164,13 +238,13 @@ def add_chain_of_title_section(document, entries, entry_table):
     
     # Add header row with explanatory text
     header_row_cells = table.add_row().cells
-    
+
     # Set cell widths for the header row
     for i, width in enumerate(col_widths):
         table.rows[-1].cells[i].width = Inches(width)
-    
+
     # First column is empty
-    
+
     # Second column: Add explanatory text
     header_text = "Brief history and flow of title with respect to Immovable Properties \u2013 For 30 Year Period - Based on perusal of the documents referred in S. No. 2 above."
     header_para = header_row_cells[1].paragraphs[0]
@@ -178,7 +252,7 @@ def add_chain_of_title_section(document, entries, entry_table):
     header_run.bold = True
     header_run.font.name = 'Times New Roman'
     header_run.font.size = Pt(12.5)
-    
+
     # Format the header paragraph
     header_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
     header_para.paragraph_format.line_spacing = 1.15
@@ -240,16 +314,43 @@ def add_chain_of_title_section(document, entries, entry_table):
                 header_run.font.name = 'Times New Roman'
                 header_run.font.size = Pt(12.5)
                 
-                # Add description
+                # Add description — detect inline survey-correction table
                 description = entry.formatted_description or ""
                 description = description.strip()
                 if description and not description.startswith("That"):
                     description = f"That {description}"
                 description = _number_names_after_follows(description)
-                desc_run = entry_para.add_run(description)
-                desc_run.font.name = 'Times New Roman'
-                desc_run.font.size = Pt(12.5)
-                
+
+                parsed = _parse_survey_correction_table(description)
+                if parsed:
+                    pre_text, corr_rows, post_text = parsed
+                    # Write pre-table text into entry_para
+                    desc_run = entry_para.add_run(pre_text)
+                    desc_run.font.name = 'Times New Roman'
+                    desc_run.font.size = Pt(12.5)
+                    entry_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+                    entry_para.paragraph_format.line_spacing = 1.15
+
+                    # Insert nested table in the cell
+                    _add_nested_table_to_cell(
+                        row_cells[1], document,
+                        headers=['Survey No.', 'Error', 'Correction'],
+                        rows_data=corr_rows,
+                    )
+
+                    # Any text after the table (rare) goes in a new paragraph
+                    if post_text:
+                        post_para = row_cells[1].add_paragraph()
+                        post_run = post_para.add_run(post_text)
+                        post_run.font.name = 'Times New Roman'
+                        post_run.font.size = Pt(12.5)
+                        post_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+                        post_para.paragraph_format.line_spacing = 1.15
+                else:
+                    desc_run = entry_para.add_run(description)
+                    desc_run.font.name = 'Times New Roman'
+                    desc_run.font.size = Pt(12.5)
+
                 # Format the entry paragraph
                 entry_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
                 entry_para.paragraph_format.line_spacing = 1.15

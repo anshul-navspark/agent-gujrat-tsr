@@ -141,16 +141,20 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         
         # Add introduction
         doc.add_paragraph("Dear Sir,")
+        village_name = sanitize_text(land_details.get('village_name', 'Not Available')).title()
+        taluka_name  = sanitize_text(land_details.get('taluka_name',  'Not Available')).title()
+        district_name = sanitize_text(land_details.get('district_name', 'Not Available')).title()
+
         if profile == "final_sample_v1":
             intro_text = (
                 f"We have been engaged as per above subject reference for the Title Investigation of land situated at "
-                f"Village- {sanitize_text(land_details.get('village_name', 'Not Available'))}, "
-                f"Taluka-{sanitize_text(land_details.get('taluka_name', 'Not Available'))}, "
-                f"District- {sanitize_text(land_details.get('district_name', 'Not Available'))} (Gujrat). "
+                f"Village- {village_name}, "
+                f"Taluka-{taluka_name}, "
+                f"District- {district_name} (Gujrat). "
                 f"Our detailed report and findings are as under: -"
             )
         else:
-            intro_text = f"     We have been engaged for the Title Investigation of land situated at Village- {sanitize_text(land_details.get('village_name', 'Not Available'))}, Taluka-{sanitize_text(land_details.get('taluka_name', 'Not Available'))}, District- {sanitize_text(land_details.get('district_name', 'Not Available'))}. Our detailed report and findings are as under:"
+            intro_text = f"     We have been engaged for the Title Investigation of land situated at Village- {village_name}, Taluka-{taluka_name}, District- {district_name}. Our detailed report and findings are as under:"
 
         doc.add_paragraph(intro_text)
         
@@ -160,8 +164,8 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
             "Description, nature, and area of land with survey/plot numbers",
             numbered=True,
         )
-        if profile == "final_sample_v1":
-            doc.add_paragraph("The Borrower has acquired/purchased the Immovable Properties description whereof (including the names of the Title Holders/Sellers) have been tabulated hereinbelow:")
+        if False:  # removed: "The Borrower has acquired/purchased..." line
+            pass
         
         # Create property details table
         property_table = doc.add_table(rows=1, cols=5)

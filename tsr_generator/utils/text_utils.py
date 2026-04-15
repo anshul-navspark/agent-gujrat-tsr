@@ -54,7 +54,10 @@ def sanitize_text(text):
     # If string became empty after sanitizing, return placeholder
     if not sanitized.strip():
         return "Not Available"
-    
+
+    # Convert any Gujarati numerals that slipped through (e.g. "532/p૧" → "532/p1")
+    sanitized = convert_gujarati_to_english_numerals(sanitized)
+
     return sanitized
 
 def translate_gujarati_text(text):
