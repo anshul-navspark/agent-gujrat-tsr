@@ -111,10 +111,6 @@ Certification output formats:
 - Always output certification dates in 4-digit year format (DD/MM/YYYY).
 - Default if unclear: entry_status: "" (empty)
 
-SPECIAL RULE FOR PROMULGATION ENTRIES: 
-- For PROMULGATION type entries, certification should be just "The Entry is certified." 
-- Do NOT include certifier name or certification date for promulgation entries.
-
 IMPORTANT: Do NOT output "certified" if the Gujarati text contains રદ, ના મંજૂર, or નામંજુર!
 
 CERTIFICATION EXTRACTION IS REQUIRED:
@@ -714,7 +710,7 @@ def _merge_pass2_into_entries(
             "certification_status": p1.get("certification_status", ""),
             "certification_official": p1.get("certification_official", ""),
             "certification_date": p1.get("certification_date", ""),
-            "entry_status": p1.get("certification_status", ""),
+            "entry_status": p1.get("entry_status", "") or p1.get("certification_status", ""),
         }
 
         # Merge Pass 2 fields (if available)
@@ -761,21 +757,21 @@ def _convert_land_details_for_compat(pass1_land: Dict) -> Dict[str, str]:
         val = pass1_land.get(key, "")
         compat[key] = convert_gujarati_to_english_numerals(str(val)) if val else "Not Available"
 
-    # survey_numbers list -> comma-joined string
+    # survey_numbers list -> comma-joined string (convert Gujarati numerals per item)
     sns = pass1_land.get("survey_numbers", [])
     if isinstance(sns, list) and sns:
-        compat["survey_number"] = ", ".join(str(s) for s in sns)
+        compat["survey_number"] = ", ".join(convert_gujarati_to_english_numerals(str(s)) for s in sns)
     else:
-        compat["survey_number"] = str(sns) if sns else "Not Available"
+        compat["survey_number"] = convert_gujarati_to_english_numerals(str(sns)) if sns else "Not Available"
 
     # old_survey_numbers list -> comma-joined string
     old_sns = pass1_land.get("old_survey_numbers", [])
     if isinstance(old_sns, list) and old_sns:
-        compat["old_survey_number"] = ", ".join(str(s) for s in old_sns)
+        compat["old_survey_number"] = ", ".join(convert_gujarati_to_english_numerals(str(s)) for s in old_sns)
     else:
-        compat["old_survey_number"] = str(old_sns) if old_sns else "Not Available"
+        compat["old_survey_number"] = convert_gujarati_to_english_numerals(str(old_sns)) if old_sns else "Not Available"
 
-    # owners list -> comma-joined string
+    # owners list -> comma-joined string (no numeral conversion needed for names)
     owners = pass1_land.get("owners", [])
     if isinstance(owners, list) and owners:
         compat["owner"] = ", ".join(str(o) for o in owners)

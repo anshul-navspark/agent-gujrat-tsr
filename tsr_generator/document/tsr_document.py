@@ -164,9 +164,6 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
             "Description, nature, and area of land with survey/plot numbers",
             numbered=True,
         )
-        if False:  # removed: "The Borrower has acquired/purchased..." line
-            pass
-        
         # Create property details table
         property_table = doc.add_table(rows=1, cols=5)
         property_table.style = 'Table Grid'
