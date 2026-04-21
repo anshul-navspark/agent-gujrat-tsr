@@ -133,17 +133,8 @@ class JSONTranslationSystem:
             else:
                 self.logger.warning(f"Cache match '{gujarati}' for '{english_text}' does not match context '{context}'")
         
-        # Try fuzzy match in cache (before AI) - only within the correct context
-        self.logger.debug(f"No exact match for '{english_text}', trying fuzzy match in context '{context}'")
-        gujarati = self._fuzzy_match(english_text, context)
-        if gujarati:
-            self.logger.info(f"Fuzzy matched '{english_text}' → '{gujarati}'")
-            self._add_spelling_variation(english_text, gujarati, context)
-            self._translation_cache[cache_key] = gujarati
-            return gujarati
-        
-        # Try AI-assisted dictionary search
-        self.logger.debug(f"No fuzzy match for '{english_text}', trying AI-assisted search")
+        # Try AI-assisted dictionary search (skip fuzzy — low-threshold fuzzy causes wrong matches)
+        self.logger.debug(f"No exact match for '{english_text}', trying AI-assisted search")
         gujarati = self._ai_find_match(english_text, context)
         
         if gujarati:

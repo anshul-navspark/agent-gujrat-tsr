@@ -116,9 +116,16 @@ class FormFiller:
                 python_ok = False
 
         # Step 4: Chrome connectivity test (authoritative).
-        # Uses JavaScript fetch() so there are no navigation side-effects.
-        # Chrome has its own network stack and may reach the site via NAT64
-        # even when Python sockets cannot.
+        # Only run when Python TCP failed — on IPv6-only hosts (e.g. Streamlit Cloud)
+        # Python sockets can't reach IPv4 sites but Chrome can via NAT64.
+        # When Python already confirmed reachability, skip this — the JS fetch()
+        # to anyror.gujarat.gov.in always hangs in headless Chrome (the site stalls
+        # HEAD requests from automated browsers), wasting 120s and risking session
+        # corruption when the script timeout fires.
+        if python_ok:
+            self.logger.info("Preflight: Python confirmed reachability, skipping Chrome test")
+            return True
+
         try:
             script = """
             var done = arguments[0];
@@ -126,7 +133,13 @@ class FormFiller:
                 .then(function() { done({ok: true, error: null}); })
                 .catch(function(e) { done({ok: false, error: e.toString()}); });
             """
-            result = self.driver.execute_async_script(script, url)
+            # Use a short timeout so a hung fetch() aborts cleanly without
+            # blocking ChromeDriver's HTTP server for 120s (which corrupts the session).
+            self.driver.set_script_timeout(10)
+            try:
+                result = self.driver.execute_async_script(script, url)
+            finally:
+                self.driver.set_script_timeout(120)
             if result and result.get('ok'):
                 self.logger.info("Preflight Chrome OK: fetch() reached the site")
                 return True

@@ -1,11 +1,12 @@
 """
 Enhanced village matching utility for AnyRoR dropdown selection.
-Helps with fuzzy matching when exact village names don't match dropdown options.
+Helps with matching when exact village names don't match dropdown options.
+Falls back to LLM when exact/partial strategies fail.
 """
 
 import logging
-from typing import List, Optional, Tuple
-import difflib
+import os
+from typing import List, Optional
 import re
 import unicodedata
 
@@ -82,98 +83,68 @@ class VillageNameMatcher:
                 self.logger.debug(f"Found case-insensitive partial match: {option}")
                 return option
         
-        # Strategy 6: Fuzzy matching using difflib
-        matches = difflib.get_close_matches(target_clean, available_options, n=3, cutoff=0.6)
-        if matches:
-            best_match = matches[0]
-            self.logger.debug(f"Found fuzzy match: {best_match}")
-            return best_match
-        
-        # Strategy 7: Word-based matching (split by spaces and check individual words)
-        target_words = set(target_clean.lower().split())
-        best_score = 0
-        best_option = None
-        
-        for option in available_options:
-            option_words = set(option.strip().lower().split())
-            # Calculate Jaccard similarity
-            intersection = len(target_words.intersection(option_words))
-            union = len(target_words.union(option_words))
-            if union > 0:
-                score = intersection / union
-                if score > best_score and score > 0.3:  # At least 30% similarity
-                    best_score = score
-                    best_option = option
-        
-        if best_option:
-            self.logger.debug(f"Found word-based match with score {best_score:.2f}: {best_option}")
-            return best_option
+        # Strategy 6: LLM-based matching — ask the model to pick from dropdown options
+        self.logger.debug(f"Exact/partial strategies failed for '{target_village}', trying LLM match")
+        llm_match = self._llm_match(target_village, available_options)
+        if llm_match:
+            self.logger.info(f"LLM matched '{target_village}' → '{llm_match}'")
+            return llm_match
 
-        # Strategy 7.5: Split by " - " or "-" to handle Name-Code mismatch
-        # E.g Target: "Village - 001", Option: "Village" 
-        # Or Target: "Village", Option: "Village - 001"
-        target_parts = re.split(r'\s*-\s*', target_clean)
-        target_name_only = target_parts[0].strip() if target_parts else target_clean
-        
-        if len(target_name_only) > 1:
-            for option in available_options:
-                option_clean = normalize_text(option)
-                option_parts = re.split(r'\s*-\s*', option_clean)
-                option_name_only = option_parts[0].strip() if option_parts else option_clean
-                
-                # Compare name parts
-                if target_name_only == option_name_only:
-                     self.logger.debug(f"Found match by name part splitting: {option}")
-                     return option
-                
-                if target_name_only.lower() == option_name_only.lower():
-                     self.logger.debug(f"Found match by name part splitting (case-insensitive): {option}")
-                     return option
-
-        
-        # Strategy 8: Enhanced Gujarati-English transliteration matching
-        # Common transliteration mappings
-        transliteration_map = {
-            'hothiji': 'હોથીજી',
-            'khadaba': 'ખડબા',
-            'khadba': 'ખડબા',
-            'trambo': 'ત્રંબો',
-            'trambau': 'ત્રંબો',
-            'abdasa': 'અબડાસા',
-            'kutch': 'કચ્છ',
-            'jamnagar': 'જામનગર'
-        }
-        
-        # Try to find matches using transliteration
-        target_lower = target_clean.lower()
-        for option in available_options:
-            option_lower = option.strip().lower()
-            
-            # Check if any part of the target transliterates to something in the option
-            for eng, guj in transliteration_map.items():
-                if eng in target_lower and guj in option:
-                    self.logger.debug(f"Found transliteration match: {option} (matched {eng} → {guj})")
-                    return option
-        
-        # Strategy 9: Pattern matching for codes (like "- 034")
-        # If target contains only letters, look for similar letters with codes
-        if re.match(r'^[a-zA-Z\s]+$', target_clean):
-            # Remove common words and look for the main part
-            main_words = [w for w in target_clean.lower().split() if w not in ['village', 'gram', 'gam']]
-            if main_words:
-                main_part = ' '.join(main_words)
-                for option in available_options:
-                    # Extract the name part before any dash/code
-                    option_name = re.split(r'\s*-\s*\d+', option)[0].strip()
-                    if option_name and len(option_name) > 2:
-                        # Use fuzzy matching on the name part
-                        similarity = difflib.SequenceMatcher(None, main_part.lower(), option_name.lower()).ratio()
-                        if similarity > 0.4:  # Lower threshold for cross-language matching
-                            self.logger.debug(f"Found pattern match: {option} (similarity: {similarity:.2f})")
-                            return option
-        
         self.logger.warning(f"No suitable match found for village: {target_village}")
         return None
+
+    def _llm_match(self, target_village: str, available_options: List[str]) -> Optional[str]:
+        """Use LLM to pick the best matching dropdown option for a village name."""
+        try:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            from dotenv import load_dotenv
+            load_dotenv()
+
+            model_name = os.getenv('GEMINI_TRANSLATION_MODEL', 'gemini-3.1-flash-lite-preview')
+            llm = ChatGoogleGenerativeAI(
+                model=model_name,
+                google_api_key=os.getenv('GEMINI_API_KEY'),
+                temperature=0.0,
+            )
+
+            # Limit options sent to LLM to keep prompt short
+            options_text = "\n".join(f"{i+1}. {opt}" for i, opt in enumerate(available_options[:80]))
+
+            prompt = f"""You are a Gujarat place name expert. A user is looking for village "{target_village}" in an AnyRoR dropdown.
+
+The dropdown options (in Gujarati with codes) are:
+{options_text}
+
+Which option best matches "{target_village}"? Consider phonetic similarity and transliteration variations.
+
+Rules:
+- Return ONLY the exact text of the matching option (copy it exactly as shown above)
+- If no option is a reasonable match, return exactly: NO_MATCH
+
+Best match:"""
+
+            response = llm.invoke(prompt)
+            result = response.content.strip()
+
+            if result in ("NO_MATCH", "NO MATCH"):
+                self.logger.info(f"LLM found no match for '{target_village}'")
+                return None
+
+            # Verify result is actually one of the options
+            if result in available_options:
+                return result
+
+            # Allow for minor whitespace differences
+            for opt in available_options:
+                if opt.strip() == result.strip():
+                    return opt
+
+            self.logger.warning(f"LLM returned '{result}' which is not in available options")
+            return None
+
+        except Exception as e:
+            self.logger.error(f"LLM village match failed: {e}")
+            return None
     
     def get_match_strategies_report(self, target_village: str, available_options: List[str]) -> str:
         """
@@ -211,9 +182,9 @@ class VillageNameMatcher:
         partial_matches = [opt for opt in available_options if target_clean in opt.strip()]
         report.append(f"Partial matches (target in option): {partial_matches[:5]}")
         
-        # Fuzzy matches
-        fuzzy_matches = difflib.get_close_matches(target_clean, available_options, n=5, cutoff=0.5)
-        report.append(f"Fuzzy matches (cutoff=0.5): {fuzzy_matches}")
+        # LLM match (best effort)
+        llm_match = self._llm_match(target_clean, available_options)
+        report.append(f"LLM match: {llm_match}")
         
         return "\n".join(report)
 
