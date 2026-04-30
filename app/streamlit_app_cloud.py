@@ -10,10 +10,10 @@ from datetime import datetime
 from pathlib import Path
 
 # CRITICAL: Add project root to sys.path BEFORE any project imports
-# This must happen before importing any project modules
 _project_root = str(Path(__file__).resolve().parents[1])
-if _project_root not in sys.path:
-    sys.path.insert(0, _project_root)
+for _p in [_project_root, "/app"]:
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 import streamlit as st
 import pandas as pd
