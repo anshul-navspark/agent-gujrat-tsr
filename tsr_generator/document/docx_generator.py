@@ -415,8 +415,12 @@ def add_chain_of_title_section(document, entries, entry_table):
             if entry:
                 # Existing entry logic
                 safe_date = entry.date if getattr(entry, 'date', '') else ""
-                date_str = f" {safe_date}" if safe_date else ""
-                header_text = f"Entry No. {entry.entry_number} Dated{date_str} "
+                # Elide " Dated " when no date — avoids "Entry No. X Dated That ..."
+                header_text = (
+                    f"Entry No. {entry.entry_number} Dated {safe_date} "
+                    if safe_date
+                    else f"Entry No. {entry.entry_number} "
+                )
                 header_run = entry_para.add_run(header_text)
                 header_run.bold = True
                 header_run.font.name = 'Times New Roman'

@@ -92,6 +92,7 @@ Formatting Rules:
 18. Always use 4-digit years (DD/MM/YYYY). Never use 2-digit years (DD/MM/YY).
 19. Include Khata number in parentheses after each survey number when visible in the source document, e.g., "5/2(28), 193p1(28)". If no Khata number is visible, omit parentheses.
 20. Translate "Prant Officer" / "પ્રાંત અધિકારી" as "Province Officer". Use "Province Officer" and "Province court" consistently.
+21. BOREWELL NAMING: Always use the full word "Borewell" with hyphenated number — "Borewell-1", "Borewell-2". NEVER write "Bore-1", "bore-1", "pucca bore-1", "1 pucca borewell", "pucca borewell-1". The Gujarati "પાકાે બાેર - ૧" / "પાકાે બાેર" / "બાેર ૧" all map to "Borewell-1" (drop "pucca"; that adjective is implicit).
 """
 
 # Certification patterns (~150 tokens)
