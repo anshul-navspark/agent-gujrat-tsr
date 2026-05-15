@@ -188,18 +188,44 @@ def add_section_heading(doc, text, level=1, numbered=True):
     return heading
 
 def _number_names_after_follows(description: str) -> str:
-    """Number newline-separated names that appear after 'as follows:' or 'as follows:-' in entry descriptions."""
-    pattern = re.compile(r'(as follows:[-]?\s*\n)((?:.+\n?)+?)(\nThe Entry is|\Z)', re.IGNORECASE)
+    """Number newline-separated rows that appear after 'as follows:' / 'as under:'.
 
-    def replacer(m):
-        prefix = m.group(1)
-        names_block = m.group(2)
-        suffix = m.group(3)
-        names = [n for n in names_block.splitlines() if n.strip()]
-        numbered = "\n".join(f"{i}. {n.strip()}" for i, n in enumerate(names, 1))
-        return prefix + numbered + suffix
+    The list ends at the first blank line, the closing 'The distribution/Partition…'
+    sentence, the certification line, or end-of-string — whichever comes first.
+    Strips any leading 'N.' the LLM may have already added so we don't double-number.
+    """
+    leading_num_re = re.compile(r'^\s*\d+\.\s*')
+    lead_in_re = re.compile(r'as (?:follows|under):[-]?\s*$', re.IGNORECASE)
+    stop_re = re.compile(
+        r'^\s*The (?:Entry|distribution|Partition|partition|above|said)\b|^\s*Note\b',
+        re.IGNORECASE,
+    )
 
-    return pattern.sub(replacer, description)
+    lines = description.split('\n')
+    out = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        if not lead_in_re.search(line):
+            i += 1
+            continue
+
+        j = i + 1
+        rows = []
+        while j < len(lines):
+            row_raw = lines[j]
+            row = row_raw.strip()
+            if not row or stop_re.match(row_raw):
+                break
+            rows.append(leading_num_re.sub('', row))
+            j += 1
+
+        for idx, row in enumerate(rows, 1):
+            out.append(f"{idx}. {row}")
+        i = j
+
+    return '\n'.join(out)
 
 
 def _parse_survey_correction_table(description):

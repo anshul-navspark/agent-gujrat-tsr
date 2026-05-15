@@ -139,7 +139,19 @@ Other patterns:
 [Heir1Name]
 [Heir2Name]"
 - SALE: "That [Seller] sold Survey No. X to [Buyer] for Rs. X/- vide document no. Y dated DD/MM/YYYY."
-- PARTITION: "That Family members distributed their land among themselves as follows:-"
+- PARTITION: When the source lists who received what, you MUST emit the full allocation list (one row per recipient) between the lead-in and the closing sentence, separated by blank lines. Do NOT collapse the lead-in straight into the closing sentence. Do NOT prefix rows with "1.", "2." — emit bare rows; numbering is applied automatically downstream. Format:
+"That the said [OriginalOwner(s)] distributed their land bearing Survey No. X measuring <area> Hectare among themselves as follows:-
+[Recipient1] - Survey No. [X] - [area]
+[Recipient2] - Survey No. [Y] - [area]
+[Recipient3] - Survey No. [Z] - [area]
+
+The distribution/Partition of the shares as mentioned above was recorded based on their application and their consent as per their respective rights and physical possession."
+  Each allocation row goes on its own line. If the source omits area or survey for a recipient, leave that segment off (e.g. "[Name] - Survey No. 33"). NEVER produce a partition description that has "as follows:-" / "as under:-" followed immediately by the "The distribution..." closing line — the allocation rows MUST be present whenever the source shows them.
+- LIFETIME_DISTRIBUTION / PERSONS_ADD / TO_TRANSFER: When multiple beneficiaries are listed, emit them as bare rows (one per line, no "1.", "2." prefixes):
+"That the said [Distributor] made an application of life time distribution in his land bearing Survey No. X measuring <area> Hectare to [add/transfer to] his legal heirs which are as follows:-
+[Beneficiary1]
+[Beneficiary2]"
+  Single-beneficiary lifetime distributions stay as one prose sentence (no list).
 - RELEASE: "That upon receiving an application from [Name] for removing the charge of [Bank], [Branch]. The said exemption of burden has been recorded. Entry No. X."
 - ORDER (government allotment): "That Government survey was conducted and land bearing Survey No. X was allotted to [Name]."
 - ORDER (circular): "That as per Taluka Circular No. X dated Y, Survey No. Z allotted to [Name]."
