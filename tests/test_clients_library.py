@@ -8,6 +8,7 @@ from core.clients import (
     Client,
     ClientLibrary,
     load_client_library,
+    get_client_library,
 )
 
 
@@ -174,3 +175,44 @@ def test_empty_library_resolve_returns_none(tmp_path):
 
     assert lib.resolve("anything") is None
     assert lib.resolve(None) is None
+
+
+def test_top_level_not_object_returns_empty_library(tmp_path):
+    p = tmp_path / "clients.json"
+    p.write_text(json.dumps([{"id": "x"}]), encoding="utf-8")
+
+    lib = load_client_library(p)
+
+    assert lib.clients == {}
+    assert lib.default_client_id is None
+
+
+def test_non_dict_entry_in_list_is_skipped(tmp_path):
+    path = _write_clients_file(tmp_path, {
+        "clients": [
+            "not a dict",
+            42,
+            {"id": "good", "display_name": "G", "client_name": "G", "client_address": "X"},
+        ],
+    })
+
+    lib = load_client_library(path)
+
+    assert set(lib.clients.keys()) == {"good"}
+
+
+def test_clients_field_not_a_list_returns_empty_library(tmp_path):
+    path = _write_clients_file(tmp_path, {
+        "clients": {"id": "x"},
+    })
+
+    lib = load_client_library(path)
+
+    assert lib.clients == {}
+    assert lib.default_client_id is None
+
+
+def test_get_client_library_is_cached():
+    a = get_client_library()
+    b = get_client_library()
+    assert a is b

@@ -87,6 +87,10 @@ def load_client_library(path: Union[str, Path, None] = None) -> ClientLibrary:
         logger.error("Failed to parse %s: %s", path, exc)
         return ClientLibrary()
 
+    if not isinstance(raw, dict):
+        logger.error("clients.json must be a JSON object, got %r", type(raw).__name__)
+        return ClientLibrary()
+
     raw_clients = raw.get("clients") or []
     if not isinstance(raw_clients, list):
         logger.error("clients.json 'clients' must be a list, got %r", type(raw_clients).__name__)
