@@ -106,6 +106,16 @@ def generate_tsr_from_pdf_optimized(
                 land_details['taluka_name'] = request_metadata['taluka']
             if request_metadata.get('district'):
                 land_details['district_name'] = request_metadata['district']
+            for client_field in (
+                'client_name',
+                'client_cin',
+                'client_address',
+                'kind_attn',
+                'ref_prefix',
+                'reference_email_date',
+            ):
+                if request_metadata.get(client_field):
+                    land_details[client_field] = request_metadata[client_field]
 
         # Fix entry descriptions to use the correct survey number if it was overridden
         if old_survey and old_survey != land_details.get('survey_number'):
