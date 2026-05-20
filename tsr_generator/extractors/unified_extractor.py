@@ -125,21 +125,28 @@ CERTIFICATION EXTRACTION IS REQUIRED:
 DESCRIPTION_EXAMPLES = """
 Example descriptions (follow these exact patterns):
 
-LOAN (correct): "That Mer Deva Depa took a loan of Rs. 20,000/- on land bearing old Survey No. 373/p1, 359, 390, 389(215) from Bank of India, Modhvada Branch."
+AREA INCLUSION RULE:
+- For every entry type EXCEPT LOAN and RELEASE (a.k.a. LOAN CLOSE / charge removal), when the source entry mentions a land area (e.g. "હે. ૬-૨૧-૨૦", "Hectare 1-88-48", "3 Acre 23 Guntha", "આ. હે. ચો.મી.", "જમીન હે ..."), you MUST include it in the English description as "measuring <area> Hectare" (or "Acre/Guntha" if the source uses those units), immediately after the Survey No. clause.
+- Convert Gujarati numerals to English digits. Preserve the dash-separated format (e.g. "6-21-20").
+- For LOAN and RELEASE entries: do NOT include any area / hectare / acre measurement — even if the source mentions one. The encumbrance is recorded against the surveys themselves; area is intentionally omitted to keep loan/release descriptions tight.
+- For all other types (SALE, DEATH/INHERITANCE, PARTITION, GIFT, ALLOTMENT, RELINQUISHMENT, LIFETIME_DISTRIBUTION, EXCHANGE, ORDER allotment/circular, TENURE_CHANGE, LAND_ACQUISITION, LEASE, SEIZURE, PROMULGATION, CORRECTION): include area whenever the source states one.
+
+LOAN (correct, no area): "That Mer Deva Depa took a loan of Rs. 20,000/- on land bearing old Survey No. 373/p1, 359, 390, 389(215) from Bank of India, Modhvada Branch."
+LOAN (wrong - includes area): "That Mer Deva Depa took a loan of Rs. 20,000/- on land bearing old Survey No. 373/p1, 359, 390, 389(215) measuring 6-21-20 Hectare from Bank of India, Modhvada Branch." - DO NOT include area in loan descriptions, even when the source shows it.
 LOAN (wrong - includes agreement date): "That Mer Deva Depa took a loan of Rs. 20,000/- from Bank of India, Modhvada Branch based on an agreement dated 14/05/2005." - DO NOT include agreement date!
-LOAN (wrong - too verbose): "That account holder Shri Mer Deva Depa of Keshav village mortgaged his total land of 6-21-20 Hectare of Keshav village, Khata No. 215, bearing Survey No. 390, with Bank of India, Modhwada branch, to obtain a loan of Rs. 20,000/-. This encumbrance entry was recorded based on the agreement dated 14/05/2005."
+LOAN (wrong - too verbose, mortgaging language): "That account holder Shri Mer Deva Depa of Keshav village mortgaged his total land of 6-21-20 Hectare of Keshav village, Khata No. 215, bearing Survey No. 390, with Bank of India, Modhwada branch, to obtain a loan of Rs. 20,000/-. This encumbrance entry was recorded based on the agreement dated 14/05/2005." - drop the village-name padding, "account holder", "mortgaged his total land", trailing commentary, AND the area.
 
 IMPORTANT for LOAN entries:
 - DO NOT include "agreement dated" or "based on an agreement"
-- DO NOT include total land area or hectare measurements in loan descriptions
-- Just state: borrower name, loan amount, survey numbers, bank name and branch
+- DO NOT include total land area or hectare measurements in loan descriptions.
+- State: borrower name, loan amount, survey numbers (with khata in parentheses), bank name and branch.
 - INCLUDE ALL survey numbers listed in the entry's "Other Rights" / બોજા / બીજા હક્ક column, NOT only the subject survey number. A single loan entry frequently encumbers many surveys belonging to the same khata (e.g. "421(608), 422(608), 423(608), 500(608), 501(608), 568(608), 574(715), 602(608), 603(608), 608(608), 609(608)") — output the COMPLETE list exactly as it appears in the source, in the same order, with the khata number in parentheses after each. Do NOT filter, deduplicate, or drop survey numbers just because they differ from the subject survey. The same rule applies to RELEASE / LOAN CLOSE entries that reference the same multi-survey charge.
 
-Other patterns:
-- DEATH: "That upon the demise of [Name], his share in land bearing old Survey No. X(Khata), Y(Khata) came to be mutated in the names of his legal heirs which are as follows:
+Other patterns (include "measuring <area>" whenever the source states one — NOT for LOAN / RELEASE):
+- DEATH: "That upon the demise of [Name], his share in land bearing old Survey No. X(Khata), Y(Khata) measuring <area> Hectare came to be mutated in the names of his legal heirs which are as follows:
 [Heir1Name]
 [Heir2Name]"
-- SALE: "That [Seller] sold Survey No. X to [Buyer] for Rs. X/- vide document no. Y dated DD/MM/YYYY."
+- SALE: "That [Seller] sold Survey No. X measuring <area> Hectare to [Buyer] for Rs. X/- vide document no. Y dated DD/MM/YYYY."
 - PARTITION: When the source lists who received what, you MUST emit the full allocation list (one row per recipient) between the lead-in and the closing sentence, separated by blank lines. Do NOT collapse the lead-in straight into the closing sentence. Do NOT prefix rows with "1.", "2." — emit bare rows; numbering is applied automatically downstream. Format:
 "That the said [OriginalOwner(s)] distributed their land bearing Survey No. X measuring <area> Hectare among themselves as follows:-
 [Recipient1] - Survey No. [X] - [area]
@@ -153,12 +160,12 @@ The distribution/Partition of the shares as mentioned above was recorded based o
 [Beneficiary1]
 [Beneficiary2]"
   Single-beneficiary lifetime distributions stay as one prose sentence (no list).
-- RELEASE: "That upon receiving an application from [Name] for removing the charge of [Bank], [Branch]. The said exemption of burden has been recorded. Entry No. X."
-- ORDER (government allotment): "That Government survey was conducted and land bearing Survey No. X was allotted to [Name]."
-- ORDER (circular): "That as per Taluka Circular No. X dated Y, Survey No. Z allotted to [Name]."
+- RELEASE (no area): "That upon receiving an application from [Name] for removing the charge of [Bank], [Branch]. The said exemption of burden has been recorded. Entry No. X."
+- ORDER (government allotment): "That Government survey was conducted and land bearing Survey No. X measuring <area> Hectare was allotted to [Name]."
+- ORDER (circular): "That as per Taluka Circular No. X dated Y, Survey No. Z measuring <area> Hectare allotted to [Name]."
 - ORDER (error correction): Include ALL survey numbers and corrections listed in the order exactly as they appear in the source. Do NOT filter or omit corrections for other survey numbers. Example: "Vide order was passed by the Mamlatdar, Abdasa, vide No. E-Dhara/Record Promulgation/Error Correction/08 dated 30/09/2008, in land bearing Survey No. 26, remove entry 56 and add 165."
 - NOT RELATED: "This Entry is not related to Present Survey Number."
-- PROMULGATION: Extract the FULL procedural text. Include: issuing authority, court name, all order numbers with dates, public notice and objection period, Mamlatdar preparation, Province Office verification, finalization, page/survey range. Do NOT summarize.
+- PROMULGATION: Extract the FULL procedural text. Include: issuing authority, court name, all order numbers with dates, public notice and objection period, Mamlatdar preparation, Province Office verification, finalization, page/survey range. Do NOT summarize. Preserve old/new area pairs verbatim (e.g. "old area 7-59-29 Hectare, new area 7-70-84 Hectare").
 """
 
 

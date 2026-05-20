@@ -85,68 +85,137 @@ class JSONTranslationSystem:
                     for eng_name in eng_names:
                         self._village_cache[eng_name.lower().strip()] = guj_village
     
-    def translate(self, english_text: str, context: str = 'village') -> str:
+    def translate(
+        self,
+        english_text: str,
+        context: str = 'village',
+        parent_district: Optional[str] = None,
+        parent_taluka: Optional[str] = None,
+    ) -> str:
         """
-        Translate English to Gujarati using dictionary lookup
-        
+        Translate English to Gujarati using dictionary lookup.
+
+        Resolution is hierarchical: when ``parent_district`` (and for villages
+        ``parent_taluka``) are provided, candidates are scoped to that branch
+        of the hierarchy. This avoids cross-district collisions where the same
+        English spelling exists in multiple districts (e.g. "Brdeeya" lives in
+        Rajkot, Porbandar, Junagadh, and Devbhumi Dwarka under different codes).
+
         Args:
             english_text: English name to translate
             context: Type ('district', 'taluka', 'village')
-        
+            parent_district: Gujarati district name; scopes taluka/village lookup
+            parent_taluka: Gujarati taluka name; scopes village lookup (requires parent_district)
+
         Returns:
             Gujarati translation from dictionary
-            
+
         Raises:
             TranslationNotFoundError: If no translation is found
         """
         if not english_text:
             return english_text
-        
+
         normalized = english_text.lower().strip()
-        cache_key = (normalized, context)
-        
+        cache_key = (normalized, context, parent_district or '', parent_taluka or '')
+
         # Check translation result cache first (avoids repeated fuzzy/AI lookups)
         if not hasattr(self, '_translation_cache'):
             self._translation_cache = {}
-        
+
         if cache_key in self._translation_cache:
             return self._translation_cache[cache_key]
-        
-        # Try exact match in the context-specific cache first (no collision risk)
-        context_cache = {
-            'district': self._district_cache,
-            'taluka': self._taluka_cache,
-            'village': self._village_cache,
-        }.get(context, {})
-        gujarati = context_cache.get(normalized)
-        if gujarati:
-            self._translation_cache[cache_key] = gujarati
-            return gujarati
-        
-        # Fallback: try unified cache with context validation (legacy behaviour)
-        gujarati = self.english_to_gujarati.get(normalized)
-        if gujarati:
-            # Validate the result matches the expected context
-            if self._validate_context(gujarati, context):
+
+        # Build a scoped lookup when parents are provided; fall back to the
+        # global context cache for backwards compatibility.
+        scoped_lookup = self._build_scoped_lookup(context, parent_district, parent_taluka)
+        if scoped_lookup is not None:
+            gujarati = scoped_lookup.get(normalized)
+            if gujarati:
                 self._translation_cache[cache_key] = gujarati
                 return gujarati
-            else:
-                self.logger.warning(f"Cache match '{gujarati}' for '{english_text}' does not match context '{context}'")
-        
-        # Try AI-assisted dictionary search (skip fuzzy — low-threshold fuzzy causes wrong matches)
-        self.logger.debug(f"No exact match for '{english_text}', trying AI-assisted search")
-        gujarati = self._ai_find_match(english_text, context)
-        
+        else:
+            # No parents provided — fall back to context-specific cache
+            context_cache = {
+                'district': self._district_cache,
+                'taluka': self._taluka_cache,
+                'village': self._village_cache,
+            }.get(context, {})
+            gujarati = context_cache.get(normalized)
+            if gujarati:
+                self._translation_cache[cache_key] = gujarati
+                return gujarati
+
+            # Legacy unified-cache fallback with context validation
+            gujarati = self.english_to_gujarati.get(normalized)
+            if gujarati and self._validate_context(gujarati, context):
+                self._translation_cache[cache_key] = gujarati
+                return gujarati
+
+        # AI-assisted lookup, also scoped to parents when available
+        self.logger.debug(
+            f"No exact match for '{english_text}' (context={context}, "
+            f"district={parent_district}, taluka={parent_taluka}); trying AI-assisted search"
+        )
+        gujarati = self._ai_find_match(english_text, context, parent_district, parent_taluka)
+
         if gujarati:
-            # Add this spelling variation to JSON
             self._add_spelling_variation(english_text, gujarati, context)
             self._translation_cache[cache_key] = gujarati
             return gujarati
-        
-        # No match found - Raise exception instead of returning original
-        error_msg = f"No translation found for '{english_text}' (context: {context})"
+
+        error_msg = (
+            f"No translation found for '{english_text}' (context: {context}, "
+            f"district: {parent_district}, taluka: {parent_taluka})"
+        )
         self.logger.error(error_msg)
         raise TranslationNotFoundError(error_msg)
+
+    def _build_scoped_lookup(
+        self,
+        context: str,
+        parent_district: Optional[str],
+        parent_taluka: Optional[str],
+    ) -> Optional[Dict[str, str]]:
+        """Build an English→Gujarati lookup scoped to a branch of the hierarchy.
+
+        Returns ``None`` when no parent is provided (caller falls back to the
+        global cache). Returns an empty dict if the parent path doesn't exist
+        — that signals "no candidates here," and the AI step will fail loudly
+        rather than silently matching the wrong district.
+        """
+        if context == 'district' or parent_district is None:
+            return None
+
+        district_data = self.hierarchy.get(parent_district)
+        if district_data is None:
+            self.logger.warning(f"Parent district '{parent_district}' not in hierarchy")
+            return {}
+
+        scoped: Dict[str, str] = {}
+
+        if context == 'taluka':
+            for guj_taluka, taluka_data in district_data.get('talukas', {}).items():
+                for eng_name in taluka_data.get('english_names', []):
+                    scoped[eng_name.lower().strip()] = guj_taluka
+            return scoped
+
+        if context == 'village':
+            if parent_taluka is None:
+                # Village lookup needs the taluka — fall back to global cache.
+                return None
+            taluka_data = district_data.get('talukas', {}).get(parent_taluka)
+            if taluka_data is None:
+                self.logger.warning(
+                    f"Parent taluka '{parent_taluka}' not in district '{parent_district}'"
+                )
+                return {}
+            for guj_village, eng_names in taluka_data.get('villages', {}).items():
+                for eng_name in eng_names:
+                    scoped[eng_name.lower().strip()] = guj_village
+            return scoped
+
+        return None
     
     def _validate_context(self, gujarati_name: str, context: str) -> bool:
         """Validate that a Gujarati name exists in the expected context."""
@@ -198,19 +267,24 @@ class JSONTranslationSystem:
         
         return None
     
-    def _ai_find_match(self, english_text: str, context: str) -> Optional[str]:
+    def _ai_find_match(
+        self,
+        english_text: str,
+        context: str,
+        parent_district: Optional[str] = None,
+        parent_taluka: Optional[str] = None,
+    ) -> Optional[str]:
         """
         Use AI to find best match from existing dictionary entries
-        
-        Args:
-            english_text: English name to match
-            context: Type of name
-        
-        Returns:
-            Gujarati name if match found, None otherwise
+
+        When parents are provided, candidates are scoped to that branch of the
+        hierarchy so cross-district name collisions can't be selected.
         """
         # Get candidate entries from dictionary with smart filtering
-        candidates = self._get_smart_candidates(english_text, context, limit=30)
+        candidates = self._get_smart_candidates(
+            english_text, context, limit=30,
+            parent_district=parent_district, parent_taluka=parent_taluka,
+        )
         
         if not candidates:
             self.logger.warning(f"No candidates found for context: {context}")
@@ -264,33 +338,61 @@ class JSONTranslationSystem:
                 self.logger.error(f"AI matching failed: {e}")
                 return None
     
-    def _get_smart_candidates(self, english_text: str, context: str, limit: int = 30) -> List[Dict]:
-        """Get candidate entries with phonetic/similarity filtering"""
+    def _get_smart_candidates(
+        self,
+        english_text: str,
+        context: str,
+        limit: int = 30,
+        parent_district: Optional[str] = None,
+        parent_taluka: Optional[str] = None,
+    ) -> List[Dict]:
+        """Get candidate entries with phonetic/similarity filtering.
+
+        When ``parent_district`` (and for villages ``parent_taluka``) are
+        provided, only candidates within that branch of the hierarchy are
+        considered. This avoids cross-district name collisions.
+        """
         all_candidates = []
-        
+
         if context == 'district':
             for guj_name, data in self.hierarchy.items():
                 all_candidates.append({
                     'gujarati': guj_name,
                     'english_names': data.get('english_names', [])
                 })
-        
+
         elif context == 'taluka':
-            for district_data in self.hierarchy.values():
+            districts_iter = (
+                [(parent_district, self.hierarchy.get(parent_district, {}))]
+                if parent_district else self.hierarchy.items()
+            )
+            for _, district_data in districts_iter:
                 for guj_name, data in district_data.get('talukas', {}).items():
                     all_candidates.append({
                         'gujarati': guj_name,
                         'english_names': data.get('english_names', [])
                     })
-        
+
         elif context == 'village':
-            for district_data in self.hierarchy.values():
-                for taluka_data in district_data.get('talukas', {}).values():
-                    for guj_name, eng_names in taluka_data.get('villages', {}).items():
-                        all_candidates.append({
-                            'gujarati': guj_name,
-                            'english_names': eng_names
-                        })
+            if parent_district and parent_taluka:
+                taluka_data = (
+                    self.hierarchy.get(parent_district, {})
+                    .get('talukas', {})
+                    .get(parent_taluka, {})
+                )
+                for guj_name, eng_names in taluka_data.get('villages', {}).items():
+                    all_candidates.append({
+                        'gujarati': guj_name,
+                        'english_names': eng_names
+                    })
+            else:
+                for district_data in self.hierarchy.values():
+                    for taluka_data in district_data.get('talukas', {}).values():
+                        for guj_name, eng_names in taluka_data.get('villages', {}).items():
+                            all_candidates.append({
+                                'gujarati': guj_name,
+                                'english_names': eng_names
+                            })
         
         # Score candidates by similarity to input
         scored_candidates = []
@@ -333,7 +435,8 @@ MATCHING RULES:
 - The input is likely a variation of one of the dictionary entries above
 
 RESPONSE FORMAT:
-- If you find a good match: Return ONLY the Gujarati name (e.g., "ત્રંબો - 033")
+- Return ONLY the Gujarati name EXACTLY as it appears on the left side of the dictionary entry (before the "→").
+- Copy it verbatim. Do not add or remove any " - NNN" code suffix. Do not invent codes that aren't in the dictionary.
 - If no good match exists: Return exactly "NO_MATCH"
 - Do NOT include explanations or additional text
 
@@ -409,16 +512,12 @@ def get_translator() -> JSONTranslationSystem:
     return _translator
 
 
-def translate_to_gujarati(english_text: str, context: str = 'village') -> str:
-    """
-    Translate English place name to Gujarati from dictionary
-    
-    Args:
-        english_text: English name
-        context: Type ('district', 'taluka', 'village')
-    
-    Returns:
-        Gujarati translation from dictionary
-    """
+def translate_to_gujarati(
+    english_text: str,
+    context: str = 'village',
+    parent_district: Optional[str] = None,
+    parent_taluka: Optional[str] = None,
+) -> str:
+    """Translate English place name to Gujarati, optionally scoped by parents."""
     translator = get_translator()
-    return translator.translate(english_text, context)
+    return translator.translate(english_text, context, parent_district, parent_taluka)

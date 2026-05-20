@@ -221,18 +221,34 @@ def process_record(
     except Exception as e:
         logger.warning(f"Invalid district '{request.district}': {e}")
         raise HTTPException(status_code=400, detail=f"Invalid district: '{request.district}' is not in our database")
-    
+
     try:
-        taluka_guj = translation_service.translate_to_gujarati(request.taluka, context='taluka')
+        taluka_guj = translation_service.translate_to_gujarati(
+            request.taluka, context='taluka', parent_district=district_guj
+        )
     except Exception as e:
-        logger.warning(f"Invalid taluka '{request.taluka}': {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid taluka: '{request.taluka}' is not in our database")
-    
+        logger.warning(f"Invalid taluka '{request.taluka}' under district '{district_guj}': {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid taluka: '{request.taluka}' is not in district '{request.district}'",
+        )
+
     try:
-        village_guj = translation_service.translate_to_gujarati(request.village, context='village')
+        village_guj = translation_service.translate_to_gujarati(
+            request.village, context='village',
+            parent_district=district_guj, parent_taluka=taluka_guj,
+        )
     except Exception as e:
-        logger.warning(f"Invalid village '{request.village}': {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid village: '{request.village}' is not in our database")
+        logger.warning(
+            f"Invalid village '{request.village}' under {district_guj}/{taluka_guj}: {e}"
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid village: '{request.village}' is not in "
+                f"{request.district}/{request.taluka}"
+            ),
+        )
     
     # Log translations for debugging
     logger.info(f"Translation results: district '{request.district}' -> '{district_guj}', "

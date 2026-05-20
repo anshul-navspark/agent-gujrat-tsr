@@ -50,28 +50,31 @@ class TranslationService(ITranslationService):
                 message=f"Failed to initialize translation system: {str(e)}"
             )
     
-    def translate_to_gujarati(self, text: str, context: str = 'village') -> str:
-        """
-        Translate English text to Gujarati.
-        
-        Args:
-            text: English text to translate
-            context: Context type ('district', 'taluka', 'village')
-            
-        Returns:
-            Gujarati translation
-            
-        Raises:
-            TranslationException: If translation fails
+    def translate_to_gujarati(
+        self,
+        text: str,
+        context: str = 'village',
+        parent_district: Optional[str] = None,
+        parent_taluka: Optional[str] = None,
+    ) -> str:
+        """Translate English text to Gujarati, scoped by parent context when provided.
+
+        For ``context='taluka'`` pass ``parent_district`` (Gujarati). For
+        ``context='village'`` pass both ``parent_district`` and ``parent_taluka``.
+        This prevents cross-district name collisions (e.g. multiple villages
+        named "બરડીયા" in different districts).
         """
         if not text or not text.strip():
             return text
-        
+
         try:
-            result = self.translator.translate(text, context)
-            self.logger.debug(f"Translated '{text}' → '{result}' (context: {context})")
+            result = self.translator.translate(text, context, parent_district, parent_taluka)
+            self.logger.debug(
+                f"Translated '{text}' → '{result}' "
+                f"(context: {context}, district: {parent_district}, taluka: {parent_taluka})"
+            )
             return result
-            
+
         except TranslationNotFoundError as e:
             self.logger.error(f"Translation not found: {e}")
             raise TranslationException(

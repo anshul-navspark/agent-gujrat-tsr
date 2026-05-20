@@ -16,19 +16,19 @@ class ITranslationService(ABC):
     """Interface for translation services."""
     
     @abstractmethod
-    def translate_to_gujarati(self, text: str, context: str = 'village') -> str:
-        """
-        Translate English text to Gujarati.
-        
-        Args:
-            text: English text to translate
-            context: Context type ('district', 'taluka', 'village')
-            
-        Returns:
-            Gujarati translation
-            
-        Raises:
-            TranslationException: If translation fails
+    def translate_to_gujarati(
+        self,
+        text: str,
+        context: str = 'village',
+        parent_district: Optional[str] = None,
+        parent_taluka: Optional[str] = None,
+    ) -> str:
+        """Translate English text to Gujarati, optionally scoped by parents.
+
+        For ``context='taluka'`` pass the resolved Gujarati district as
+        ``parent_district``. For ``context='village'`` pass both
+        ``parent_district`` and ``parent_taluka``. Scoping prevents
+        cross-district name collisions.
         """
         pass
 
