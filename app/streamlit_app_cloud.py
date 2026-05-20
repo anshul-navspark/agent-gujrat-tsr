@@ -24,6 +24,7 @@ if "GEMINI_API_KEY" in st.secrets:
 
 # Import core services and components (AFTER sys.path is set up)
 from core.models import LandRecordRequest as CoreLandRecordRequest
+from core.clients import get_client_library
 from app.api_client import TSRAPIClient, APIResponse
 from services.file_service import get_file_service
 
@@ -89,6 +90,59 @@ def format_duration(delta: datetime) -> str:
     if len(parts) > 1:
         return ", ".join(parts[:-1]) + f" and {parts[-1]}"
     return parts[0]
+
+def _render_client_sidebar() -> None:
+    """Render the 'Active Client' picker in the sidebar."""
+    library = get_client_library()
+
+    with st.sidebar:
+        st.markdown("### Active Client")
+        if not library.clients:
+            st.warning(
+                "No clients.json found. Falling back to hardcoded ABREL defaults. "
+                "Add clients.json to the repo root to enable the picker."
+            )
+            st.session_state.active_client_id = None
+            return
+
+        client_ids = list(library.clients.keys())
+        display_names = [library.clients[cid].display_name for cid in client_ids]
+
+        # Pre-select default (or first) the very first time
+        if "active_client_id" not in st.session_state:
+            st.session_state.active_client_id = (
+                library.default_client_id or client_ids[0]
+            )
+
+        current_idx = (
+            client_ids.index(st.session_state.active_client_id)
+            if st.session_state.active_client_id in client_ids
+            else 0
+        )
+
+        selected_idx = st.selectbox(
+            "Generating TSR for",
+            options=range(len(client_ids)),
+            format_func=lambda i: display_names[i],
+            index=current_idx,
+            key="sidebar_client_selector",
+        )
+        st.session_state.active_client_id = client_ids[selected_idx]
+
+        selected = library.clients[st.session_state.active_client_id]
+        with st.expander("View details", expanded=False):
+            st.write(f"**Name:** {selected.client_name}")
+            if selected.client_cin:
+                st.write(f"**CIN:** {selected.client_cin}")
+            st.write(f"**Address:** {selected.client_address}")
+            if selected.kind_attn:
+                st.write(f"**Attn:** {selected.kind_attn}")
+            st.write(f"**Ref prefix:** {selected.ref_prefix or 'ABREL'}")
+
+        st.caption("To add or edit a client, edit `clients.json` and redeploy.")
+
+
+_render_client_sidebar()
 
 # Main UI – three tabs delegating to components
 tab1, tab2, tab3 = st.tabs(["📄 Single Record", "📊 Batch (Excel)", "📋 Results"])
