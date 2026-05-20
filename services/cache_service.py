@@ -1009,6 +1009,39 @@ class LocalCacheService:
         except Exception as e:
             return {"error": str(e)}
 
+    def clear_all_docx_cache(self) -> int:
+        """
+        Clear all generated TSR DOCX files from the local cache.
+
+        Matches both legacy 'tsr.docx' files and new per-client
+        'docx_{client_id}.docx' files. PDFs and metadata are preserved.
+
+        Returns:
+            Number of files deleted.
+        """
+        deleted_count = 0
+        try:
+            if not os.path.isdir(self.cache_dir):
+                return 0
+            for entry_name in os.listdir(self.cache_dir):
+                entry_dir = os.path.join(self.cache_dir, entry_name)
+                if not os.path.isdir(entry_dir):
+                    continue
+                for filename in os.listdir(entry_dir):
+                    is_old = filename == "tsr.docx"
+                    is_new = filename.startswith("docx_") and filename.endswith(".docx")
+                    if is_old or is_new:
+                        try:
+                            os.remove(os.path.join(entry_dir, filename))
+                            deleted_count += 1
+                        except Exception as e:
+                            self.logger.warning(f"Failed to delete {filename}: {e}")
+            self.logger.info(f"Local cache clearing complete. Deleted {deleted_count} DOCX files.")
+            return deleted_count
+        except Exception as e:
+            self.logger.error(f"Error during local DOCX cache clearing: {e}")
+            return deleted_count
+
     def check_and_clear_docx_if_new_version(self, current_version: str) -> bool:
         return False
 

@@ -4,8 +4,6 @@ import importlib.util
 import sys
 import types as _types
 from pathlib import Path
-from unittest.mock import MagicMock
-
 import pytest
 
 # ---------------------------------------------------------------------------
