@@ -89,8 +89,19 @@ def test_request_metadata_no_client_passes_geography_only():
     }
 
 
-def test_unknown_client_id_falls_back_to_default(sample_library):
-    """Server-side fallback path: unknown id → default client, surfaced via library.resolve."""
+def test_unknown_client_id_falls_back_to_default_via_metadata(sample_library):
+    """When client_id is unknown, library resolves to default and metadata gets default fields."""
+    from api.server import _build_request_metadata_for_client
+
     resolved = sample_library.resolve("does-not-exist")
-    assert resolved is not None
-    assert resolved.id == "abrel_spv_2"
+    metadata = _build_request_metadata_for_client(
+        district="Kutch",
+        taluka="Abdasa",
+        village="Trambo",
+        survey_number="150",
+        client=resolved,
+    )
+
+    # Default client (abrel_spv_2) fields should be present
+    assert metadata["client_name"] == "ABREL SPV 2 Limited"
+    assert metadata["ref_prefix"] == "ABREL"

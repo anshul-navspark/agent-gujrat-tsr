@@ -302,7 +302,6 @@ def process_record(
                 )
 
             if cached_pdf_content is not None and cached_docx_content is not None:
-                import time; time.sleep(5)
                 logger.info(
                     "✅ FULL CACHE HIT for %s/%s/%s/%s (client=%s)",
                     request.district, request.taluka, request.village,
