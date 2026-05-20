@@ -140,9 +140,21 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
             address_para.add_run(f"{client_name}\n{client_cin}\n{client_address}\n")
             kind_attn = sanitize_text(land_details.get("kind_attn") or "Kind Attn.: Mr. Rahul Patil")
             doc.add_paragraph(kind_attn)
-            reference_email_date = sanitize_text(land_details.get('reference_email_date') or '21.11.2023')
-            re_line = sanitize_text(land_details.get("re_line") or f"Re:\tEmail Dated {reference_email_date} in connection with land situated at Village- {sanitize_text(land_details.get('village_name') or 'Not Available')}, Taluka-{sanitize_text(land_details.get('taluka_name') or 'Not Available')}, District- {sanitize_text(land_details.get('district_name') or 'Not Available')} (Gujrat).")
-            doc.add_paragraph(re_line)
+            # Re: line is client-driven. Render only when a full override is
+            # provided, or when the client supplies a reference_email_date.
+            re_line_override = land_details.get("re_line")
+            reference_email_date = land_details.get("reference_email_date")
+            if re_line_override:
+                doc.add_paragraph(sanitize_text(re_line_override))
+            elif reference_email_date:
+                re_line = sanitize_text(
+                    f"Re:\tEmail Dated {sanitize_text(reference_email_date)} "
+                    f"in connection with land situated at "
+                    f"Village- {sanitize_text(land_details.get('village_name') or 'Not Available')}, "
+                    f"Taluka-{sanitize_text(land_details.get('taluka_name') or 'Not Available')}, "
+                    f"District- {sanitize_text(land_details.get('district_name') or 'Not Available')} (Gujrat)."
+                )
+                doc.add_paragraph(re_line)
         else:
             address_para.add_run("Aditya Birla Renewable Energy Ltd.\nA-2, Aditya Birla Centre, S.K. Ahire Marg,\nWorli, Mumbai-400030.\n")
         

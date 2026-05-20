@@ -5,8 +5,87 @@ from docx.shared import Pt, Inches
 from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
 from docx.enum.table import WD_TABLE_ALIGNMENT
 from docx.enum.table import WD_CELL_VERTICAL_ALIGNMENT
+from docx.oxml import OxmlElement
+from docx.oxml.ns import qn
 from tsr_generator.extractors.findings import detect_active_encumbrances
 from tsr_generator.extractors.unified_extractor import _normalize_date_str
+
+
+def _create_decimal_numbering(document):
+    """Create a fresh decimal numbering definition that restarts at 1.
+
+    Each call yields a distinct numId so independent counters can coexist
+    (e.g., one per table). Word renders the number from the lvl's rPr —
+    the cell paragraph itself stays empty.
+    """
+    numbering = document.part.numbering_part.element
+
+    existing_abs_ids = [int(a.get(qn('w:abstractNumId')))
+                        for a in numbering.findall(qn('w:abstractNum'))]
+    next_abs_id = (max(existing_abs_ids) + 1) if existing_abs_ids else 0
+
+    existing_num_ids = [int(n.get(qn('w:numId')))
+                        for n in numbering.findall(qn('w:num'))]
+    next_num_id = (max(existing_num_ids) + 1) if existing_num_ids else 1
+
+    abstract_num = OxmlElement('w:abstractNum')
+    abstract_num.set(qn('w:abstractNumId'), str(next_abs_id))
+
+    lvl = OxmlElement('w:lvl')
+    lvl.set(qn('w:ilvl'), '0')
+    for tag, val in (('w:start', '1'), ('w:numFmt', 'decimal'),
+                     ('w:lvlText', '%1.'), ('w:lvlJc', 'left'),
+                     ('w:suff', 'nothing')):
+        e = OxmlElement(tag)
+        e.set(qn('w:val'), val)
+        lvl.append(e)
+    lvl_pPr = OxmlElement('w:pPr')
+    ind = OxmlElement('w:ind')
+    ind.set(qn('w:left'), '0')
+    ind.set(qn('w:firstLine'), '0')
+    lvl_pPr.append(ind)
+    lvl.append(lvl_pPr)
+    lvl_rPr = OxmlElement('w:rPr')
+    rfonts = OxmlElement('w:rFonts')
+    rfonts.set(qn('w:ascii'), 'Times New Roman')
+    rfonts.set(qn('w:hAnsi'), 'Times New Roman')
+    lvl_rPr.append(rfonts)
+    lvl_rPr.append(OxmlElement('w:b'))
+    sz = OxmlElement('w:sz')
+    sz.set(qn('w:val'), '25')  # 25 half-points = 12.5pt
+    lvl_rPr.append(sz)
+    lvl.append(lvl_rPr)
+    abstract_num.append(lvl)
+
+    # Schema requires all w:abstractNum elements to precede w:num elements.
+    first_num = numbering.find(qn('w:num'))
+    if first_num is not None:
+        first_num.addprevious(abstract_num)
+    else:
+        numbering.append(abstract_num)
+
+    num = OxmlElement('w:num')
+    num.set(qn('w:numId'), str(next_num_id))
+    abs_ref = OxmlElement('w:abstractNumId')
+    abs_ref.set(qn('w:val'), str(next_abs_id))
+    num.append(abs_ref)
+    numbering.append(num)
+
+    return next_num_id
+
+
+def _apply_list_number(paragraph, num_id, ilvl=0):
+    """Attach numbering properties so Word renders an auto-number."""
+    pPr = paragraph._p.get_or_add_pPr()
+    numPr = OxmlElement('w:numPr')
+    ilvl_e = OxmlElement('w:ilvl')
+    ilvl_e.set(qn('w:val'), str(ilvl))
+    numId_e = OxmlElement('w:numId')
+    numId_e.set(qn('w:val'), str(num_id))
+    numPr.append(ilvl_e)
+    numPr.append(numId_e)
+    pPr.append(numPr)
+
 
 def add_table_with_header(doc, headers, rows, style=None, col_widths=None):
     """
@@ -110,7 +189,8 @@ def add_section_heading(doc, text, level=1, numbered=True):
 def add_chain_of_title_section(document, entries, entry_table):
     """
     Add Chain of Title section with a two-column table format where:
-    - First column (0.42 inches): empty (manual versions leave this column empty)
+    - First column (0.42 inches): Word auto-number (renumbers when rows are
+      inserted/deleted in Word — no F9 or manual fix needed)
     - Second column (5.85 inches): Entry details including entry number, date, description, and certification
 
     Args:
@@ -123,7 +203,7 @@ def add_chain_of_title_section(document, entries, entry_table):
     """
     logger = logging.getLogger(__name__)
     logger.debug("Adding Chain of Title section with two-column format")
-    
+
     # Add section heading
     add_section_heading(document, "Chain of Title", numbered=True)
 
@@ -131,7 +211,11 @@ def add_chain_of_title_section(document, entries, entry_table):
         paragraph = document.add_paragraph()
         paragraph.add_run("No entries found in the document.").italic = True
         return {}
-    
+
+    # Fresh numbering definition so this table's row numbers restart at 1 and
+    # auto-renumber when lawyers insert/delete rows in Word.
+    num_id = _create_decimal_numbering(document)
+
     # Create a table for Chain of Title - two columns
     table = document.add_table(rows=0, cols=2)
     table.style = 'Table Grid'
@@ -204,9 +288,11 @@ def add_chain_of_title_section(document, entries, entry_table):
             for j, width in enumerate(col_widths):
                 table.rows[-1].cells[j].width = Inches(width)
             
-            # First column: empty (manual versions leave this column empty)
+            # First column: Word renders the row number from numPr so it
+            # auto-renumbers when a lawyer inserts/deletes a row.
             row_cells[0].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
-            
+            _apply_list_number(row_cells[0].paragraphs[0], num_id)
+
             # Second column: Entry details
             entry_para = row_cells[1].paragraphs[0]
             
