@@ -113,7 +113,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         taluka_prefix = land_details.get('taluka_name', 'N/A')[:3].upper()
         ref_prefix = sanitize_text(land_details.get("ref_prefix") or "ABREL")
         if profile == "final_sample_v1":
-            report_date = sanitize_text(land_details.get("report_date")) or current_date
+            report_date = sanitize_text(land_details.get("report_date") or current_date)
             ref_text_val = f"Ref. No. {ref_prefix}/GUJ/{taluka_prefix}/{village_prefix}/{survey_number}\t\t\t\tDated :{report_date}"
         else:
             ref_text_val = f"Ref. No. {ref_prefix}/GUJ/{district_prefix}/{taluka_prefix}/{village_prefix}/{survey_number}                    Dated: {current_date}"
@@ -134,13 +134,14 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         address_para = doc.add_paragraph()
         address_para.paragraph_format.left_indent = Inches(0.5)
         if profile == "final_sample_v1":
-            client_name = sanitize_text(land_details.get("client_name")) or "ABREL SPV 2 Limited"
-            client_cin = sanitize_text(land_details.get("client_cin")) or "(CIN: U40108MH2020PLC352631),"
-            client_address = sanitize_text(land_details.get("client_address")) or "A-2, Aditya Birla Centre, S.K. Ahire Marg,\nWorli, Mumbai-400030."
+            client_name = sanitize_text(land_details.get("client_name") or "ABREL SPV 2 Limited")
+            client_cin = sanitize_text(land_details.get("client_cin") or "(CIN: U40108MH2020PLC352631),")
+            client_address = sanitize_text(land_details.get("client_address") or "A-2, Aditya Birla Centre, S.K. Ahire Marg,\nWorli, Mumbai-400030.")
             address_para.add_run(f"{client_name}\n{client_cin}\n{client_address}\n")
-            kind_attn = sanitize_text(land_details.get("kind_attn")) or "Kind Attn.: Mr. Rahul Patil"
+            kind_attn = sanitize_text(land_details.get("kind_attn") or "Kind Attn.: Mr. Rahul Patil")
             doc.add_paragraph(kind_attn)
-            re_line = sanitize_text(land_details.get("re_line")) or f"Re:\tEmail Dated {sanitize_text(land_details.get('reference_email_date')) or '21.11.2023'} in connection with land situated at Village- {sanitize_text(land_details.get('village_name', 'Not Available'))}, Taluka-{sanitize_text(land_details.get('taluka_name', 'Not Available'))}, District- {sanitize_text(land_details.get('district_name', 'Not Available'))} (Gujrat)."
+            reference_email_date = sanitize_text(land_details.get('reference_email_date') or '21.11.2023')
+            re_line = sanitize_text(land_details.get("re_line") or f"Re:\tEmail Dated {reference_email_date} in connection with land situated at Village- {sanitize_text(land_details.get('village_name') or 'Not Available')}, Taluka-{sanitize_text(land_details.get('taluka_name') or 'Not Available')}, District- {sanitize_text(land_details.get('district_name') or 'Not Available')} (Gujrat).")
             doc.add_paragraph(re_line)
         else:
             address_para.add_run("Aditya Birla Renewable Energy Ltd.\nA-2, Aditya Birla Centre, S.K. Ahire Marg,\nWorli, Mumbai-400030.\n")
