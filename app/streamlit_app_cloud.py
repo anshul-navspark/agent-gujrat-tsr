@@ -25,6 +25,10 @@ if "GEMINI_API_KEY" in st.secrets:
 # Import core services and components (AFTER sys.path is set up)
 from core.models import LandRecordRequest as CoreLandRecordRequest
 from core.clients import get_client_library
+from core.anyror_maintenance import (
+    is_anyror_maintenance_window,
+    maintenance_window_message,
+)
 from app.api_client import TSRAPIClient, APIResponse
 from services.file_service import get_file_service
 
@@ -143,6 +147,11 @@ def _render_client_sidebar() -> None:
 
 
 _render_client_sidebar()
+
+# Show maintenance-window banner during the daily AnyRoR outage so users
+# aren't confused by scrape timeouts.
+if is_anyror_maintenance_window(datetime.now(timezone.utc)):
+    st.warning(f"⚠️ {maintenance_window_message()}")
 
 # Main UI – three tabs delegating to components
 tab1, tab2, tab3 = st.tabs(["📄 Single Record", "📊 Batch (Excel)", "📋 Results"])

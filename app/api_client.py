@@ -151,15 +151,17 @@ class TSRAPIClient:
                     error_msg = self._extract_error_message(response)
                     self.logger.error(f"API returned error: {error_msg}")
                     
-                    # Don't retry on client errors (4xx)
-                    if 400 <= response.status_code < 500:
+                    # Don't retry on client errors (4xx) or on 503 (the server's
+                    # signal that AnyRoR is in its scheduled maintenance window —
+                    # retrying just delays the message we already have).
+                    if (400 <= response.status_code < 500) or response.status_code == 503:
                         return APIResponse(
                             success=False,
                             error=error_msg,
                             status_code=response.status_code
                         )
-                    
-                    # Retry on server errors (5xx)
+
+                    # Retry on other server errors (5xx)
                     if attempt < self.max_retries:
                         wait_time = 2 ** attempt  # Exponential backoff
                         self.logger.warning(f"Retrying in {wait_time} seconds...")

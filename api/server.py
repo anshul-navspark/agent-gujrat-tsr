@@ -17,6 +17,10 @@ from urllib.parse import quote
 from core.models import LandRecordRequest as CoreLandRecordRequest
 from core.config import get_config
 from core.clients import Client, get_client_library
+from core.anyror_maintenance import (
+    is_anyror_maintenance_window,
+    maintenance_window_message,
+)
 from services.file_service import get_file_service
 from services.translation_service import get_translation_service
 from services.scraping_service import get_scraping_service
@@ -384,6 +388,9 @@ def process_record(
             )
             if not result.get('success'):
                 logger.error(f"Scraping failed with result: {result}")
+                from datetime import datetime, timezone as _tz
+                if is_anyror_maintenance_window(datetime.now(_tz.utc)):
+                    raise HTTPException(status_code=503, detail=maintenance_window_message())
                 raise HTTPException(status_code=500, detail=f"Scraping failed: {result.get('error')}")
             
         # Enhanced logging for diagnostics
