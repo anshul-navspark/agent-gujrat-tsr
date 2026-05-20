@@ -64,7 +64,8 @@ class TSRAPIClient:
         district: str,
         taluka: str,
         village: str,
-        survey_number: str
+        survey_number: str,
+        client_id: Optional[str] = None,
     ) -> APIResponse:
         """
         Process a single land record via API
@@ -84,7 +85,9 @@ class TSRAPIClient:
             "village": village,
             "survey_number": survey_number
         }
-        
+        if client_id:
+            payload["client_id"] = client_id
+
         for attempt in range(self.max_retries + 1):
             try:
                 self.logger.info(
