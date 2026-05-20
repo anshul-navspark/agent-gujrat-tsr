@@ -111,7 +111,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         village_prefix = land_details.get('village_name', 'N/A')[:3].upper()
         district_prefix = land_details.get('district_name', 'N/A')[:3].upper()
         taluka_prefix = land_details.get('taluka_name', 'N/A')[:3].upper()
-        ref_prefix = sanitize_text(land_details.get("ref_prefix")) or "ABREL"
+        ref_prefix = sanitize_text(land_details.get("ref_prefix") or "ABREL")
         if profile == "final_sample_v1":
             report_date = sanitize_text(land_details.get("report_date")) or current_date
             ref_text_val = f"Ref. No. {ref_prefix}/GUJ/{taluka_prefix}/{village_prefix}/{survey_number}\t\t\t\tDated :{report_date}"
