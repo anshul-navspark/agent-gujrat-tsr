@@ -672,28 +672,58 @@ class FormFiller:
             return False
 
     def _build_survey_candidates(self, survey_block_number):
-        """Generate candidate strings for matching a paiki survey number in the dropdown.
+        """Generate candidate strings for matching a survey number in the dropdown.
 
-        Examples for input "569/p1":
-            ["569/p1", "569/1", "569 પૈકી 1", "569 paiki 1", "569pk1", "5691", "569"]
+        AnyRoR dropdowns mix Latin and Gujarati digits. A plain subdivision like
+        "38/3" is rendered as "38/૩"; paiki entries like "569/p1" render as
+        "569/p૧". The digit 5 is sometimes shown as the letter "પ" instead of
+        the digit "૫" (an AnyRoR quirk), so both are tried.
 
-        For non-paiki inputs (e.g. "568"), returns just [survey_block_number].
-        The base value is always tried first so existing behaviour is preserved.
+        Examples:
+            "569/p1" → ["569/p1", "569/p૧", "૫૬૯/p૧", "569/1", ...]
+            "38/3"   → ["38/3", "38/૩", "૩૮/૩"]
+            "568"    → ["568", "૫૬૮"]
         """
+        import re
+
         s = str(survey_block_number).strip()
         candidates = [s]
 
-        # Detect paiki forms: "569/p1", "569/P2", "569p1", "569pk1"
-        import re
+        gujarati_digits = str.maketrans("0123456789", "૦૧૨૩૪૫૬૭૮૯")
+        # AnyRoR sometimes renders the digit 5 as the letter પ rather than ૫
+        gujarati_digits_pa = str.maketrans("0123456789", "૦૧૨૩૪પ૬૭૮૯")
+
+        def add(v):
+            if v and v not in candidates:
+                candidates.append(v)
+
+        # Always try full Gujarati-digit translations of the raw input
+        add(s.translate(gujarati_digits))
+        add(s.translate(gujarati_digits_pa))
+
+        # Plain subdivision form: "38/3" → also try "38/૩"
+        m_plain = re.match(r"^(\d+)\s*/\s*(\d+)$", s)
+        if m_plain:
+            base, part = m_plain.group(1), m_plain.group(2)
+            part_g = part.translate(gujarati_digits)
+            part_g_pa = part.translate(gujarati_digits_pa)
+            base_g = base.translate(gujarati_digits)
+            add(f"{base}/{part_g}")
+            add(f"{base}/{part_g_pa}")
+            add(f"{base_g}/{part_g}")
+            add(f"{base_g}/{part_g_pa}")
+
+        # Paiki forms: "569/p1", "569/P2", "569p1", "569pk1"
         m = re.match(r"^(\d+)\s*/?\s*p(?:k)?\s*(\d+)$", s, re.IGNORECASE)
         if m:
             base, part = m.group(1), m.group(2)
-            gujarati_digits = str.maketrans("0123456789", "૦૧૨૩૪૫૬૭૮૯")
             base_g = base.translate(gujarati_digits)
             part_g = part.translate(gujarati_digits)
+            part_g_pa = part.translate(gujarati_digits_pa)
             variants = [
                 # AnyRoR commonly uses Latin "p" + Gujarati digit, e.g. "569/p૧"
                 f"{base}/p{part_g}",
+                f"{base}/p{part_g_pa}",
                 f"{base_g}/p{part_g}",
                 f"{base}/{part_g}",
                 f"{base}/{part}",
@@ -708,8 +738,7 @@ class FormFiller:
                 f"{base_g} પૈકી {part_g}",
             ]
             for v in variants:
-                if v not in candidates:
-                    candidates.append(v)
+                add(v)
 
         return candidates
     
