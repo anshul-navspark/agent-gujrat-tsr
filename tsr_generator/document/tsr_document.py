@@ -161,7 +161,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         # Section 1: Property Details
         add_section_heading(
             doc,
-            "Description, nature, and area of land with survey/plot numbers",
+            "1.  Description, nature, and area of land with survey/plot numbers",
             numbered=True,
         )
         # Create property details table
@@ -195,7 +195,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         row[0].text = "1"
         
         nature = sanitize_text(land_details.get('nature_of_land'))
-       
+
         if profile == "final_sample_v1":
             if 'new tenure' in nature.lower():
                 row[1].text = "New Tenure  Agricultural"
@@ -281,7 +281,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         doc.add_paragraph()
         add_section_heading(
             doc,
-            "Details/Description of document scrutinized",
+            "2.  Details/Description of document scrutinized",
             numbered=True,
         )
         

@@ -320,9 +320,13 @@ def add_chain_of_title_section(document, entries, entry_table):
     logger.debug("Adding Chain of Title section with two-column format")
     
     # Add section heading
-    add_section_heading(document, "Chain of Title", numbered=True)
+    add_section_heading(document, "3.  Chain of Title", numbered=True)
 
-    if not entries:
+    # Only bail out when we have *neither* hydrated entries *nor* bare entry
+    # numbers. When the PDF only lists numbers (no descriptions), entries is []
+    # but entry_table still holds them — the loop below renders placeholder
+    # rows for those, matching how manually typed TSRs handle this case.
+    if not entries and not entry_table:
         paragraph = document.add_paragraph()
         paragraph.add_run("No entries found in the document.").italic = True
         return {}
@@ -572,7 +576,11 @@ def add_chain_of_title_section(document, entries, entry_table):
     active_encumbrances, active_entry_nums = detect_active_encumbrances(entries)
 
     note_row_cells = table.add_row().cells
-    # First column: empty
+    # First column: continue the same auto-numbering so the Note appears as
+    # the next item in the list (matches user request — Note is part of the
+    # numbered chain of title).
+    note_row_cells[0].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+    _apply_list_number(note_row_cells[0].paragraphs[0], num_id)
 
     note_para_1 = note_row_cells[1].paragraphs[0]
 
@@ -910,7 +918,7 @@ def add_findings_table(doc, findings):
     
     # Add section heading
     doc.add_paragraph()
-    add_section_heading(doc, "Findings & opinion based our title investigation:-", numbered=True)
+    add_section_heading(doc, "4.  Findings & opinion based our title investigation:-", numbered=True)
     
     # Create and format the table
     table = doc.add_table(rows=1, cols=3)
