@@ -360,7 +360,7 @@ def add_chain_of_title_section(document, entries, entry_table):
     # First column is empty
 
     # Second column: Add explanatory text
-    header_text = "Brief history and flow of title with respect to Immovable Properties \u2013 For 30 Year Period - Based on perusal of the documents referred in S. No. 2 above."
+    header_text = "The trajectory of title pertaining to immovable properties over a 30-year span is delineated herein, drawing from a meticulous examination of the documents cited under Table Number 2. The inclusion of the land revenue record preceding this 30-year period serves solely to enhance comprehension of the title's lineage."
     header_para = header_row_cells[1].paragraphs[0]
     header_run = header_para.add_run(header_text)
     header_run.bold = True
