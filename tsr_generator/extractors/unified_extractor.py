@@ -75,7 +75,7 @@ Formatting Rules:
 1. ALL descriptions MUST start with "That" (except NOT RELATED, PROMULGATION)
 2. DO NOT use honorifics like "Shri", "Smt", "Mr.", "Mrs."
 3. DO NOT use "account holder", "mortgaged his total land", "of [village] village"
-4. DO NOT include sentences like "This encumbrance entry was recorded based on..." or "This inheritance entry was made..."
+4. For LOAN/RELEASE entries, DO NOT include "based on the agreement dated..." commentary. (For INHERITANCE/DEATH and PARTITION/LIFETIME DISTRIBUTION entries you MUST include a closing sentence listing the documents the mutation was based on — see the description examples.)
 5. Keep descriptions direct and factual. Include all legally relevant details. Do not add commentary or explanatory sentences.
 6. Amounts: "Rs. X/-" or "Rs. X,XXX/-"
 7. ALWAYS use "Survey No." instead of "Khata No." or "Account No."
@@ -86,7 +86,7 @@ Formatting Rules:
 12. Measurements: Use "Acre/Guntha" or "Hectare" in descriptions. For the total_area field, output ONLY the numeric format (e.g., "1-88-48") WITHOUT the word "Hectare".
 13. Translate "bhen" or "ben" suffix as "ben" (e.g. "Shantiben")
 14. Lists: "which are as follows:-" followed by names on separate lines
-15. OMIT sentences like "This entry was made based on..." or "This inheritance entry was made...". Keep descriptions concise.
+15. OMIT vague filler like "This entry was made based on the above." Keep descriptions concise — but DO retain the concrete supporting-documents clause for INHERITANCE/DEATH and PARTITION/LIFETIME DISTRIBUTION entries (application/Arji, death certificate, genealogy/Pedhinamu, affidavits/Sogandnama) when the source states them.
 16. LOAN entries: Do NOT include agreement date. Only describe the loan, borrower, lender, amount, and land details.
 17. OLD SURVEY NUMBERS: If there is a PROMULGATION entry (re-survey), use "old Survey No." for all entries BEFORE the promulgation entry. Use "Survey No." for entries AFTER promulgation. If there is NO promulgation entry, use "Survey No." (without "old").
 18. Always use 4-digit years (DD/MM/YYYY). Never use 2-digit years (DD/MM/YY).
@@ -143,9 +143,13 @@ IMPORTANT for LOAN entries:
 - INCLUDE ALL survey numbers listed in the entry's "Other Rights" / બોજા / બીજા હક્ક column, NOT only the subject survey number. A single loan entry frequently encumbers many surveys belonging to the same khata (e.g. "421(608), 422(608), 423(608), 500(608), 501(608), 568(608), 574(715), 602(608), 603(608), 608(608), 609(608)") — output the COMPLETE list exactly as it appears in the source, in the same order, with the khata number in parentheses after each. Do NOT filter, deduplicate, or drop survey numbers just because they differ from the subject survey. The same rule applies to RELEASE / LOAN CLOSE entries that reference the same multi-survey charge.
 
 Other patterns (include "measuring <area>" whenever the source states one — NOT for LOAN / RELEASE):
-- DEATH: "That upon the demise of [Name], his share in land bearing old Survey No. X(Khata), Y(Khata) measuring <area> Hectare came to be mutated in the names of his legal heirs which are as follows:
-[Heir1Name]
-[Heir2Name]"
+- DEATH/INHERITANCE: Include the death date and, when shown, the death-certificate number. For EACH heir include their relationship and age when the source states them (the heir table has columns સંબંધ = relationship and ઉં.વ. = age; પત્નિ/પત્ની=wife, પુત્ર=son, પુત્રી=daughter, વિધવા=widow, માતા=mother). End with a sentence listing the documents the mutation was based on when shown (application/Arji, death certificate, genealogy/Pedhinamu, affidavits/Sogandnama). Format:
+"That upon the demise of [Name] on DD/MM/YYYY (death certificate no. [X]), his/her share in land bearing old Survey No. X(Khata), Y(Khata) measuring <area> Hectare came to be mutated in the names of his/her legal heirs which are as follows:-
+[Heir1Name] - [relationship] - age [N]
+[Heir2Name] - [relationship] - age [N]
+
+This inheritance was recorded based on the application, death certificate, genealogy (Pedhinamu) and affidavits."
+  Drop any segment the source does not provide — omit "(death certificate no. ...)" if absent, omit "- age [N]" if no age is shown, omit the closing supporting-documents sentence if no such documents are listed. NEVER invent a date, certificate number, relationship, age, or document.
 - SALE: "That [Seller] sold Survey No. X measuring <area> Hectare to [Buyer] for Rs. X/- vide document no. Y dated DD/MM/YYYY."
 - PARTITION: When the source lists who received what, you MUST emit the full allocation list (one row per recipient) between the lead-in and the closing sentence, separated by blank lines. Do NOT collapse the lead-in straight into the closing sentence. Do NOT prefix rows with "1.", "2." — emit bare rows; numbering is applied automatically downstream. Format:
 "That the said [OriginalOwner(s)] distributed their land bearing Survey No. X measuring <area> Hectare among themselves as follows:-
@@ -329,19 +333,30 @@ def extract_all_unified(pdf_text: str) -> UnifiedExtractionResult:
 
         # Initialize LLM
         load_dotenv()
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        llm = ChatGoogleGenerativeAI(
-            model=MODEL_NAME,
-            google_api_key=os.getenv('GEMINI_API_KEY', ''),
-            temperature=0.0,
-            convert_system_message_to_human=True,
-        )
 
-        # Make the SINGLE API call with retry
-        response = _invoke_with_retry(llm, prompt, max_retries=3)
+        # Extraction backend: 'claude' shells out to the `claude` CLI (Claude Code
+        # subscription auth, NO API key); 'gemini' uses LangChain ChatGoogleGenerativeAI.
+        # Captcha + translation always stay on Gemini regardless of this setting.
+        backend = os.getenv('EXTRACTION_BACKEND', 'claude').strip().lower()
+        if backend == 'claude':
+            claude_model = os.getenv('CLAUDE_EXTRACTION_MODEL', 'sonnet').strip()
+            content = _coerce_text(_invoke_claude_cli(prompt, claude_model))
+        else:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            llm = ChatGoogleGenerativeAI(
+                model=MODEL_NAME,
+                google_api_key=os.getenv('GEMINI_API_KEY', ''),
+                temperature=0.0,
+                convert_system_message_to_human=True,
+                # Gemini-3 thinking level (raj-repo tuning: 3-flash=low, 3.5-flash=medium).
+                # Empty/unset -> None (model default). Note: enabling thinking makes
+                # response.content a list of blocks, handled by _coerce_text/_parse_json_response.
+                thinking_level=(os.getenv('GEMINI_THINKING_LEVEL', 'low').strip().lower() or None),
+            )
+            # Make the SINGLE API call with retry
+            response = _invoke_with_retry(llm, prompt, max_retries=3)
+            content = _coerce_text(response.content if hasattr(response, 'content') else str(response))
 
-        # Parse the response
-        content = response.content if hasattr(response, 'content') else str(response)
         result.raw_response = content
         result.output_tokens = len(content) // 4
 
@@ -541,6 +556,67 @@ def _extract_relevant_sections(pdf_text: str) -> str:
             sections.append(entry_section)
 
     return '\n\n[...]\n\n'.join(sections)
+
+
+def _invoke_claude_cli(prompt: str, model: str = "sonnet", timeout: int = 300) -> str:
+    """Run a one-shot extraction via the `claude` CLI in print mode.
+
+    Uses Claude Code's logged-in subscription auth (NO ANTHROPIC_API_KEY needed), so
+    extraction can run on Claude (Sonnet/Opus) at low volume without an API key. A
+    minimal --system-prompt strips the heavy agent prompt so it behaves as a plain
+    extraction model. Captcha + translation stay on Gemini. Requires the machine to
+    have an authenticated `claude` CLI (works locally; NOT on a headless cloud deploy).
+    """
+    import subprocess
+    cmd = [
+        "claude", "-p", "--model", model,
+        "--strict-mcp-config",  # don't spawn the session's MCP servers
+        # Override the user's heavy interactive config for a fast one-shot call:
+        # low effort + no plugins (the superpowers SessionStart hook) + no
+        # auto-memory/dream. WITHOUT this, each headless call loads xhigh effort
+        # and the plugins and HANGS (>300s) on a ~23KB prompt.
+        "--settings",
+        ('{"effortLevel":"low","enabledPlugins":{},"autoMemoryEnabled":false,'
+         '"autoDreamEnabled":false,"promptSuggestionEnabled":false}'),
+        "--disallowed-tools", "Bash", "Read", "Edit", "Write", "Glob", "Grep",
+        "WebFetch", "WebSearch", "Task", "TodoWrite",
+        "--system-prompt",
+        ("You are a precise data-extraction engine. Follow the user's instructions "
+         "exactly and output ONLY the requested JSON object."),
+    ]
+    env = {**os.environ, "CLAUDE_EFFORT": "low"}
+    try:
+        res = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
+                             timeout=timeout, env=env)
+    except FileNotFoundError:
+        raise RuntimeError("`claude` CLI not on PATH; cannot use EXTRACTION_BACKEND=claude")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"claude CLI timed out after {timeout}s")
+    if res.returncode != 0:
+        raise RuntimeError(f"claude CLI failed (rc={res.returncode}): {res.stderr[:500]}")
+    out = (res.stdout or "").strip()
+    if not out:
+        raise RuntimeError(f"claude CLI returned empty output; stderr={res.stderr[:300]}")
+    logger.info(f"Claude CLI extraction OK (model={model}, {len(out)} chars out)")
+    return out
+
+
+def _coerce_text(content) -> str:
+    """Flatten a LangChain response.content to a plain string.
+
+    With Gemini-3 thinking enabled, content comes back as a list of blocks
+    like [{'type': 'text', 'text': '...'}] instead of a str. The two-pass
+    parsers expect a str, so normalise here.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            item if isinstance(item, str)
+            else item.get("text", "") if isinstance(item, dict)
+            else "" for item in content
+        )
+    return str(content)
 
 
 def _parse_json_response(content) -> Optional[Dict]:
@@ -938,6 +1014,10 @@ def extract_all_structured(pdf_text: str) -> StructuredExtractionResult:
             google_api_key=os.getenv('GEMINI_API_KEY', ''),
             temperature=0.0,
             convert_system_message_to_human=True,
+            # Gemini-3 thinking level (raj-repo tuning: 3-flash=low, 3.5-flash=medium).
+            # Empty/unset -> None (model default). Note: enabling thinking makes
+            # response.content a list of blocks, handled by _coerce_text/_parse_json_response.
+            thinking_level=(os.getenv('GEMINI_THINKING_LEVEL', 'low').strip().lower() or None),
         )
 
         # ---- Pass 1: Classification + Land Details ----
@@ -948,7 +1028,7 @@ def extract_all_structured(pdf_text: str) -> StructuredExtractionResult:
         logger.debug("Pass 1 prompt length: %d chars", len(pass1_prompt))
 
         pass1_response = _invoke_with_retry(llm, pass1_prompt, max_retries=3)
-        pass1_content = pass1_response.content if hasattr(pass1_response, 'content') else str(pass1_response)
+        pass1_content = _coerce_text(pass1_response.content if hasattr(pass1_response, 'content') else str(pass1_response))
         logger.debug("Pass 1 raw response length: %d chars", len(pass1_content))
 
         pass1_data = parse_pass1_response(pass1_content)
@@ -987,7 +1067,7 @@ def extract_all_structured(pdf_text: str) -> StructuredExtractionResult:
             logger.debug("Pass 2 prompt length: %d chars", len(pass2_prompt))
 
             pass2_response = _invoke_with_retry(llm, pass2_prompt, max_retries=3)
-            pass2_content = pass2_response.content if hasattr(pass2_response, 'content') else str(pass2_response)
+            pass2_content = _coerce_text(pass2_response.content if hasattr(pass2_response, 'content') else str(pass2_response))
             logger.debug("Pass 2 raw response length: %d chars", len(pass2_content))
 
             pass2_fields = parse_pass2_response(pass2_content)

@@ -740,6 +740,19 @@ class FormFiller:
             for v in variants:
                 add(v)
 
+        # General multi-level form. AnyRoR keeps the BASE survey number in Latin
+        # digits but renders every subdivision/paiki digit in Gujarati, keeping
+        # the Latin 'p' and '/' separators -- e.g. the dropdown shows "50p૩/p૨",
+        # "2p૪/૧", "32/૨p૧૦". The single-level regexes above miss two-level
+        # inputs like "50p3/p2" or "2P4/1", so handle the general case here:
+        # leading digits stay Latin, every other digit is translated.
+        m_multi = re.match(r"^(\d+)((?:/?[pP]?\d+)+)$", s)
+        if m_multi:
+            base = m_multi.group(1)
+            rest = s[len(base):].replace(" ", "").replace("P", "p")  # dropdown uses lowercase p
+            add(f"{base}{rest.translate(gujarati_digits)}")
+            add(f"{base}{rest.translate(gujarati_digits_pa)}")  # digit 5 rendered as પ
+
         return candidates
     
     def solve_captcha(self):
