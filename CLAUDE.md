@@ -61,7 +61,9 @@ Abstract interfaces in `core/interfaces.py` → concrete implementations in `ser
 
 ### Caching
 
-GCS-based with 7-day TTL. Cache key is SHA256 of district+taluka+village+survey_number. DOCX cache auto-clears on new deployments via `GIT_COMMIT_SHA`.
+Two backends, auto-selected in `services/cache_service.py:get_cache_service`: **GCS** `CacheService` when `GCS_CACHE_BUCKET` is set (7-day TTL; DOCX cache auto-clears on new deployments via `GIT_COMMIT_SHA`), otherwise a local-filesystem `LocalCacheService` fallback under `~/.cache/gujrat_tsr_agent/cache`. Cache key is SHA256 of (translated) district+taluka+village+survey_number.
+
+The **local** cache defaults to ~never-expire (`LOCAL_CACHE_TTL_DAYS`, default 36500) — land records are immutable, so generated TSRs are reused across sessions rather than silently aging out and being regenerated. Pass `skip_cache=true` to force a fresh run (e.g. after changing extraction logic/model). `python scripts/tsr_ledger.py` writes `docs/tsr_ledger.md`, a human-readable index of the locally cached TSRs; diff-vs-handtyped-truth notes are kept in `docs/tsr_ledger_notes.json` and preserved across refreshes.
 
 ## Key Environment Variables
 
@@ -71,6 +73,7 @@ GCS-based with 7-day TTL. Cache key is SHA256 of district+taluka+village+survey_
 - `GEMINI_TRANSLATION_MODEL` — translation lookup model, default: `gemini-3.1-flash-lite-preview`
 - `USE_OPTIMIZED_EXTRACTION` — default: `true`
 - `GCS_CACHE_BUCKET` — optional, enables GCS caching
+- `LOCAL_CACHE_TTL_DAYS` — local cache TTL in days when no GCS bucket; default `36500` (≈never expire)
 - `HEADLESS` — browser headless mode for scraping
 - `MAX_WORKERS` — parallel processing thread count
 

@@ -805,6 +805,14 @@ def get_cache_service(
         except Exception as e:
             logging.getLogger(__name__).error(f"Failed to initialize GCS cache, falling back to local: {e}")
 
-    # Fallback to local filesystem cache
-    _cache_service = LocalCacheService(ttl_days=ttl_days, logger=logger)
+    # Fallback to local filesystem cache.
+    # Land records are effectively immutable, so a locally generated TSR should
+    # not silently age out the way the 7-day GCS TTL does (that just forces a
+    # needless regenerate). Default the local cache to ~never-expire; override
+    # with LOCAL_CACHE_TTL_DAYS. Pass skip_cache=True to force a fresh run.
+    try:
+        local_ttl = int(os.getenv("LOCAL_CACHE_TTL_DAYS", "36500"))
+    except ValueError:
+        local_ttl = 36500
+    _cache_service = LocalCacheService(ttl_days=local_ttl, logger=logger)
     return _cache_service
