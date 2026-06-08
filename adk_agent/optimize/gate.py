@@ -6,12 +6,13 @@ result (the current best):
 
   * **accuracy holds** — field / entry / type accuracy do not drop by more than a
     tiny tolerance (default: strictly non-decreasing), and
-  * **efficiency improves** — average total tokens (or latency) drop by at least
+  * **efficiency improves** — average **cost** (USD, which captures both fewer
+    tokens *and* routing to a cheaper model) or latency drops by at least
     ``min_token_saving_pct`` percent.
 
-So the loop can only ever trade *equal-or-better accuracy* for *fewer tokens /
-lower latency* — never the other way around. This is what "without accuracy
-recession" means operationally.
+So the loop can only ever trade *equal-or-better accuracy* for *lower cost /
+lower latency* — never the other way around. This is what "cheaper and faster
+without accuracy recession" means operationally.
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ class GateDecision:
     field_delta: float
     recall_delta: float
     type_delta: float
+    cost_delta_pct: float
     token_delta_pct: float
     latency_delta_pct: float
     reasons: List[str] = field(default_factory=list)
@@ -49,6 +51,7 @@ class GateDecision:
             "field_delta": round(self.field_delta, 4),
             "recall_delta": round(self.recall_delta, 4),
             "type_delta": round(self.type_delta, 4),
+            "cost_delta_pct": round(self.cost_delta_pct, 2),
             "token_delta_pct": round(self.token_delta_pct, 2),
             "latency_delta_pct": round(self.latency_delta_pct, 2),
             "reasons": self.reasons,
@@ -67,6 +70,7 @@ class RegressionGate:
         recall_delta = candidate.entry_recall - baseline.entry_recall
         type_delta = candidate.type_accuracy - baseline.type_accuracy
 
+        cost_delta_pct = _pct_delta(candidate.avg_cost_usd, baseline.avg_cost_usd)
         token_delta_pct = _pct_delta(candidate.avg_total_tokens, baseline.avg_total_tokens)
         latency_delta_pct = _pct_delta(candidate.avg_latency_ms, baseline.avg_latency_ms)
 
@@ -86,18 +90,21 @@ class RegressionGate:
                 drops.append(f"type {type_delta:+.4f}")
             reasons.append("accuracy regressed: " + ", ".join(drops))
 
-        token_win = token_delta_pct <= -self.min_token_saving_pct
-        latency_win = latency_delta_pct <= -self.min_token_saving_pct and token_delta_pct <= 0.0
-        efficiency_win = token_win or latency_win
+        cost_win = cost_delta_pct <= -self.min_token_saving_pct
+        latency_win = latency_delta_pct <= -self.min_token_saving_pct and cost_delta_pct <= 0.0
+        efficiency_win = cost_win or latency_win
         if not efficiency_win:
             reasons.append(
-                f"no efficiency win (tokens {token_delta_pct:+.1f}%, latency {latency_delta_pct:+.1f}%; "
-                f"need <= -{self.min_token_saving_pct:.1f}% tokens)"
+                f"no efficiency win (cost {cost_delta_pct:+.1f}%, latency {latency_delta_pct:+.1f}%; "
+                f"need <= -{self.min_token_saving_pct:.1f}% cost or latency)"
             )
 
         accepted = accuracy_ok and efficiency_win
         if accepted:
-            reasons.append(f"accepted: tokens {token_delta_pct:+.1f}%, accuracy held")
+            reasons.append(
+                f"accepted: cost {cost_delta_pct:+.1f}% (tokens {token_delta_pct:+.1f}%, "
+                f"latency {latency_delta_pct:+.1f}%), accuracy held"
+            )
         return GateDecision(
             accepted=accepted,
             accuracy_ok=accuracy_ok,
@@ -105,6 +112,7 @@ class RegressionGate:
             field_delta=field_delta,
             recall_delta=recall_delta,
             type_delta=type_delta,
+            cost_delta_pct=cost_delta_pct,
             token_delta_pct=token_delta_pct,
             latency_delta_pct=latency_delta_pct,
             reasons=reasons,

@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional
 from adk_agent.config import AdkConfig, get_adk_config
 from adk_agent.eval.run_eval import score_extraction
 from adk_agent.optimize.dataset import OptCase
-from adk_agent.optimize.profiles import PromptProfile
+from adk_agent.optimize.profiles import PromptProfile, estimate_cost
 
 
 @dataclass
@@ -35,6 +35,7 @@ class CaseScore:
     total_tokens: int = 0
     thinking_tokens: int = 0
     latency_ms: int = 0
+    cost_usd: float = 0.0
     num_corrections: int = 0
     error: Optional[str] = None
 
@@ -49,6 +50,8 @@ class CaseRun:
     total_tokens: int = 0
     thinking_tokens: int = 0
     latency_ms: int = 0
+    cost_usd: float = 0.0
+    model: str = ""
     error: Optional[str] = None
 
 
@@ -63,11 +66,14 @@ class ProfileResult:
     avg_total_tokens: float = 0.0
     avg_thinking_tokens: float = 0.0
     avg_latency_ms: float = 0.0
+    avg_cost_usd: float = 0.0
+    model: str = ""
     per_case: List[CaseScore] = field(default_factory=list)
 
     def summary(self) -> Dict[str, Any]:
         return {
             "profile": self.profile.name,
+            "model": self.model,
             "n_cases": self.n_cases,
             "field_accuracy": round(self.field_accuracy, 4),
             "entry_recall": round(self.entry_recall, 4),
@@ -76,6 +82,7 @@ class ProfileResult:
             "avg_total_tokens": round(self.avg_total_tokens, 1),
             "avg_thinking_tokens": round(self.avg_thinking_tokens, 1),
             "avg_latency_ms": round(self.avg_latency_ms, 1),
+            "avg_cost_usd": round(self.avg_cost_usd, 6),
         }
 
 
@@ -94,6 +101,11 @@ async def run_profile(
             )
             tt = record.token_totals
             latency = sum(c.duration_ms for c in record.llm_calls)
+            cost = sum(
+                estimate_cost(c.model, c.prompt_tokens, c.response_tokens + c.thinking_tokens)
+                for c in record.llm_calls
+            )
+            model = record.llm_calls[0].model if record.llm_calls else str(profile.model_name or "")
             runs.append(
                 CaseRun(
                     case=case,
@@ -102,6 +114,8 @@ async def run_profile(
                     total_tokens=tt["total_tokens"],
                     thinking_tokens=tt["thinking_tokens"],
                     latency_ms=latency,
+                    cost_usd=cost,
+                    model=model,
                 )
             )
         except Exception as e:  # surface but keep going
@@ -143,7 +157,7 @@ def score_runs(
                     id=r.case.id, mode=r.case.mode,
                     prompt_tokens=r.prompt_tokens, total_tokens=r.total_tokens,
                     thinking_tokens=r.thinking_tokens, latency_ms=r.latency_ms,
-                    error="no reference",
+                    cost_usd=r.cost_usd, error="no reference",
                 )
             )
             continue
@@ -155,6 +169,7 @@ def score_runs(
                 type_accuracy=sc["type_accuracy"], num_corrections=sc["num_corrections"],
                 prompt_tokens=r.prompt_tokens, total_tokens=r.total_tokens,
                 thinking_tokens=r.thinking_tokens, latency_ms=r.latency_ms,
+                cost_usd=r.cost_usd,
             )
         )
 
@@ -164,6 +179,7 @@ def score_runs(
     def mean(attr: str) -> float:
         return sum(getattr(c, attr) for c in scored) / n if n else 0.0
 
+    models = [r.model for r in runs if getattr(r, "model", "")]
     return ProfileResult(
         profile=profile,
         n_cases=n,
@@ -174,6 +190,8 @@ def score_runs(
         avg_total_tokens=mean("total_tokens"),
         avg_thinking_tokens=mean("thinking_tokens"),
         avg_latency_ms=mean("latency_ms"),
+        avg_cost_usd=mean("cost_usd"),
+        model=(models[0].replace("fake-", "") if models else str(profile.model_name or "")),
         per_case=per_case,
     )
 

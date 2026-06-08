@@ -138,7 +138,9 @@ async def run_optimization(
         "baseline": baseline_result.summary(),
         "winner": best_result.summary(),
         "winner_profile": best_profile.to_dict(),
+        "winner_model": best_result.model or str(config.model_name),
         "accepted_levers": applied,
+        "cost_savings_pct": round(-final_decision.cost_delta_pct, 2),
         "token_savings_pct": round(-final_decision.token_delta_pct, 2),
         "latency_savings_pct": round(-final_decision.latency_delta_pct, 2),
         "accuracy_held": final_decision.accuracy_ok,
@@ -172,7 +174,10 @@ def _render_markdown(report: Dict[str, Any], rows: List[Dict[str, Any]]) -> str:
         "",
         "## Result",
         "",
-        f"- **token savings: {report['token_savings_pct']}%**  "
+        f"- **cost savings: {report['cost_savings_pct']}%**  "
+        f"(baseline ${b['avg_cost_usd']} → winner ${w['avg_cost_usd']} avg / doc; "
+        f"model `{b.get('model') or report['model']}` → `{report['winner_model']}`)",
+        f"- token savings: {report['token_savings_pct']}%  "
         f"(baseline {b['avg_total_tokens']} → winner {w['avg_total_tokens']} avg total tokens)",
         f"- latency savings: {report['latency_savings_pct']}%  "
         f"(baseline {b['avg_latency_ms']} → winner {w['avg_latency_ms']} ms)",
@@ -183,15 +188,16 @@ def _render_markdown(report: Dict[str, Any], rows: List[Dict[str, Any]]) -> str:
         "",
         "## Leaderboard",
         "",
-        "| lever | field | entry | type | prompt_tok | total_tok | latency_ms | gate |",
-        "| ----- | ----- | ----- | ---- | ---------- | --------- | ---------- | ---- |",
+        "| lever | model | field | entry | type | total_tok | $/doc | latency_ms | gate |",
+        "| ----- | ----- | ----- | ----- | ---- | --------- | ----- | ---------- | ---- |",
     ]
     for r in rows:
         g = r.get("gate") or {}
         verdict = "baseline" if r["lever"] == "baseline" else ("✅ accept" if g.get("accepted") else "—")
         lines.append(
-            f"| {r['lever']} | {r['field_accuracy']} | {r['entry_recall']} | {r['type_accuracy']} | "
-            f"{r['avg_prompt_tokens']} | {r['avg_total_tokens']} | {r['avg_latency_ms']} | {verdict} |"
+            f"| {r['lever']} | {r.get('model', '')} | {r['field_accuracy']} | {r['entry_recall']} | "
+            f"{r['type_accuracy']} | {r['avg_total_tokens']} | {r['avg_cost_usd']} | "
+            f"{r['avg_latency_ms']} | {verdict} |"
         )
     lines += [
         "",

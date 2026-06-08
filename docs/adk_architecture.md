@@ -192,9 +192,17 @@ scoring machinery and runs through `python -m adk_agent optimize`.
 - **Profiles** (`profiles.py`): a `PromptProfile` is a named bundle of levers. The
   four heavy static prompt blocks (re-sent on *every* call; `DESCRIPTION_EXAMPLES`
   alone is ~3.5 KB) can each be `full` / `compact` / `off`; plus a section-prune
-  threshold and model/thinking/output knobs. The canonical `full` profile
-  **delegates to the production prompt builder**, so the baseline is byte-for-byte
-  what ships today; every other profile is a candidate the gate must justify.
+  threshold, **model routing** (`gemini-3.5-flash` — ~25% cheaper, ~4x faster than
+  `gemini-3.1-pro`), a **deterministic entity-map grounding** flag, and
+  thinking/output knobs. The canonical `full` profile **delegates to the production
+  prompt builder**, so the baseline is byte-for-byte what ships today; every other
+  profile is a candidate the gate must justify.
+- **Entity-map grounding** (`skills/entity_map.py`): a zero-LLM-cost "tool" pre-pass
+  that regex-extracts the structured tokens a smaller model fumbles (survey/khata,
+  dates, amounts, candidate entry numbers) and injects a compact "VERIFIED ENTITIES"
+  block — the entity-grounding / deterministic-preprocessing pattern (cf. Google's
+  `langextract`). It is bundled with flash routing so the cheaper model has a better
+  shot at holding accuracy on the error-prone multi-survey / khata fields.
 - **Dataset** (`dataset.py`): lawyer-truth **golden** cases (scored vs truth) where
   available, else **parity** cases (a PDF corpus / the bundled sample) scored vs the
   *current production* extraction — a regression signal that needs no ground truth
@@ -203,9 +211,10 @@ scoring machinery and runs through `python -m adk_agent optimize`.
   same extractor path, instrumented by the `ObservabilityPlugin`) and reads back
   accuracy (`score_extraction`) **and** tokens/latency from the `RunRecord`.
 - **Gate** (`gate.py`): a candidate is accepted only if field/entry/type accuracy do
-  not drop (default: strictly non-decreasing) **and** average tokens (or latency)
-  fall by ≥ `min_token_saving_pct`. So the search can only trade equal-or-better
-  accuracy for fewer tokens.
+  not drop (default: strictly non-decreasing) **and** average **cost** (USD, from
+  per-model pricing — so it captures both fewer tokens *and* a cheaper model) or
+  latency falls by ≥ `min_token_saving_pct`. So the search can only trade
+  equal-or-better accuracy for lower cost/latency.
 - **Loop** (`loop.py`): runs the baseline once, then greedily compounds accepted
   levers (deterministic, bounded by a fixed lever list — no runaway API spend),
   writing `artifacts/{leaderboard.jsonl, report.md, best_profile.json}`. `--apply`
@@ -280,6 +289,17 @@ Reuses the existing env vars; adds a few `ADK_*` overrides (see `adk_agent/confi
 - The dry-run `FakeGemini` returns a fixed payload, so dry-run eval/optimize accuracy
   numbers reflect the fixture, not real quality (token savings *are* real). Validate
   prompt-compaction levers against golden cases or a live key before promoting.
+- **Live flash finding (1 sample doc):** `gemini-3.5-flash` was ~2.5x faster and
+  ~25-53% cheaper than `gemini-3.1-pro`, but **diverged from pro on entry recall
+  (~0.6)** — and pro, flash, and the regex entry-detector all disagreed on the entry
+  set, with no lawyer ground truth to adjudicate. The cost gate therefore (correctly)
+  blocks flash. Safely adopting a cheaper model needs a handful of lawyer-corrected
+  golden cases so the gate scores *real* accuracy, and/or a stronger entry detector
+  (the deterministic grounding is only as good as its regex). The machinery to do all
+  of this — route, ground, measure cost+accuracy, gate, promote — is in place.
+- The deterministic entity grounding (and, for scanned PDFs, local OCR) are the next
+  accuracy levers: a more reliable entry/owner/khata extractor would let the gate
+  accept a flash profile that currently regresses.
 - Guideline synthesis is deterministic (template-based); an optional LLM-judge pass
   could produce richer generalisations.
 - The graph engine currently models a linear chain; ADK's graph runtime also

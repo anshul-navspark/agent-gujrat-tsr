@@ -91,11 +91,12 @@ def test_prune_threshold_trims_long_documents():
 
 
 # ------------------------------------------------------------------------- gate
-def _result(profile, *, field=1.0, recall=1.0, type_=1.0, tokens=1000.0, latency=10.0):
+def _result(profile, *, field=1.0, recall=1.0, type_=1.0, tokens=1000.0, latency=10.0, cost=None):
     return ProfileResult(
         profile=profile, n_cases=1, field_accuracy=field, entry_recall=recall,
         type_accuracy=type_, avg_prompt_tokens=tokens, avg_total_tokens=tokens,
         avg_thinking_tokens=0.0, avg_latency_ms=latency,
+        avg_cost_usd=(cost if cost is not None else tokens * 1e-5),
     )
 
 
@@ -107,12 +108,22 @@ def test_gate_rejects_accuracy_regression_even_with_big_savings():
     assert not d.accuracy_ok
 
 
-def test_gate_accepts_equal_accuracy_token_saver():
+def test_gate_accepts_equal_accuracy_cost_saver():
     gate = RegressionGate(min_token_saving_pct=1.0)
     d = gate.evaluate(_result(FULL_PROFILE, tokens=1000),
                       _result(PromptProfile(name="x"), tokens=700))
     assert d.accepted and d.accuracy_ok and d.efficiency_win
-    assert d.token_delta_pct < 0
+    assert d.cost_delta_pct < 0
+
+
+def test_gate_accepts_cheaper_model_at_equal_tokens():
+    """Routing to a cheaper model wins on cost even when token counts are equal."""
+    gate = RegressionGate(min_token_saving_pct=1.0)
+    base = _result(FULL_PROFILE, tokens=1000, cost=0.012)        # pro
+    flash = _result(PromptProfile(name="flash"), tokens=1000, cost=0.009)  # flash, same tokens
+    d = gate.evaluate(base, flash)
+    assert d.accepted and d.accuracy_ok
+    assert d.cost_delta_pct < 0 and abs(d.token_delta_pct) < 1e-9
 
 
 def test_gate_rejects_when_no_efficiency_win():
@@ -120,6 +131,39 @@ def test_gate_rejects_when_no_efficiency_win():
     d = gate.evaluate(_result(FULL_PROFILE, tokens=1000),
                       _result(PromptProfile(name="x"), tokens=1000))
     assert not d.accepted and d.accuracy_ok and not d.efficiency_win
+
+
+# ----------------------------------------------------------- entity-map + cost
+def test_entity_map_extracts_structured_tokens():
+    from adk_agent.skills.entity_map import build_entity_map
+
+    text = "land bearing Survey No. 150/p1(215), 389(215), 373/p1 sold for Rs. 2,50,000/- on 14/05/2001"
+    emap = build_entity_map(text)
+    assert "150/p1(215)" in emap["survey_numbers"]
+    assert "389(215)" in emap["survey_numbers"]
+    assert "215" in emap["khata_numbers"]
+    assert "14/05/2001" in emap["dates"]
+    assert "2,50,000" in emap["amounts"]
+
+
+def test_entity_map_profile_injects_grounding_block():
+    grounded = build_prompt(
+        SAMPLE_TEXT + "\nSurvey No. 150/p1(215) on 14/05/2001", "",
+        PromptProfile(name="g", entity_map=True),
+    )
+    plain = build_prompt(SAMPLE_TEXT, "", PromptProfile(name="p"))
+    assert "VERIFIED ENTITIES" in grounded
+    assert "VERIFIED ENTITIES" not in plain
+
+
+def test_estimate_cost_flash_cheaper_than_pro():
+    from adk_agent.optimize.profiles import estimate_cost
+
+    pro = estimate_cost("gemini-3.1-pro-preview", 10_000, 2_000)
+    flash = estimate_cost("gemini-3.5-flash", 10_000, 2_000)
+    flash_fake = estimate_cost("fake-gemini-3.5-flash", 10_000, 2_000)  # offline name
+    assert flash < pro
+    assert flash_fake == flash  # the 'fake-' prefix is stripped
 
 
 # ------------------------------------------------------------------------- loop
@@ -136,9 +180,11 @@ def test_loop_finds_savings_without_accuracy_regression(adk_cfg):
     assert w["field_accuracy"] >= b["field_accuracy"] - 1e-9
     assert w["entry_recall"] >= b["entry_recall"] - 1e-9
     assert w["type_accuracy"] >= b["type_accuracy"] - 1e-9
-    # And it actually saves tokens (compact prompt blocks).
+    # And it actually saves cost/tokens (compact prompt blocks + model routing).
+    assert report["cost_savings_pct"] > 0
     assert report["token_savings_pct"] > 0
     assert w["avg_total_tokens"] < b["avg_total_tokens"]
+    assert w["avg_cost_usd"] < b["avg_cost_usd"]
     assert report["accepted_levers"]
 
     art = Path(adk_cfg.optimize_dir)

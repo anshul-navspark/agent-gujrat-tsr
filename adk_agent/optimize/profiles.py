@@ -46,6 +46,32 @@ from adk_agent.skills.extraction import build_extraction_prompt, inject_guidelin
 # ``_extract_relevant_sections`` (which only trims documents longer than this).
 DEFAULT_PRUNE_THRESHOLD = 15000
 
+# Candidate cheaper/faster models to route extraction to (verified available).
+FLASH_MODEL = "gemini-3.5-flash"        # ~25% cheaper, ~4x faster than 3.1-pro
+FLASH_LITE_MODEL = "gemini-3.1-flash-lite"
+
+# USD per 1M tokens (input, output). 3.1-pro ($2/$12) and 3.5-flash ($1.5/$9)
+# are published list prices; flash-lite is an approximate lower tier (used only
+# for *relative* cost ranking in the optimizer, not billing).
+MODEL_PRICING = {
+    "gemini-3.1-pro-preview": (2.0, 12.0),
+    "gemini-3-pro-preview": (2.0, 12.0),
+    "gemini-pro-latest": (2.0, 12.0),
+    "gemini-3.5-flash": (1.5, 9.0),
+    "gemini-3-flash-preview": (1.5, 9.0),
+    "gemini-flash-latest": (1.5, 9.0),
+    "gemini-3.1-flash-lite": (0.30, 2.50),
+    "gemini-3.1-flash-lite-preview": (0.30, 2.50),
+}
+_DEFAULT_PRICING = (2.0, 12.0)
+
+
+def estimate_cost(model_name: str, input_tokens: int, output_tokens: int) -> float:
+    """Estimated USD cost of a call (strips the offline ``fake-`` prefix)."""
+    name = (model_name or "").replace("fake-", "")
+    inp, out = MODEL_PRICING.get(name, _DEFAULT_PRICING)
+    return input_tokens / 1e6 * inp + output_tokens / 1e6 * out
+
 
 # --------------------------------------------------------------------------- #
 # Compact variants of the heavy static blocks.
@@ -133,6 +159,10 @@ class PromptProfile:
     thinking_budget: Optional[int] = None     # None -> inherit; 0 -> disable; >0 -> cap
     max_output_tokens: Optional[int] = None
 
+    # Deterministic entity-map grounding pre-pass (zero LLM cost): injects a
+    # "VERIFIED ENTITIES" block so a cheaper model holds accuracy on survey/khata.
+    entity_map: bool = False
+
     # ------------------------------------------------------------------ helpers
     def block_variant(self, block: str) -> str:
         return getattr(self, block)
@@ -150,6 +180,7 @@ class PromptProfile:
             and self.temperature == 0.0
             and self.thinking_budget is None
             and self.max_output_tokens is None
+            and not self.entity_map
         )
 
     def to_dict(self) -> Dict[str, Any]:
@@ -188,14 +219,18 @@ def _prune_sections(pdf_text: str, threshold: int) -> str:
     return "\n\n[...]\n\n".join(sections)
 
 
-def _compose_unified_prompt(document_text: str, hints: List[str], profile: PromptProfile) -> str:
+def _compose_unified_prompt(
+    document_text: str, hints: List[str], profile: PromptProfile, grounding: str = ""
+) -> str:
     """
     Compose the unified extraction prompt with the profile's block variants.
 
     Mirrors the structure of the production ``build_unified_prompt`` but swaps in
-    compact / omitted blocks. Used only for non-canonical profiles; the canonical
-    ``full`` profile delegates to the production builder for exact parity.
+    compact / omitted blocks (and an optional deterministic *grounding* block).
+    Used only for non-canonical profiles; the canonical ``full`` profile delegates
+    to the production builder for exact parity.
     """
+    grounding_block = ("\n" + grounding.strip() + "\n") if grounding else ""
     entry_hint_text = ""
     if hints:
         entry_hint_text = f"\nCandidate entry numbers detected: {', '.join(hints)}"
@@ -264,7 +299,7 @@ EXTRACTION INSTRUCTIONS:
 For entries with only a number in the table (no details), include with empty fields.
 For entries where content is not legible, set description to:
 "Entry mentioned in the document but content is not legible."
-
+{grounding_block}
 DOCUMENT TEXT:
 {document_text}
 
@@ -285,7 +320,13 @@ def build_prompt(pdf_text: str, guidelines_text: str, profile: Optional[PromptPr
 
     document_text = _prune_sections(pdf_text or "", profile.prune_threshold)
     hints = _identify_entry_numbers_fast(pdf_text or "")
-    prompt = _compose_unified_prompt(document_text, hints, profile)
+    grounding = ""
+    if profile.entity_map:
+        # Lazy import: the deterministic grounding "tool" pulls in tsr_generator regex.
+        from adk_agent.skills.entity_map import entity_map_block
+
+        grounding = entity_map_block(pdf_text or "")
+    prompt = _compose_unified_prompt(document_text, hints, profile, grounding=grounding)
     return inject_guidelines(prompt, guidelines_text)
 
 
@@ -299,12 +340,19 @@ def lever_candidates() -> List[Tuple[str, Dict[str, Any]]]:
     accepted ones). Each entry is ``(lever_name, profile_field_changes)``.
     """
     return [
+        # Prompt compaction — fewer fixed tokens per call (proven offline + online).
         ("compact_description_examples", {"description_examples": "compact"}),
         ("compact_formatting_rules", {"formatting_rules": "compact"}),
         ("compact_certification_patterns", {"certification_patterns": "compact"}),
         ("compact_entry_type_rules", {"entry_type_rules": "compact"}),
         ("prune_8k", {"prune_threshold": 8000}),
         ("prune_6k", {"prune_threshold": 6000}),
+        # Model routing — the big cost/latency lever. Flash is ~25% cheaper and
+        # ~4x faster; deterministic entity-map grounding is bundled so the smaller
+        # model holds accuracy on survey/khata (the gate validates the pairing).
+        ("route_flash_with_grounding", {"model_name": FLASH_MODEL, "entity_map": True}),
+        ("route_flash", {"model_name": FLASH_MODEL}),
+        ("route_flash_lite_with_grounding", {"model_name": FLASH_LITE_MODEL, "entity_map": True}),
         ("thinking_off", {"thinking_budget": 0}),
     ]
 

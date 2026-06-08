@@ -186,9 +186,11 @@ def cmd_optimize(args) -> int:
     b, w = report["baseline"], report["winner"]
     print()
     print(f"  cases            : {report['cases']}  {report['case_modes']}")
-    print(f"  baseline tokens  : {b['avg_total_tokens']}   winner: {w['avg_total_tokens']}")
-    print(f"  TOKEN SAVINGS    : {report['token_savings_pct']}%   "
-          f"latency: {report['latency_savings_pct']}%")
+    print(f"  model            : {b.get('model') or report['model']}  ->  {report['winner_model']}")
+    print(f"  COST SAVINGS     : {report['cost_savings_pct']}%   "
+          f"(${b['avg_cost_usd']} -> ${w['avg_cost_usd']} per doc)")
+    print(f"  tokens / latency : {report['token_savings_pct']}% tokens   "
+          f"{report['latency_savings_pct']}% latency")
     print(f"  accuracy held    : {report['accuracy_held']}   "
           f"(field {b['field_accuracy']}→{w['field_accuracy']}, "
           f"entry {b['entry_recall']}→{w['entry_recall']}, type {b['type_accuracy']}→{w['type_accuracy']})")
