@@ -92,8 +92,11 @@ class TestTokenOptimization:
         result = _extract_relevant_sections(small_doc)
         assert result == small_doc
 
-        # Large document should be truncated
-        large_doc = "Header " * 500 + "Entry Details " + "Content " * 500 + " Jantri Detail " + "Footer " * 500
+        # Large document (>15000 chars) should be truncated to its relevant
+        # sections. _extract_relevant_sections only trims docs longer than
+        # 15000 chars, so the fixture must exceed that threshold.
+        large_doc = "Header " * 2000 + "Entry Details " + "Content " * 2000 + " Jantri Detail " + "Footer " * 2000
+        assert len(large_doc) > 15000  # precondition for trimming to kick in
         result = _extract_relevant_sections(large_doc)
         assert len(result) < len(large_doc)
 
@@ -176,13 +179,15 @@ class TestTokenOptimization:
 class TestOptimizationIntegration:
     """Integration tests for the optimization (require API key)."""
 
-    @pytest.mark.skipif(
-        not os.getenv('GEMINI_API_KEY'),
-        reason="GEMINI_API_KEY not set"
-    )
-    def test_unified_extraction_with_mock_response(self):
-        """Test unified extraction with mocked LLM response."""
+    def test_unified_extraction_with_mock_response(self, monkeypatch):
+        """Test unified extraction with a mocked Gemini LLM response."""
         from tsr_generator.extractors.unified_extractor import extract_all_unified
+
+        # Force the langchain/Gemini backend (the default is the claude CLI) and
+        # provide a dummy key so the (mocked) client constructs cleanly. The test
+        # mocks the LLM, so no real API key or network is needed.
+        monkeypatch.setenv("EXTRACTION_BACKEND", "gemini")
+        monkeypatch.setenv("GEMINI_API_KEY", "test-key")
 
         sample_text = """
         Land Details
@@ -226,7 +231,10 @@ class TestOptimizationIntegration:
             ]
         }'''
 
-        with patch('tsr_generator.extractors.unified_extractor.ChatGoogleGenerativeAI') as mock_llm_class:
+        # ChatGoogleGenerativeAI is imported lazily inside extract_all_unified
+        # (`from langchain_google_genai import ChatGoogleGenerativeAI`), so patch
+        # it at its source module rather than on the extractor module.
+        with patch('langchain_google_genai.ChatGoogleGenerativeAI') as mock_llm_class:
             mock_llm = MagicMock()
             mock_llm.invoke.return_value = mock_response
             mock_llm_class.return_value = mock_llm

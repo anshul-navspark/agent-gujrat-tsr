@@ -67,8 +67,8 @@ class TestProcessRecordEndpoint:
 
     @pytest.fixture
     def mock_tsr_generator(self):
-        """Mock the TSR generator."""
-        with patch('api.server.generate_tsr_from_pdf') as mock:
+        """Mock the TSR generator (lazily-cached `_tsr_generator` global)."""
+        with patch('api.server._tsr_generator') as mock:
             mock.return_value = {'success': True, 'error': None}
             yield mock
 
@@ -122,8 +122,10 @@ class TestGenerateTSREndpoint:
             'file': ('test.pdf', io.BytesIO(pdf_content), 'application/pdf')
         }
 
-        # Mock the generator
-        with patch('api.server.generate_tsr_from_pdf') as mock_gen:
+        # Mock the generator. api/server.py invokes the TSR generator through a
+        # lazily-cached module global `_tsr_generator` (see get_tsr_generator),
+        # so patch that rather than a (non-existent) module-level function.
+        with patch('api.server._tsr_generator') as mock_gen:
             mock_gen.return_value = {'success': False, 'error': "Test mock error"}
             
             # Use dependency override for file service
