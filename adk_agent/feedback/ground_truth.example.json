@@ -1,0 +1,36 @@
+{
+  "_comment": "Example lawyer-corrected ground-truth file. Start from a run's runs/<run_id>/extraction.json, fix the wrong fields (types, names, amounts, certification, missing/extra entries), save it, then run: python -m adk_agent feedback import --run <run_id> --truth this_file.json",
+  "land_details": {
+    "village_name": "Keshav",
+    "taluka_name": "Abdasa",
+    "district_name": "Kutch",
+    "survey_number": "150/p1",
+    "old_survey_number": "",
+    "total_area": "1-88-48",
+    "nature_of_land": "New Tenure, Agricultural",
+    "owner": "Mer Deva Depa Rabari"
+  },
+  "entry_numbers": ["101", "102"],
+  "mutation_entries": [
+    {
+      "entry_number": "101",
+      "date": "14/05/2001",
+      "type": "SALE",
+      "description": "That Mer Deva Depa sold Survey No. 150/p1 measuring 1-88-48 Hectare to Mer Karshan Devshi for Rs. 2,50,000/- vide document no. 1234 dated 14/05/2001.",
+      "entry_status": "certified",
+      "certification_status": "certified",
+      "certification_official": "C.O. Abdasa",
+      "certification_date": "20/05/2001"
+    },
+    {
+      "entry_number": "102",
+      "date": "10/03/2005",
+      "type": "LOAN",
+      "description": "That Mer Karshan Devshi took a loan of Rs. 1,00,000/- on land bearing Survey No. 150/p1 from Bank of India, Naliya Branch.",
+      "entry_status": "certified",
+      "certification_status": "certified",
+      "certification_official": "Mamlatdar Abdasa",
+      "certification_date": "15/03/2005"
+    }
+  ]
+}

@@ -60,3 +60,9 @@ deprecated
 # Worktrees
 .worktrees
 .gstack/
+
+# ADK TSR workflow — local run records & learned state (regenerated at runtime)
+adk_agent/runs/
+adk_agent/feedback/prompting_guidelines.jsonl
+adk_agent/feedback/prompting_guidelines.md
+adk_agent/eval/golden.evalset.json

@@ -26,6 +26,14 @@ python -m tsr_generator path/to/input.pdf --output output.docx
 # Docker
 docker build -t agent-gujrat-tsr .
 docker run -e GEMINI_API_KEY=xxx -p 8080:8080 agent-gujrat-tsr
+
+# ADK 2.x agent workflow (adk_agent/) — single-command E2E
+pip install -r requirements.txt -r requirements-adk.txt
+python -m adk_agent --pdf record.pdf --out report.docx     # PDF -> TSR
+python -m adk_agent --pdf record.pdf --dry-run             # offline (no API key)
+python -m adk_agent --survey "Kutch/Abdasa/Keshav/150"     # live scrape -> TSR
+python -m adk_agent feedback import --run <run_id> --truth ground_truth.json
+python -m adk_agent eval                                    # score vs golden set
 ```
 
 ## Architecture
@@ -54,6 +62,17 @@ Controlled by `USE_OPTIMIZED_EXTRACTION` env var (default: `true`):
 - **Original** (3 LLM calls): `tsr_generator/api/tsr_generator.py`
 
 Mode switching happens in `tsr_generator/__init__.py`.
+
+### ADK 2.x Agent Workflow (`adk_agent/`)
+
+A skill-based **Google Agent Development Kit (ADK 2.x)** re-expression of the pipeline that runs E2E through one command (`python -m adk_agent`). It is a NEW orchestration + observability layer that **reuses** the existing internals — the legacy Streamlit/API/CLI/Docker paths are untouched. Full design: `docs/adk_architecture.md`.
+
+- **Skill graph** (`adk_agent/graph.py`): ADK 2.0 `Workflow` of `ingest → extractor → assemble`. `ingest`/`assemble` are function nodes wrapping `extract_text_from_pdf`/`process_entry_details`+`generate_findings_table`+`create_tsr_document`; `extractor` is a native ADK `LlmAgent` (Gemini) whose instruction reuses `build_unified_prompt` (supplied as a callable `InstructionProvider` since the prompt contains literal `{}`) with `output_schema=UnifiedExtraction`.
+- **Two engines** (`adk_agent/pipeline.py`): `engine="pipeline"` (default, Python orchestration driving an ADK `Runner` for the LLM step) and `engine="graph"` (the full ADK `Workflow`). Run config + the live run record ride a `contextvars` `RunContext` (`adk_agent/observability/run_context.py`).
+- **Observability** (`adk_agent/observability/plugin.py`): `ObservabilityPlugin` (a `BasePlugin` on the `App`) captures every model call (rendered prompt, raw response, `usage_metadata` tokens) + skill timings into `runs/<run_id>/{record.json,extraction.json,source.txt,trace.md}`.
+- **Ground-truth feedback loop** (`adk_agent/feedback/`): `feedback import` diffs the model extraction against a lawyer-corrected `ground_truth.json` (aligned by entry number), distils each correction into a deduped prompt guideline injected into the next extraction prompt (`prompting_guidelines.jsonl`), and promotes the run into the golden eval set.
+- **Eval** (`adk_agent/eval/`): `golden.evalset.json` (ADK evalset shape) + a structured evaluator (`python -m adk_agent eval`) reporting `field_accuracy` / `entry_recall` / `type_accuracy` vs ground truth.
+- **Offline**: `--dry-run` (or no `GEMINI_API_KEY`) swaps in `FakeGemini` (`adk_agent/dry_run_model.py`) so the whole pipeline + tests run with no network. Tests: `tests/test_adk_pipeline.py`, `tests/test_adk_feedback.py`.
 
 ### Dependency Injection
 

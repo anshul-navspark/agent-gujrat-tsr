@@ -1,0 +1,7 @@
+# Extra dependencies for the Google ADK 2.x TSR workflow (adk_agent/).
+# Install alongside the base requirements:
+#     pip install -r requirements.txt -r requirements-adk.txt
+#
+# google-adk pulls in google-genai (the unified Gemini SDK), pydantic v2,
+# opentelemetry (tracing) and the ADK runtime. Requires Python >= 3.11.
+google-adk>=2.2.0
