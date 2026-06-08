@@ -38,6 +38,8 @@ class RunContext:
     runs_dir: Optional[Path] = None
     # Learned prompt guidelines injected into the extraction prompt this run.
     guidelines_text: str = ""
+    # Active prompt profile (efficiency levers) for this run; None -> production "full".
+    profile: Optional[Any] = None
 
 
 _current: "contextvars.ContextVar[Optional[RunContext]]" = contextvars.ContextVar(

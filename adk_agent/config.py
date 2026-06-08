@@ -86,6 +86,18 @@ class AdkConfig:
             os.getenv("ADK_GOLDEN_EVALSET", str(ADK_PKG_DIR / "eval" / "golden.evalset.json"))
         )
     )
+    # Optimizer artifacts: leaderboards, reports, baseline cache (gitignored).
+    optimize_dir: Path = field(
+        default_factory=lambda: Path(
+            os.getenv("ADK_OPTIMIZE_DIR", str(ADK_PKG_DIR / "optimize" / "artifacts"))
+        )
+    )
+    # The promoted "winning" prompt profile every run reads (None until promoted).
+    active_profile_path: Path = field(
+        default_factory=lambda: Path(
+            os.getenv("ADK_ACTIVE_PROFILE", str(ADK_PKG_DIR / "optimize" / "active_profile.json"))
+        )
+    )
 
     # --- Behaviour ---
     dry_run: bool = False  # use the offline FakeGemini model (no API key needed)
@@ -95,6 +107,7 @@ class AdkConfig:
         self.runs_dir.mkdir(parents=True, exist_ok=True)
         self.guidelines_path.parent.mkdir(parents=True, exist_ok=True)
         self.golden_evalset_path.parent.mkdir(parents=True, exist_ok=True)
+        self.optimize_dir.mkdir(parents=True, exist_ok=True)
 
     @property
     def has_api_key(self) -> bool:

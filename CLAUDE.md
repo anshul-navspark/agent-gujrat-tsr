@@ -34,6 +34,13 @@ python -m adk_agent --pdf record.pdf --dry-run             # offline (no API key
 python -m adk_agent --survey "Kutch/Abdasa/Keshav/150"     # live scrape -> TSR
 python -m adk_agent feedback import --run <run_id> --truth ground_truth.json
 python -m adk_agent eval                                    # score vs golden set
+
+# Closed-loop efficiency optimizer (token/latency savings, no accuracy regression)
+python -m adk_agent optimize --dry-run                      # offline demo (sample PDF)
+python -m adk_agent optimize --corpus ./pdfs                # measure over a PDF corpus
+python -m adk_agent optimize --apply                        # promote the winning profile
+python -m adk_agent optimize --show                         # show the active profile
+python -m adk_agent optimize --revert                       # back to the 'full' prompt
 ```
 
 ## Architecture
@@ -55,13 +62,9 @@ PDF → `extract_text_from_pdf()` → `extract_all_unified()` (1 LLM call) → `
 **Scraping Pipeline:**
 Request → TranslationService (English→Gujarati) → AnyRoR Scraper (Selenium + CAPTCHA solver) → PDF → Cache (GCS)
 
-### Two Extraction Modes
+### Extraction
 
-Controlled by `USE_OPTIMIZED_EXTRACTION` env var (default: `true`):
-- **Optimized** (1 LLM call): `tsr_generator/extractors/unified_extractor.py` — 60-70% token savings
-- **Original** (3 LLM calls): `tsr_generator/api/tsr_generator.py`
-
-Mode switching happens in `tsr_generator/__init__.py`.
+The **unified single-call extractor** (`tsr_generator/extractors/unified_extractor.py::extract_all_unified`, wrapped by `tsr_generator/api/tsr_generator_optimized.py`) is the only extraction path — one LLM call, ~60-70% fewer tokens than the retired 3-call path. `tsr_generator/__init__.py` exposes it as the package-level `generate_tsr_from_pdf`; `USE_OPTIMIZED` is a constant (always `True`) kept only for backward-compatible imports. The legacy 3-call orchestrator (`tsr_generator/api/tsr_generator.py`) is deprecated and off all default paths.
 
 ### ADK 2.x Agent Workflow (`adk_agent/`)
 
@@ -72,7 +75,8 @@ A skill-based **Google Agent Development Kit (ADK 2.x)** re-expression of the pi
 - **Observability** (`adk_agent/observability/plugin.py`): `ObservabilityPlugin` (a `BasePlugin` on the `App`) captures every model call (rendered prompt, raw response, `usage_metadata` tokens) + skill timings into `runs/<run_id>/{record.json,extraction.json,source.txt,trace.md}`.
 - **Ground-truth feedback loop** (`adk_agent/feedback/`): `feedback import` diffs the model extraction against a lawyer-corrected `ground_truth.json` (aligned by entry number), distils each correction into a deduped prompt guideline injected into the next extraction prompt (`prompting_guidelines.jsonl`), and promotes the run into the golden eval set.
 - **Eval** (`adk_agent/eval/`): `golden.evalset.json` (ADK evalset shape) + a structured evaluator (`python -m adk_agent eval`) reporting `field_accuracy` / `entry_recall` / `type_accuracy` vs ground truth.
-- **Offline**: `--dry-run` (or no `GEMINI_API_KEY`) swaps in `FakeGemini` (`adk_agent/dry_run_model.py`) so the whole pipeline + tests run with no network. Tests: `tests/test_adk_pipeline.py`, `tests/test_adk_feedback.py`.
+- **Closed-loop optimizer** (`adk_agent/optimize/`): `python -m adk_agent optimize` searches parametric prompt **profiles** (compact/omit the heavy static prompt blocks, tighten section pruning, route model, cap thinking/output — `profiles.py`; the canonical `full` profile reproduces the production prompt byte-for-byte) over a corpus (`dataset.py`: lawyer-truth golden cases where available, else **parity-vs-current-production** output). The `harness.py` measures accuracy (reusing `score_extraction`) **and** tokens + latency (from the run record's `extract_only_record`); `gate.py` accepts a candidate only if accuracy is non-decreasing AND tokens/latency drop; `loop.py` greedily compounds accepted levers, writes `artifacts/{leaderboard.jsonl,report.md,best_profile.json}`, and `--apply` promotes the winner to `active_profile.json` (which every run then reads via `_load_active_profile`; reversible with `--revert`). Bounded + deterministic (fixed lever list — no runaway spend). Offline (`--dry-run`) the FakeGemini's prompt-token estimate includes the system instruction, so token savings are real, but accuracy is parity-only (need golden cases or a live key to validate real quality).
+- **Offline**: `--dry-run` (or no `GEMINI_API_KEY`) swaps in `FakeGemini` (`adk_agent/dry_run_model.py`) so the whole pipeline + tests run with no network. Tests: `tests/test_adk_pipeline.py`, `tests/test_adk_feedback.py`, `tests/test_adk_optimize.py`.
 
 ### Dependency Injection
 
@@ -90,7 +94,7 @@ The **local** cache defaults to ~never-expire (`LOCAL_CACHE_TTL_DAYS`, default 3
 - `GEMINI_MODEL_NAME` — main extraction model, default: `gemini-3.1-pro-preview`
 - `CAPTCHA_MODEL_NAME` — captcha solver model, default: `gemini-3-flash-preview`
 - `GEMINI_TRANSLATION_MODEL` — translation lookup model, default: `gemini-3.1-flash-lite-preview`
-- `USE_OPTIMIZED_EXTRACTION` — default: `true`
+- `USE_OPTIMIZED_EXTRACTION` — deprecated/no-op; unified extraction is now the only path
 - `GCS_CACHE_BUCKET` — optional, enables GCS caching
 - `LOCAL_CACHE_TTL_DAYS` — local cache TTL in days when no GCS bucket; default `36500` (≈never expire)
 - `HEADLESS` — browser headless mode for scraping

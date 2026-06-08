@@ -41,14 +41,34 @@ python -m adk_agent guidelines
 python -m adk_agent eval
 ```
 
+## Make it faster / cheaper without losing accuracy
+
+A closed-loop optimizer searches prompt **profiles** (compact or omit the heavy
+static prompt blocks, tighten section pruning, route the model, cap thinking /
+output) and keeps only the changes that cut tokens/latency **with no accuracy
+regression** — measured against lawyer-truth golden cases where available, else
+against the current production output (parity).
+
+```bash
+python -m adk_agent optimize --dry-run            # offline demo on the bundled sample PDF
+python -m adk_agent optimize --corpus ./pdfs      # measure over your own PDFs (live key)
+python -m adk_agent optimize --apply              # promote the winning profile to production
+python -m adk_agent optimize --show               # inspect the active profile
+python -m adk_agent optimize --revert             # back to the untouched 'full' prompt
+```
+
+Results land in `adk_agent/optimize/artifacts/` (`report.md`, `leaderboard.jsonl`,
+`best_profile.json`). The promoted winner is written to `active_profile.json`,
+which every subsequent run reads automatically — fully reversible.
+
 ## Layout
 
 ```
 adk_agent/
-  __main__.py        single-command CLI (run | feedback | eval | runs | guidelines)
-  pipeline.py        orchestrator (engine="pipeline" | "graph") + extract_only
+  __main__.py        single-command CLI (run | feedback | eval | optimize | runs | guidelines)
+  pipeline.py        orchestrator (engine="pipeline" | "graph") + extract_only(_record)
   graph.py           ADK 2.0 Workflow graph + root_agent (for `adk run`/`adk web`)
-  app.py             App + Runner + model resolution
+  app.py             App + Runner + (profile-aware) model resolution
   steps.py           shared pipeline steps (scrape, pdf_text, assemble)
   schemas.py         UnifiedExtraction (Pydantic output schema)
   dry_run_model.py   FakeGemini BaseLlm (offline dry-run / tests)
@@ -56,6 +76,7 @@ adk_agent/
   observability/     ObservabilityPlugin + RunRecord + RunContext
   feedback/          diff, guidelines store, ground-truth import
   eval/              golden evalset + structured field-accuracy evaluator
+  optimize/          prompt profiles, dataset, harness, regression gate, loop
 ```
 
 ## ADK CLI / Dev-UI

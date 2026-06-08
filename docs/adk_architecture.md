@@ -165,7 +165,61 @@ is simpler and fits how lawyers already review the DOCX.
 
 ---
 
-## 5. Single command
+## 5. Closed-loop efficiency optimizer (`optimize/`)
+
+The feedback loop improves *accuracy*; this loop drives down *cost* (tokens) and
+*latency* **without regressing accuracy**. It reuses the same observability +
+scoring machinery and runs through `python -m adk_agent optimize`.
+
+```
+                    ┌───────────────────────── lever space (profiles.py) ─────────────────────────┐
+                    │ compact/omit ENTRY_TYPE_RULES · FORMATTING_RULES · DESCRIPTION_EXAMPLES ·    │
+                    │ CERTIFICATION_PATTERNS · section-prune threshold · model · thinking · output │
+                    └─────────────────────────────────────────────────────────────────────────────┘
+                                              │  greedy, compounding (loop.py)
+  corpus (dataset.py)                         ▼
+  golden truth ──┐                  ┌──────────────────┐   accuracy (field/entry/type, score_extraction)
+                 ├─▶ extract_only_record(profile) ─────▶│   tokens + latency (RunRecord)               │
+  parity vs ─────┘   (harness.py)            └──────────────────┘
+  production output                                     │
+                                                        ▼
+                                          regression gate (gate.py):
+                                   accept ⇔ accuracy non-decreasing AND tokens/latency ↓
+                                                        │
+                                  best_profile.json ──(--apply)──▶ active_profile.json ──▶ every run
+```
+
+- **Profiles** (`profiles.py`): a `PromptProfile` is a named bundle of levers. The
+  four heavy static prompt blocks (re-sent on *every* call; `DESCRIPTION_EXAMPLES`
+  alone is ~3.5 KB) can each be `full` / `compact` / `off`; plus a section-prune
+  threshold and model/thinking/output knobs. The canonical `full` profile
+  **delegates to the production prompt builder**, so the baseline is byte-for-byte
+  what ships today; every other profile is a candidate the gate must justify.
+- **Dataset** (`dataset.py`): lawyer-truth **golden** cases (scored vs truth) where
+  available, else **parity** cases (a PDF corpus / the bundled sample) scored vs the
+  *current production* extraction — a regression signal that needs no ground truth
+  ("did this change quietly alter what we ship?").
+- **Harness** (`harness.py`): runs each profile through `extract_only_record` (the
+  same extractor path, instrumented by the `ObservabilityPlugin`) and reads back
+  accuracy (`score_extraction`) **and** tokens/latency from the `RunRecord`.
+- **Gate** (`gate.py`): a candidate is accepted only if field/entry/type accuracy do
+  not drop (default: strictly non-decreasing) **and** average tokens (or latency)
+  fall by ≥ `min_token_saving_pct`. So the search can only trade equal-or-better
+  accuracy for fewer tokens.
+- **Loop** (`loop.py`): runs the baseline once, then greedily compounds accepted
+  levers (deterministic, bounded by a fixed lever list — no runaway API spend),
+  writing `artifacts/{leaderboard.jsonl, report.md, best_profile.json}`. `--apply`
+  promotes the winner to `active_profile.json`, which `pipeline._load_active_profile`
+  feeds into every subsequent run; `--revert` removes it.
+
+Offline (`--dry-run`) the `FakeGemini` prompt-token estimate includes the system
+instruction (where the tuned prompt rides), so token savings are real and
+measurable with no key — but accuracy is parity-only; validating *real* quality
+needs golden cases or a live key.
+
+---
+
+## 6. Single command
 
 ```bash
 # PDF → TSR (offline-capable)
@@ -189,7 +243,7 @@ run records — executes with no network. That is exactly what the test suite us
 
 ---
 
-## 6. Best practices applied (from the ADK docs)
+## 7. Best practices applied (from the ADK docs)
 
 - **Structured workflow** via the graph `Workflow` (deterministic, inspectable).
 - **Validated structured output** via `output_schema` instead of free-form JSON.
@@ -203,7 +257,7 @@ run records — executes with no network. That is exactly what the test suite us
 
 ---
 
-## 7. Configuration
+## 8. Configuration
 
 Reuses the existing env vars; adds a few `ADK_*` overrides (see `adk_agent/config.py`):
 
@@ -214,15 +268,18 @@ Reuses the existing env vars; adds a few `ADK_*` overrides (see `adk_agent/confi
 | `ADK_RUNS_DIR` | `adk_agent/runs` | run records location |
 | `ADK_GUIDELINES_PATH` | `adk_agent/feedback/prompting_guidelines.jsonl` | learned guidelines |
 | `ADK_GOLDEN_EVALSET` | `adk_agent/eval/golden.evalset.json` | golden dataset |
+| `ADK_OPTIMIZE_DIR` | `adk_agent/optimize/artifacts` | optimizer leaderboards/reports |
+| `ADK_ACTIVE_PROFILE` | `adk_agent/optimize/active_profile.json` | promoted prompt profile |
 
 ---
 
-## 8. Limitations / next steps
+## 9. Limitations / next steps
 
 - Live scraping needs portal access, a browser, and a CAPTCHA-solving Gemini key at
   runtime; it is not exercised by the dry-run.
-- The dry-run `FakeGemini` returns a fixed payload, so dry-run eval numbers reflect
-  the fixture, not real accuracy.
+- The dry-run `FakeGemini` returns a fixed payload, so dry-run eval/optimize accuracy
+  numbers reflect the fixture, not real quality (token savings *are* real). Validate
+  prompt-compaction levers against golden cases or a live key before promoting.
 - Guideline synthesis is deterministic (template-based); an optional LLM-judge pass
   could produce richer generalisations.
 - The graph engine currently models a linear chain; ADK's graph runtime also

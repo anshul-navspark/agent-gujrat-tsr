@@ -82,19 +82,49 @@ def extraction_instruction(ctx) -> str:  # ctx: ReadonlyContext
     if run is not None:
         pdf_text = run.pdf_text
         guidelines = run.guidelines_text
+        profile = getattr(run, "profile", None)
     else:  # pragma: no cover - fallback if no run context is established
         pdf_text = (ctx.state.get("pdf_text", "") if ctx else "") or ""
         guidelines = (ctx.state.get("guidelines_text", "") if ctx else "") or ""
+        profile = None
+    if profile is not None:
+        # Lazy import avoids a cycle (optimize.profiles imports this module).
+        from adk_agent.optimize.profiles import build_prompt
+
+        return build_prompt(pdf_text, guidelines, profile)
     return build_extraction_prompt(pdf_text, guidelines)
+
+
+def _generate_config(profile, temperature: float) -> "genai_types.GenerateContentConfig":
+    """Build the decoding config, applying a prompt profile's levers when present."""
+    temp = getattr(profile, "temperature", None)
+    cfg = genai_types.GenerateContentConfig(temperature=temp if temp is not None else temperature)
+    if profile is None:
+        return cfg
+    max_out = getattr(profile, "max_output_tokens", None)
+    if max_out:
+        try:
+            cfg.max_output_tokens = int(max_out)
+        except Exception:  # pragma: no cover - defensive
+            pass
+    budget = getattr(profile, "thinking_budget", None)
+    if budget is not None:
+        # Best-effort: older google-genai builds may lack ThinkingConfig.
+        try:
+            cfg.thinking_config = genai_types.ThinkingConfig(thinking_budget=int(budget))
+        except Exception:  # pragma: no cover - defensive
+            logger.debug("thinking_budget not applied (ThinkingConfig unavailable)")
+    return cfg
 
 
 def build_extractor_agent(
     model: Union[str, BaseLlm],
     *,
     temperature: float = 0.0,
+    profile=None,
     agent_name: str = EXTRACTOR_AGENT_NAME,
 ) -> Agent:
-    """Construct the extraction ``LlmAgent``."""
+    """Construct the extraction ``LlmAgent`` (optionally tuned by a prompt profile)."""
     return Agent(
         name=agent_name,
         model=model,
@@ -102,7 +132,7 @@ def build_extractor_agent(
         instruction=extraction_instruction,
         output_schema=UnifiedExtraction,
         output_key=EXTRACTION_OUTPUT_KEY,
-        generate_content_config=genai_types.GenerateContentConfig(temperature=temperature),
+        generate_content_config=_generate_config(profile, temperature),
     )
 
 

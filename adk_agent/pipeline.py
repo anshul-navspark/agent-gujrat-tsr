@@ -48,6 +48,17 @@ def _new_run_id() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6]
 
 
+def _load_active_profile(config: AdkConfig):
+    """Load the promoted prompt profile (efficiency levers), or None for production 'full'."""
+    try:
+        from adk_agent.optimize.profiles import load_active_profile
+
+        return load_active_profile(config.active_profile_path)
+    except Exception as e:  # pragma: no cover - optimizer optional
+        logger.debug("no active profile loaded: %s", e)
+        return None
+
+
 async def run_pipeline(
     config: Optional[AdkConfig] = None,
     *,
@@ -84,7 +95,9 @@ async def run_pipeline(
         runs_dir=config.runs_dir,
         options={"mode": mode, "survey": survey or {}},
         guidelines_text=load_guidelines_text(config),
+        profile=_load_active_profile(config),
     )
+    record.inputs["profile"] = getattr(run.profile, "name", "full")
     set_current_run(run)
     try:
         if engine == "graph":
@@ -111,36 +124,68 @@ async def run_pipeline(
     return record
 
 
+async def extract_only_record(
+    config: Optional[AdkConfig] = None,
+    pdf_text: str = "",
+    *,
+    profile=None,
+    guidelines_text: Optional[str] = None,
+    use_active_profile: bool = True,
+) -> "tuple[Dict[str, Any], RunRecord]":
+    """
+    Run *only* the extraction skill on raw text and return
+    ``(normalised_extraction, run_record)``.
+
+    The run record carries the observability the optimizer reads back: token
+    usage (``record.token_totals``) and per-call latency (``llm_calls``). No
+    DOCX is rendered and nothing is persisted.
+
+    *profile* overrides the prompt profile; when omitted, the promoted active
+    profile is used (unless *use_active_profile* is False).
+    """
+    config = config or get_adk_config()
+    if profile is None and use_active_profile:
+        profile = _load_active_profile(config)
+    record = RunRecord(run_id="eval-" + uuid.uuid4().hex[:8], mode="eval", model=str(config.model_name))
+    run = RunContext(
+        record=record,
+        runs_dir=config.runs_dir,
+        guidelines_text=(guidelines_text if guidelines_text is not None else load_guidelines_text(config)),
+        profile=profile,
+    )
+    run.pdf_text = pdf_text
+    set_current_run(run)
+    try:
+        extraction_raw = await _run_extractor(config, run)
+        normalized = normalize_extraction(extraction_raw, pdf_text)
+        record.extraction = normalized
+        return normalized, record
+    finally:
+        set_current_run(None)
+
+
 async def extract_only(
     config: Optional[AdkConfig] = None,
     pdf_text: str = "",
     *,
+    profile=None,
     guidelines_text: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Run *only* the extraction skill on raw text and return the normalised
     extraction dict. Used by the evaluator (no DOCX, no persistence).
     """
-    config = config or get_adk_config()
-    record = RunRecord(run_id="eval-" + uuid.uuid4().hex[:8], mode="eval", model=str(config.model_name))
-    run = RunContext(
-        record=record,
-        runs_dir=config.runs_dir,
-        guidelines_text=(guidelines_text if guidelines_text is not None else load_guidelines_text(config)),
+    extraction, _ = await extract_only_record(
+        config, pdf_text, profile=profile, guidelines_text=guidelines_text
     )
-    run.pdf_text = pdf_text
-    set_current_run(run)
-    try:
-        extraction_raw = await _run_extractor(config, run)
-        return normalize_extraction(extraction_raw, pdf_text)
-    finally:
-        set_current_run(None)
+    return extraction
 
 
 async def _run_extractor(config: AdkConfig, run: RunContext) -> Dict[str, Any]:
     """Run the extraction LlmAgent via an ADK Runner; return the raw extraction dict."""
-    model = resolve_model(config)
-    agent = build_extractor_agent(model, temperature=config.temperature)
+    profile = getattr(run, "profile", None)
+    model = resolve_model(config, profile)
+    agent = build_extractor_agent(model, temperature=config.temperature, profile=profile)
     app = build_app(config, agent)
     runner = make_runner(app)
     session = await runner.session_service.create_session(

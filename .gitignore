@@ -66,3 +66,6 @@ adk_agent/runs/
 adk_agent/feedback/prompting_guidelines.jsonl
 adk_agent/feedback/prompting_guidelines.md
 adk_agent/eval/golden.evalset.json
+# Optimizer artifacts (leaderboards, reports, baseline cache) + the promoted profile
+adk_agent/optimize/artifacts/
+adk_agent/optimize/active_profile.json

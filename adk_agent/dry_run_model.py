@@ -83,6 +83,20 @@ def set_dry_run_payload(payload: Optional[dict]) -> None:
     _payload_override = payload
 
 
+def _text_len(obj) -> int:
+    """Character length of a genai Content / Part / str (best effort)."""
+    if obj is None:
+        return 0
+    if isinstance(obj, str):
+        return len(obj)
+    if isinstance(obj, (list, tuple)):
+        return sum(_text_len(o) for o in obj)
+    parts = getattr(obj, "parts", None)
+    if parts:
+        return sum(len(getattr(p, "text", "") or "") for p in parts)
+    return len(getattr(obj, "text", "") or "")
+
+
 class FakeGemini(BaseLlm):
     """A ``BaseLlm`` that returns a fixed JSON extraction without any network call."""
 
@@ -95,13 +109,14 @@ class FakeGemini(BaseLlm):
         payload = _payload_override if _payload_override is not None else _DEFAULT_PAYLOAD
         text = json.dumps(payload, ensure_ascii=False)
 
-        # Rough token accounting so the observability layer has something real to log.
-        prompt_chars = sum(
-            len(p.text or "")
-            for c in (llm_request.contents or [])
-            for p in (c.parts or [])
-            if getattr(p, "text", None)
-        )
+        # Rough token accounting so the observability layer has something real to
+        # log. The bulk of the prompt (the tuned extraction instruction + the
+        # document text) rides in the *system instruction*, so count that too —
+        # otherwise prompt-compaction levers would be invisible offline.
+        prompt_chars = _text_len(llm_request.contents)
+        config = getattr(llm_request, "config", None)
+        if config is not None:
+            prompt_chars += _text_len(getattr(config, "system_instruction", None))
         usage = genai_types.GenerateContentResponseUsageMetadata(
             prompt_token_count=max(1, prompt_chars // 4),
             candidates_token_count=max(1, len(text) // 4),

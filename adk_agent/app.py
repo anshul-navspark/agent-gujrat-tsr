@@ -20,11 +20,17 @@ from adk_agent.dry_run_model import FakeGemini
 from adk_agent.observability import ObservabilityPlugin
 
 
-def resolve_model(config: AdkConfig) -> Union[str, BaseLlm]:
-    """Return the model for ADK agents: the offline fake, or the Gemini model id."""
+def resolve_model(config: AdkConfig, profile=None) -> Union[str, BaseLlm]:
+    """
+    Return the model for ADK agents: the offline fake, or the Gemini model id.
+
+    A prompt *profile* may route to a different Gemini model (``model_name``);
+    in dry-run/offline mode the FakeGemini is always used regardless.
+    """
+    model_name = (getattr(profile, "model_name", None) or config.model_name)
     if config.dry_run or not config.has_api_key:
-        return FakeGemini(model="fake-" + config.model_name)
-    return config.model_name
+        return FakeGemini(model="fake-" + model_name)
+    return model_name
 
 
 def build_app(config: AdkConfig, root_agent, *, app_name: str = None) -> App:

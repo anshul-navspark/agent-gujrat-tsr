@@ -31,7 +31,7 @@ from typing import Optional
 
 from adk_agent.config import get_adk_config
 
-_SUBCOMMANDS = {"run", "feedback", "eval", "runs", "guidelines"}
+_SUBCOMMANDS = {"run", "feedback", "eval", "optimize", "runs", "guidelines"}
 
 
 # --------------------------------------------------------------------- helpers
@@ -52,6 +52,8 @@ def _config_from_args(args) -> "object":
         overrides["model_name"] = args.model
     if getattr(args, "runs_dir", None):
         overrides["runs_dir"] = Path(args.runs_dir)
+    if getattr(args, "optimize_dir", None):
+        overrides["optimize_dir"] = Path(args.optimize_dir)
     return get_adk_config(refresh=True, **overrides)
 
 
@@ -143,6 +145,68 @@ def cmd_eval(args) -> int:
     return 0
 
 
+def cmd_optimize(args) -> int:
+    from adk_agent.optimize.gate import RegressionGate
+    from adk_agent.optimize.loop import promote_best, revert_active, run_optimization, show_active
+
+    config = _config_from_args(args)
+
+    if args.show:
+        profile = show_active(config)
+        if profile is None:
+            print(f"(no active profile — runs use the production 'full' prompt)\n  {config.active_profile_path}")
+        else:
+            print(f"Active prompt profile ({config.active_profile_path}):\n")
+            print(json.dumps(profile.to_dict(), indent=2))
+        return 0
+
+    if args.revert:
+        reverted = revert_active(config)
+        print("Reverted to the production 'full' prompt." if reverted
+              else "(no active profile to revert)")
+        return 0
+
+    if config.dry_run or not config.has_api_key:
+        print("[dry-run] No GEMINI_API_KEY / --dry-run: token savings are real but "
+              "accuracy is measured against the offline FakeGemini, not real quality.")
+
+    gate = RegressionGate(field_tol=args.field_tol, recall_tol=args.field_tol,
+                          type_tol=args.field_tol, min_token_saving_pct=args.min_saving)
+    print(f"Optimizing extraction (corpus={args.corpus or 'golden+sample'}, "
+          f"max_iters={args.max_iters or 'all'}) …")
+    report = asyncio.run(run_optimization(
+        config, corpus_dir=args.corpus, include_golden=not args.no_golden,
+        include_sample=not args.no_sample, limit=args.limit, max_iters=args.max_iters, gate=gate,
+    ))
+
+    if not report.get("cases"):
+        print(f"\n  {report.get('note')}")
+        return 1
+
+    b, w = report["baseline"], report["winner"]
+    print()
+    print(f"  cases            : {report['cases']}  {report['case_modes']}")
+    print(f"  baseline tokens  : {b['avg_total_tokens']}   winner: {w['avg_total_tokens']}")
+    print(f"  TOKEN SAVINGS    : {report['token_savings_pct']}%   "
+          f"latency: {report['latency_savings_pct']}%")
+    print(f"  accuracy held    : {report['accuracy_held']}   "
+          f"(field {b['field_accuracy']}→{w['field_accuracy']}, "
+          f"entry {b['entry_recall']}→{w['entry_recall']}, type {b['type_accuracy']}→{w['type_accuracy']})")
+    print(f"  accepted levers  : {report['accepted_levers'] or '(none — baseline already optimal)'}")
+    print(f"  report           : {report.get('report_md_path')}")
+
+    if args.apply:
+        if report["improved"]:
+            path = promote_best(config)
+            print(f"\n  PROMOTED winner -> {path}\n  (all future runs use it; revert with "
+                  f"'python -m adk_agent optimize --revert')")
+        else:
+            print("\n  --apply: nothing to promote (baseline was already optimal).")
+    elif report["improved"]:
+        print("\n  Re-run with --apply to promote the winning profile into production.")
+    return 0
+
+
 def cmd_runs(args) -> int:
     config = _config_from_args(args)
     runs_dir = Path(config.runs_dir)
@@ -219,6 +283,28 @@ def build_parser() -> argparse.ArgumentParser:
     ev.add_argument("--model", help="Override the Gemini model id")
     ev.add_argument("--runs-dir", help="Override the run-records directory")
     ev.set_defaults(func=cmd_eval)
+
+    # optimize
+    opt = sub.add_parser(
+        "optimize",
+        help="Search prompt profiles for token/latency savings with no accuracy regression",
+    )
+    opt.add_argument("--corpus", help="Directory of land-record PDFs to evaluate against (parity mode)")
+    opt.add_argument("--no-golden", action="store_true", help="Skip the lawyer-truth golden cases")
+    opt.add_argument("--no-sample", action="store_true", help="Skip the bundled sample PDF")
+    opt.add_argument("--limit", type=int, default=None, help="Only evaluate the first N cases")
+    opt.add_argument("--max-iters", type=int, default=None, help="Only try the first M efficiency levers")
+    opt.add_argument("--min-saving", type=float, default=1.0,
+                     help="Min %% token saving for a lever to count as a win (default: 1.0)")
+    opt.add_argument("--field-tol", type=float, default=1e-9,
+                     help="Allowed accuracy drop before a lever is rejected (default: ~0, strict)")
+    opt.add_argument("--apply", action="store_true", help="Promote the winning profile into production")
+    opt.add_argument("--revert", action="store_true", help="Clear the active profile (back to 'full')")
+    opt.add_argument("--show", action="store_true", help="Print the active (promoted) profile and exit")
+    opt.add_argument("--dry-run", action="store_true", help="Use the offline FakeGemini model")
+    opt.add_argument("--model", help="Override the Gemini model id")
+    opt.add_argument("--optimize-dir", help="Override the optimizer artifacts directory")
+    opt.set_defaults(func=cmd_optimize)
 
     # runs
     rn = sub.add_parser("runs", help="List recent runs")
