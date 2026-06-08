@@ -256,26 +256,3 @@ def generate_tsr_from_pdf(pdf_path: str, output_path: str, logger=None, request_
     but uses optimized extraction internally.
     """
     return generate_tsr_from_pdf_optimized(pdf_path, output_path, logger, log_tokens=False, request_metadata=request_metadata)
-
-
-# =============================================================================
-# COMPARISON UTILITY
-# =============================================================================
-
-def compare_extraction_methods(pdf_path: str) -> Dict[str, Any]:
-    """
-    Compare token usage between original and optimized methods.
-
-    Useful for validating savings claims.
-
-    Args:
-        pdf_path: Path to a PDF file
-
-    Returns:
-        Comparison statistics
-    """
-    pdf_text = extract_text_from_pdf(pdf_path)
-    if not pdf_text:
-        return {'error': 'Failed to extract PDF text'}
-
-    return estimate_token_savings(pdf_text)

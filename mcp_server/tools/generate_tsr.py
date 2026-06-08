@@ -9,7 +9,8 @@ from typing import Optional, List
 # Add parent directory to path to import project modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
-from tsr_generator.api.tsr_generator import generate_tsr_from_pdf
+# Unified (optimized) extraction is the only path; import the package-level entry point.
+from tsr_generator import generate_tsr_from_pdf
 
 logger = logging.getLogger(__name__)
 

@@ -1,3 +1,13 @@
+"""
+DEPRECATED — original 3-call TSR generator.
+
+This module predates the unified single-call extractor and is no longer on any
+default code path: the package exposes ``generate_tsr_from_pdf`` from
+``tsr_generator.api.tsr_generator_optimized`` (one LLM call, ~50-70% fewer
+tokens), and the CLI + MCP tool now route to it. Retained only for reference and
+A/B comparison; do not wire new code to this module.
+"""
+
 import os
 import traceback
 import logging
