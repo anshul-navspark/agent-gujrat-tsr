@@ -30,15 +30,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 ADK_PKG_DIR = Path(__file__).resolve().parent
 
 
-def _bridge_gemini_api_key() -> str:
-    """ADK's Gemini backend reads GOOGLE_API_KEY first; mirror GEMINI_API_KEY."""
-    key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or ""
-    if key:
-        os.environ.setdefault("GOOGLE_API_KEY", key)
-        os.environ.setdefault("GEMINI_API_KEY", key)
-    # ADK / google-genai: use the public Gemini API, not Vertex, unless told.
-    os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "0")
-    return key
+def _truthy(v: Optional[str]) -> bool:
+    return str(v or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _detect_vertex() -> bool:
+    """Enterprise (Vertex AI) mode: authenticate via ADC / service account, no API key."""
+    return _truthy(os.getenv("GOOGLE_GENAI_USE_VERTEXAI"))
 
 
 @dataclass
@@ -50,7 +48,22 @@ class AdkConfig:
     model_name: str = field(
         default_factory=lambda: os.getenv("GEMINI_MODEL_NAME", "gemini-3.1-pro-preview")
     )
-    api_key: str = field(default_factory=_bridge_gemini_api_key)
+
+    # --- Auth ---
+    # Two backends, auto-detected from the environment:
+    #   * dev:        an AI Studio / Gemini API key (GEMINI_API_KEY / GOOGLE_API_KEY)
+    #   * enterprise: Vertex AI with Application Default Credentials + a service
+    #                 account (GOOGLE_GENAI_USE_VERTEXAI=1, GOOGLE_CLOUD_PROJECT,
+    #                 GOOGLE_CLOUD_LOCATION) — no personal API key.
+    use_vertex: bool = field(default_factory=_detect_vertex)
+    api_key: str = field(
+        default_factory=lambda: os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY") or ""
+    )
+    project: Optional[str] = field(
+        default_factory=lambda: os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("GOOGLE_CLOUD_PROJECT_ID")
+    )
+    location: str = field(default_factory=lambda: os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1"))
+
     temperature: float = 0.0
     # Gemini-3 "thinking" budget knob, kept consistent with the legacy extractor.
     thinking_level: Optional[str] = field(
@@ -103,6 +116,23 @@ class AdkConfig:
     dry_run: bool = False  # use the offline FakeGemini model (no API key needed)
     headless: bool = field(default_factory=lambda: os.getenv("HEADLESS", "true").lower() != "false")
 
+    def __post_init__(self) -> None:
+        """Configure the google-genai backend env consistently for the chosen auth."""
+        if self.use_vertex:
+            # Enterprise: Vertex AI via ADC + service account (no API key).
+            os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = "1"
+            if self.project:
+                os.environ.setdefault("GOOGLE_CLOUD_PROJECT", self.project)
+            if self.location:
+                os.environ.setdefault("GOOGLE_CLOUD_LOCATION", self.location)
+        else:
+            # Dev: AI Studio / Gemini API key. ADK reads GOOGLE_API_KEY first;
+            # mirror GEMINI_API_KEY so the existing variable keeps working.
+            if self.api_key:
+                os.environ.setdefault("GOOGLE_API_KEY", self.api_key)
+                os.environ.setdefault("GEMINI_API_KEY", self.api_key)
+            os.environ.setdefault("GOOGLE_GENAI_USE_VERTEXAI", "0")
+
     def ensure_dirs(self) -> None:
         self.runs_dir.mkdir(parents=True, exist_ok=True)
         self.guidelines_path.parent.mkdir(parents=True, exist_ok=True)
@@ -112,6 +142,15 @@ class AdkConfig:
     @property
     def has_api_key(self) -> bool:
         return bool(self.api_key)
+
+    @property
+    def has_credentials(self) -> bool:
+        """
+        True when the agent can reach a *real* Gemini backend — either an API key
+        (dev) or Vertex AI / ADC (enterprise). Used to decide whether to fall back
+        to the offline FakeGemini; Vertex mode must NOT fall back.
+        """
+        return bool(self.api_key) or self.use_vertex
 
 
 _config: Optional[AdkConfig] = None

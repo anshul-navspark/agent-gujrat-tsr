@@ -84,7 +84,7 @@ async def run_pipeline(
     record = RunRecord(
         run_id=_new_run_id(),
         mode=mode,
-        dry_run=config.dry_run or not config.has_api_key,
+        dry_run=config.dry_run or not config.has_credentials,
         model=str(config.model_name),
         inputs={"output_path": output_path, "pdf_path": pdf_path, "survey": survey, "engine": engine},
     )

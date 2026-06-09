@@ -28,7 +28,7 @@ def resolve_model(config: AdkConfig, profile=None) -> Union[str, BaseLlm]:
     in dry-run/offline mode the FakeGemini is always used regardless.
     """
     model_name = (getattr(profile, "model_name", None) or config.model_name)
-    if config.dry_run or not config.has_api_key:
+    if config.dry_run or not config.has_credentials:
         return FakeGemini(model="fake-" + model_name)
     return model_name
 

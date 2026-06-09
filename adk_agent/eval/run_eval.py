@@ -110,7 +110,7 @@ async def evaluate_golden(
     report = {
         "created_at": datetime.now(timezone.utc).isoformat(),
         "model": str(config.model_name),
-        "dry_run": config.dry_run or not config.has_api_key,
+        "dry_run": config.dry_run or not config.has_credentials,
         "live": live,
         "aggregate": _aggregate(per_case),
         "cases": per_case,

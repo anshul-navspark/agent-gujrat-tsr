@@ -128,7 +128,7 @@ async def run_optimization(
     report = {
         "created_at": _now(),
         "model": str(config.model_name),
-        "dry_run": config.dry_run or not config.has_api_key,
+        "dry_run": config.dry_run or not config.has_credentials,
         "cases": len(cases),
         "case_modes": _mode_counts(cases),
         "gate": {

@@ -92,7 +92,7 @@ def cmd_run(args) -> int:
     survey = _parse_survey(args.survey) if args.survey else None
     output_path = args.out or "tsr_output.docx"
 
-    if config.dry_run or not config.has_api_key:
+    if config.dry_run or not config.has_credentials:
         print("[dry-run] No GEMINI_API_KEY / --dry-run: using offline FakeGemini model.")
 
     print(f"Running TSR pipeline (engine={args.engine}, mode={mode}) …")
@@ -166,7 +166,7 @@ def cmd_optimize(args) -> int:
               else "(no active profile to revert)")
         return 0
 
-    if config.dry_run or not config.has_api_key:
+    if config.dry_run or not config.has_credentials:
         print("[dry-run] No GEMINI_API_KEY / --dry-run: token savings are real but "
               "accuracy is measured against the offline FakeGemini, not real quality.")
 
