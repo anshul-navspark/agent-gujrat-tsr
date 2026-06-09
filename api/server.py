@@ -242,13 +242,21 @@ def process_record(
         logger.warning(
             f"Invalid village '{request.village}' under {district_guj}/{taluka_guj}: {e}"
         )
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Invalid village: '{request.village}' is not in "
-                f"{request.district}/{request.taluka}"
-            ),
+        detail = (
+            f"Invalid village: '{request.village}' is not in "
+            f"{request.district}/{request.taluka}"
         )
+        # Surface the translator's 'did you mean ...?' hint (a suggestion only).
+        _msg = str(e)
+        _idx = _msg.lower().find("did you mean")
+        if _idx != -1:
+            _hint = _msg[_idx:]
+            _q = _hint.find("?")
+            if _q != -1:
+                _hint = _hint[: _q + 1]
+            _hint = _hint.strip()
+            detail += ". " + _hint[0].upper() + _hint[1:]
+        raise HTTPException(status_code=400, detail=detail)
     
     # Log translations for debugging
     logger.info(f"Translation results: district '{request.district}' -> '{district_guj}', "

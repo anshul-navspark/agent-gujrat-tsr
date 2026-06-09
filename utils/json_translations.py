@@ -6,6 +6,7 @@ with AI assistance to find matches for unknown spelling variations.
 """
 import json
 import logging
+import re
 from functools import lru_cache
 from typing import Optional, Dict, List, Tuple
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -16,10 +17,46 @@ from difflib import SequenceMatcher
 load_dotenv()
 
 
+# Gujarati romanization equivalences applied during DETERMINISTIC matching only.
+# Each pair canonicalizes a well-established alternate spelling of the SAME
+# Gujarati sound, so natural English spellings resolve without an LLM. Kept
+# deliberately small and unambiguous; the downstream uniqueness rule still
+# refuses any collision an equivalence might create (never guesses).
+_ROMAN_EQUIV = (
+    ("garh", "gadh"),   # ગઢ "fort" suffix: 'garh' (Hindi-style) == 'gadh'
+    ("w", "v"),         # વ is romanized as either v or w
+)
+
+_VOWELS = str.maketrans("", "", "aeiou")
+
+
+def _canon_alpha(s: str) -> str:
+    """Lowercase, drop the trailing '- NNN' dropdown code and any non-letters,
+    then apply romanization equivalences. Used symmetrically for candidates and
+    user input so equivalent spellings collapse to the same form."""
+    s = re.sub(r"\s*-\s*\d+\s*$", "", (s or "").lower().strip())
+    s = re.sub(r"[^a-z]", "", s)
+    for a, b in _ROMAN_EQUIV:
+        s = s.replace(a, b)
+    return s
+
+
+def _consonant_skeleton(s: str) -> str:
+    """Canonical alpha form with vowels removed (AnyRoR drops vowels in its
+    stored English names, e.g. 'બાદરગઢ' -> 'Badrgdh')."""
+    return _canon_alpha(s).translate(_VOWELS)
+
 
 class TranslationNotFoundError(Exception):
-    """Raised when a translation cannot be found for a given text"""
-    pass
+    """Raised when a translation cannot be found for a given text.
+
+    Carries optional ``suggestions`` (closest candidate spellings) so callers
+    can show a 'did you mean ...?' hint — these are NEVER auto-selected.
+    """
+
+    def __init__(self, message, suggestions=None):
+        super().__init__(message)
+        self.suggestions = list(suggestions or [])
 
 class JSONTranslationSystem:
     """Translation system using anyror_hierarchy.json with AI-assisted lookup"""
@@ -161,24 +198,34 @@ class JSONTranslationSystem:
                 self._translation_cache[cache_key] = gujarati
                 return gujarati
 
-        # AI-assisted lookup, also scoped to parents when available
-        self.logger.debug(
-            f"No exact match for '{english_text}' (context={context}, "
-            f"district={parent_district}, taluka={parent_taluka}); trying AI-assisted search"
-        )
-        gujarati = self._ai_find_match(english_text, context, parent_district, parent_taluka)
+        # AI-assisted lookup is OPT-IN (off by default). It is the only
+        # non-deterministic / slow / paid step and the only one that can pick a
+        # wrong match, so we use it only when explicitly enabled via
+        # TRANSLATION_USE_LLM. The deterministic layers above (exact + scoped
+        # consonant-skeleton match) handle the common cases for free.
+        use_llm = os.getenv('TRANSLATION_USE_LLM', 'false').strip().lower() in ('1', 'true', 'yes')
+        if use_llm:
+            self.logger.debug(
+                f"No deterministic match for '{english_text}' (context={context}, "
+                f"district={parent_district}, taluka={parent_taluka}); trying LLM"
+            )
+            gujarati = self._ai_find_match(english_text, context, parent_district, parent_taluka)
+            if gujarati:
+                self._add_spelling_variation(english_text, gujarati, context)
+                self._translation_cache[cache_key] = gujarati
+                return gujarati
 
-        if gujarati:
-            self._add_spelling_variation(english_text, gujarati, context)
-            self._translation_cache[cache_key] = gujarati
-            return gujarati
-
+        # Nothing resolved it. Offer the closest candidate spellings as a hint
+        # (a suggestion only — never auto-selected, so a wrong village can't slip in).
+        suggestions = self._suggest(normalized, scoped_lookup) if scoped_lookup else []
         error_msg = (
             f"No translation found for '{english_text}' (context: {context}, "
             f"district: {parent_district}, taluka: {parent_taluka})"
         )
+        if suggestions:
+            error_msg += f"; did you mean: {', '.join(suggestions)}?"
         self.logger.error(error_msg)
-        raise TranslationNotFoundError(error_msg)
+        raise TranslationNotFoundError(error_msg, suggestions=suggestions)
 
     def _build_scoped_lookup(
         self,
@@ -284,35 +331,29 @@ class JSONTranslationSystem:
         For land records a WRONG village is far worse than no match, so this is
         built to refuse rather than guess. It never returns a "closest" match and
         never disambiguates — it only confirms a transliteration/vowel-drop variant
-        of the SAME name. No LLM/network.
+        of the SAME name (incl. romanization equivalences like gadh/garh, v/w).
+        No LLM/network.
 
-        AnyRoR drops vowels ('બાદરગઢ' is stored 'Badrgdh'), so 'badargadh' and
-        'badrgdh' share the consonant skeleton 'bdrgdh'. A match is returned ONLY
-        when BOTH hold:
+        AnyRoR drops vowels ('બાદરગઢ' is stored 'Badrgdh'), so 'badargadh',
+        'badargarh' and 'badrgdh' all share the consonant skeleton 'bdrgdh'. A
+        match is returned ONLY when BOTH hold:
           * exactly ONE distinct village in this taluka shares that skeleton
             (0 → no match; ≥2 → ambiguous, both rejected — we do not guess), AND
           * its character-level similarity is >= ``min_ratio`` (guards against a
             skeleton collision whose vowels differ wildly).
-        Anything else returns None and the caller falls back to the LLM / a loud
-        "not found" error so a human fixes the spelling.
+        Anything else returns None and the caller falls back to the LLM (if
+        enabled) / a loud "did you mean ...?" error so a human fixes the spelling.
         """
-        import re
-
-        def _alpha(s: str) -> str:
-            s = re.sub(r"\s*-\s*\d+\s*$", "", (s or "").lower().strip())
-            return re.sub(r"[^a-z]", "", s)
-
-        _devowel = str.maketrans("", "", "aeiou")
-        target_alpha = _alpha(normalized)
-        target_skel = target_alpha.translate(_devowel)
+        target_alpha = _canon_alpha(normalized)
+        target_skel = _consonant_skeleton(normalized)
         if len(target_skel) < 2:
             return None  # too short to match safely
 
         # Collect every distinct village whose consonant skeleton equals the input's.
         skel_hits = {}  # guj_name -> best char-ratio for that village
         for eng_key, guj in scoped_lookup.items():
-            if _alpha(eng_key).translate(_devowel) == target_skel:
-                r = SequenceMatcher(None, target_alpha, _alpha(eng_key)).ratio()
+            if _consonant_skeleton(eng_key) == target_skel:
+                r = SequenceMatcher(None, target_alpha, _canon_alpha(eng_key)).ratio()
                 if r > skel_hits.get(guj, 0.0):
                     skel_hits[guj] = r
 
@@ -323,6 +364,38 @@ class JSONTranslationSystem:
                 return guj
         # 0 candidates → no match; ≥2 → ambiguous. Either way, refuse to guess.
         return None
+
+    def _suggest(
+        self, normalized: str, scoped_lookup: Dict[str, str], n: int = 3, floor: float = 0.45
+    ) -> List[str]:
+        """Closest candidate spellings for a 'did you mean ...?' hint.
+
+        Purely advisory — surfaced to the user, NEVER auto-selected, so it cannot
+        cause a wrong match. Returns human-friendly English spellings (dropdown
+        code stripped), best-first and deduped.
+        """
+        if not scoped_lookup:
+            return []
+        target_alpha = _canon_alpha(normalized)
+        if not target_alpha:
+            return []
+        scored = []
+        for eng_key in scoped_lookup:
+            disp = re.sub(r"\s*-\s*\d+\s*$", "", eng_key).strip().title()
+            if not disp:
+                continue
+            ratio = SequenceMatcher(None, target_alpha, _canon_alpha(eng_key)).ratio()
+            scored.append((ratio, disp))
+        scored.sort(key=lambda x: x[0], reverse=True)
+        out: List[str] = []
+        for ratio, disp in scored:
+            if ratio < floor:
+                break
+            if disp.lower() not in (o.lower() for o in out):
+                out.append(disp)
+            if len(out) >= n:
+                break
+        return out
 
     def _ai_find_match(
         self,
