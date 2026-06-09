@@ -1,0 +1,5 @@
+# Extra deps for the Cloud Run scraper service (on top of the repo's
+# requirements.txt + requirements-adk.txt, which bring selenium, the AnyRoR
+# scraper, the translation service, and google-genai for the CAPTCHA solver).
+fastapi>=0.110
+uvicorn[standard]>=0.29

@@ -69,3 +69,6 @@ adk_agent/eval/golden.evalset.json
 # Optimizer artifacts (leaderboards, reports, baseline cache) + the promoted profile
 adk_agent/optimize/artifacts/
 adk_agent/optimize/active_profile.json
+# Filled-in deploy env files (env.example is the committed template)
+adk_agent/deploy/env.prod
+adk_agent/deploy/*.env

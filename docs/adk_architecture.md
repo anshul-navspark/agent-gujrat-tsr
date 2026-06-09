@@ -279,10 +279,45 @@ Reuses the existing env vars; adds a few `ADK_*` overrides (see `adk_agent/confi
 | `ADK_GOLDEN_EVALSET` | `adk_agent/eval/golden.evalset.json` | golden dataset |
 | `ADK_OPTIMIZE_DIR` | `adk_agent/optimize/artifacts` | optimizer leaderboards/reports |
 | `ADK_ACTIVE_PROFILE` | `adk_agent/optimize/active_profile.json` | promoted prompt profile |
+| `GOOGLE_GENAI_USE_VERTEXAI` | `0` | `1` = enterprise auth (Vertex AI + ADC, no key) |
+| `GOOGLE_CLOUD_PROJECT` / `GOOGLE_CLOUD_LOCATION` | – / `us-central1` | Vertex project + region |
+| `ANYROR_SCRAPER_URL` / `ANYROR_SCRAPER_TOKEN` | – | delegate scraping to the Cloud Run service |
 
 ---
 
-## 9. Limitations / next steps
+## 9. Enterprise deployment (Vertex AI Agent Engine)
+
+The same `root_agent` runs as a **managed enterprise agent** — full runbook in
+[`adk_agent/deploy/README.md`](../adk_agent/deploy/README.md).
+
+```
+Gemini Enterprise (registry/UI)
+      │ register
+      ▼
+Vertex AI Agent Engine ── ADK root_agent (ingest → extract → assemble)
+      │  ANYROR_SCRAPER_URL (HTTPS, survey mode only)
+      ▼
+Cloud Run: anyror-scraper ── Selenium + headless Chrome + CAPTCHA
+      │  egress: Cloud NAT / VPN (India-routable IP)
+      ▼  anyror.gujarat.gov.in
+```
+
+- **Auth, no personal key.** `AdkConfig` auto-detects Vertex mode
+  (`GOOGLE_GENAI_USE_VERTEXAI=1`); `has_credentials = api_key OR vertex` gates the
+  FakeGemini fallback, so a managed deployment with only ADC/service-account
+  credentials reaches the real Gemini backend instead of the offline fake.
+- **Scraper decoupled as a tool.** `skills/scrape.py::scrape_to_pdf` dispatches to
+  a remote **Cloud Run scraper** (`deploy/scraper_service/`, which reuses the same
+  `_local_scrape_to_pdf`) when `ANYROR_SCRAPER_URL` is set — because the managed
+  agent runtime has no browser and its egress IP isn't India-routable. PDF mode
+  needs none of this.
+- **Entrypoint.** `deploy/agent_engine_app.py` wraps `root_agent` in a Vertex
+  `AdkApp`; deploy via `adk deploy agent_engine --env_file …` or
+  `python -m adk_agent.deploy.agent_engine_app deploy`.
+
+---
+
+## 10. Limitations / next steps
 
 - Live scraping needs portal access, a browser, and a CAPTCHA-solving Gemini key at
   runtime; it is not exercised by the dry-run.

@@ -1,19 +1,35 @@
 """
 Scrape skill (optional) — fetch a land-record PDF from the AnyRoR portal.
 
-Mirrors the FastAPI ``/process-record`` flow: translate English place names to
-Gujarati, then drive the Selenium scraper (which solves the CAPTCHA with Gemini).
-Heavy dependencies (Selenium, the translation hierarchy) are imported lazily so
-the common PDF path never needs them.
+Two interchangeable implementations, auto-dispatched by :func:`scrape_to_pdf`:
 
-Requires live portal access, a browser, and ``GEMINI_API_KEY`` (for the CAPTCHA
-solver) at runtime — it is therefore not exercised by the offline dry-run.
+* **local** (dev / India-reachable host): drive the Selenium scraper in-process —
+  translate English place names to Gujarati, then solve the CAPTCHA with Gemini.
+  Needs a browser, live portal access, and ``GEMINI_API_KEY`` at runtime.
+
+* **remote** (enterprise / managed agent): call a separate **Cloud Run scraper
+  service** over HTTPS (set ``ANYROR_SCRAPER_URL``). The managed agent runtime
+  (Vertex AI Agent Engine) can't run a headless browser and its egress IP isn't
+  India-routable, so scraping is factored out into a service that *can* (deployed
+  with Cloud NAT / VPN egress). See ``adk_agent/deploy/scraper_service/``.
+
+The contract is a single ``POST {url}/scrape`` with
+``{district, taluka, village, survey_number}`` (optional ``Authorization: Bearer``)
+returning ``{success, pdf_base64, ...}``.
+
+Heavy dependencies (Selenium, the 2 MB translation hierarchy) are imported lazily
+so the common PDF path never needs them.
 """
 
 from __future__ import annotations
 
+import base64
+import json
 import logging
-from typing import Dict
+import os
+import urllib.request
+from pathlib import Path
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +42,90 @@ def scrape_to_pdf(
     output_pdf_path: str,
     *,
     headless: bool = True,
+    scraper_url: Optional[str] = None,
+    scraper_token: Optional[str] = None,
 ) -> Dict[str, str]:
     """
     Fetch the land-record PDF for the given location into *output_pdf_path*.
 
-    Returns a dict with the resolved (Gujarati) place names and the PDF path.
-    Raises on failure.
+    Dispatches to the **remote** Cloud Run scraper when ``scraper_url`` (or
+    ``ANYROR_SCRAPER_URL``) is set, otherwise runs the **local** Selenium scrape.
+    Returns a dict with the resolved place names and the PDF path; raises on
+    failure.
     """
+    url = scraper_url or os.getenv("ANYROR_SCRAPER_URL")
+    if url:
+        token = scraper_token or os.getenv("ANYROR_SCRAPER_TOKEN")
+        logger.info("Scrape via remote scraper service: %s", url)
+        return _remote_scrape_to_pdf(
+            url, token, district, taluka, village, survey_number, output_pdf_path
+        )
+    return _local_scrape_to_pdf(
+        district, taluka, village, survey_number, output_pdf_path, headless=headless
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Remote: call the Cloud Run scraper service (the managed-agent path).
+# --------------------------------------------------------------------------- #
+
+def _remote_scrape_to_pdf(
+    url: str,
+    token: Optional[str],
+    district: str,
+    taluka: str,
+    village: str,
+    survey_number: str,
+    output_pdf_path: str,
+    *,
+    timeout: int = 300,
+) -> Dict[str, str]:
+    """POST to the scraper service and write the returned PDF (stdlib only)."""
+    payload = json.dumps(
+        {"district": district, "taluka": taluka, "village": village, "survey_number": survey_number}
+    ).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(
+        url.rstrip("/") + "/scrape", data=payload, headers=headers, method="POST"
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec - url is operator-configured
+        data = json.loads(resp.read().decode("utf-8"))
+
+    if not data.get("success"):
+        raise RuntimeError(f"remote scraper failed: {data.get('error', 'unknown error')}")
+    pdf_b64 = data.get("pdf_base64")
+    if not pdf_b64:
+        raise RuntimeError("remote scraper returned no PDF content")
+
+    out = Path(output_pdf_path)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_bytes(base64.b64decode(pdf_b64))
+    return {
+        "pdf_path": str(out),
+        "remote": True,
+        "g_district": data.get("g_district", ""),
+        "g_taluka": data.get("g_taluka", ""),
+        "g_village": data.get("g_village", ""),
+        "survey_number": data.get("survey_number", survey_number),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Local: in-process Selenium scrape (dev / India-reachable host).
+# --------------------------------------------------------------------------- #
+
+def _local_scrape_to_pdf(
+    district: str,
+    taluka: str,
+    village: str,
+    survey_number: str,
+    output_pdf_path: str,
+    *,
+    headless: bool = True,
+) -> Dict[str, str]:
+    """Drive the Selenium AnyRoR scraper in-process. Reused by the scraper service."""
     # Lazy imports: keep Selenium / 2MB translation hierarchy out of the hot path.
     from services.translation_service import get_translation_service
     from anyror.scraper import AnyRoRScraper
