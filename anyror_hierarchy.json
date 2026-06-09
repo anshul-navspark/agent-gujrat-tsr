@@ -399,20 +399,25 @@
       },
       "રાપર": {
         "english_names": [
-          "Rapr"
+          "Rapr",
+          "rapar",
+          "Raper"
         ],
         "villages": {
           "અમરાપર - 069": [
             "Amrapr - 069",
-            "Amrapr"
+            "Amrapr",
+            "Amrapur"
           ],
           "આડેસર - 039": [
             "Aadesr - 039",
-            "Aadesr"
+            "Aadesr",
+            "Adesar"
           ],
           "આણંદપર - 009": [
             "Aanndpr - 009",
-            "Aanndpr"
+            "Aanndpr",
+            "Anandpur"
           ],
           "ઉમૈયા - 046": [
             "Umaiya - 046",
@@ -616,7 +621,11 @@
           ],
           "બાદરગઢ - 075": [
             "Badrgdh - 075",
-            "Badrgdh"
+            "Badrgdh",
+            "Badargadh",
+            "Badrgadh",
+            "Badargarh",
+            "Badargad"
           ],
           "બાદલપર - 082": [
             "Badlpr - 082",

@@ -139,6 +139,32 @@ Best match:"""
                 if opt.strip() == result.strip():
                     return opt
 
+            # The LLM often drops the trailing " - NNN" code or adds a
+            # "Best match:" prefix. Normalize to the base name and return the
+            # FULL canonical option (with code). SAFETY: only accept when the
+            # normalized name maps to exactly ONE option — if two villages share
+            # a base name (different codes = different places), that's ambiguous
+            # and we refuse to guess rather than risk the wrong property.
+            import re as _re
+            def _norm(s):
+                s = (s or "").strip()
+                for _pfx in ("Best match:", "best match:", "Answer:", "answer:", "Match:", "match:"):
+                    if s.startswith(_pfx):
+                        s = s[len(_pfx):].strip()
+                return _re.sub(r"\s*-\s*\d+\s*$", "", s).strip()
+            norm_result = _norm(result)
+            if norm_result:
+                hits = [opt for opt in available_options if _norm(opt) == norm_result]
+                if len(hits) == 1:
+                    self.logger.info(f"LLM match '{result}' normalized to '{hits[0]}'")
+                    return hits[0]
+                if len(hits) > 1:
+                    self.logger.warning(
+                        f"LLM match '{result}' is ambiguous across {len(hits)} options "
+                        f"({hits}); refusing to guess"
+                    )
+                    return None
+
             self.logger.warning(f"LLM returned '{result}' which is not in available options")
             return None
 

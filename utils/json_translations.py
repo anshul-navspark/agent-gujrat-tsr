@@ -134,6 +134,15 @@ class JSONTranslationSystem:
             if gujarati:
                 self._translation_cache[cache_key] = gujarati
                 return gujarati
+            # Deterministic scoped fuzzy match — resolves transliteration/spelling
+            # variation (e.g. 'Badargadh' vs stored 'Badrgdh') WITHOUT an LLM call,
+            # scoped to this district/taluka so a wrong-branch village can't win.
+            gujarati = self._scoped_fuzzy_match(normalized, scoped_lookup)
+            if gujarati:
+                self._add_spelling_variation(english_text, gujarati, context)
+                self._translation_cache[cache_key] = gujarati
+                self.logger.info(f"Fuzzy-matched '{english_text}' → '{gujarati}' (deterministic, no LLM)")
+                return gujarati
         else:
             # No parents provided — fall back to context-specific cache
             context_cache = {
@@ -264,9 +273,57 @@ class JSONTranslationSystem:
         
         if best_score >= threshold:
             return best_match
-        
+
         return None
-    
+
+    def _scoped_fuzzy_match(
+        self, normalized: str, scoped_lookup: Dict[str, str], min_ratio: float = 0.80
+    ) -> Optional[str]:
+        """HIGH-PRECISION deterministic match within a scoped English→Gujarati map.
+
+        For land records a WRONG village is far worse than no match, so this is
+        built to refuse rather than guess. It never returns a "closest" match and
+        never disambiguates — it only confirms a transliteration/vowel-drop variant
+        of the SAME name. No LLM/network.
+
+        AnyRoR drops vowels ('બાદરગઢ' is stored 'Badrgdh'), so 'badargadh' and
+        'badrgdh' share the consonant skeleton 'bdrgdh'. A match is returned ONLY
+        when BOTH hold:
+          * exactly ONE distinct village in this taluka shares that skeleton
+            (0 → no match; ≥2 → ambiguous, both rejected — we do not guess), AND
+          * its character-level similarity is >= ``min_ratio`` (guards against a
+            skeleton collision whose vowels differ wildly).
+        Anything else returns None and the caller falls back to the LLM / a loud
+        "not found" error so a human fixes the spelling.
+        """
+        import re
+
+        def _alpha(s: str) -> str:
+            s = re.sub(r"\s*-\s*\d+\s*$", "", (s or "").lower().strip())
+            return re.sub(r"[^a-z]", "", s)
+
+        _devowel = str.maketrans("", "", "aeiou")
+        target_alpha = _alpha(normalized)
+        target_skel = target_alpha.translate(_devowel)
+        if len(target_skel) < 2:
+            return None  # too short to match safely
+
+        # Collect every distinct village whose consonant skeleton equals the input's.
+        skel_hits = {}  # guj_name -> best char-ratio for that village
+        for eng_key, guj in scoped_lookup.items():
+            if _alpha(eng_key).translate(_devowel) == target_skel:
+                r = SequenceMatcher(None, target_alpha, _alpha(eng_key)).ratio()
+                if r > skel_hits.get(guj, 0.0):
+                    skel_hits[guj] = r
+
+        # Unambiguous: exactly one candidate village, and a sane character overlap.
+        if len(skel_hits) == 1:
+            guj, ratio = next(iter(skel_hits.items()))
+            if ratio >= min_ratio:
+                return guj
+        # 0 candidates → no match; ≥2 → ambiguous. Either way, refuse to guess.
+        return None
+
     def _ai_find_match(
         self,
         english_text: str,
@@ -322,9 +379,36 @@ class JSONTranslationSystem:
                 if result in candidate_gujarati_names:
                     self.logger.info(f"AI matched '{english_text}' → '{result}'")
                     return result
-                else:
-                    self.logger.warning(f"AI returned invalid match: {result}")
-                    return None
+
+                # The LLM frequently drops the trailing " - NNN" village code or
+                # prefixes "Best match:". Normalize both sides to the base Gujarati
+                # name and return the FULL canonical entry (with code) so the
+                # scraper still selects the correct dropdown option.
+                import re as _re
+                def _norm(s):
+                    s = (s or "").strip()
+                    for _pfx in ("Best match:", "best match:", "Answer:", "answer:", "Match:", "match:"):
+                        if s.startswith(_pfx):
+                            s = s[len(_pfx):].strip()
+                    return _re.sub(r"\s*-\s*\d+\s*$", "", s).strip()
+                norm_result = _norm(result)
+                if norm_result:
+                    hits = [c for c in candidate_gujarati_names if _norm(c) == norm_result]
+                    if len(hits) == 1:
+                        self.logger.info(
+                            f"AI matched '{english_text}' → '{hits[0]}' (normalized from '{result}')"
+                        )
+                        return hits[0]
+                    if len(hits) > 1:
+                        # Same base name, different codes = different villages.
+                        # Ambiguous — refuse to guess the wrong property.
+                        self.logger.warning(
+                            f"AI match '{result}' ambiguous across {len(hits)} candidates; refusing to guess"
+                        )
+                        return None
+
+                self.logger.warning(f"AI returned invalid match: {result}")
+                return None
                     
             except Exception as e:
                 error_str = str(e).lower()
