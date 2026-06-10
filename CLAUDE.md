@@ -83,3 +83,12 @@ The **local** cache defaults to ~never-expire (`LOCAL_CACHE_TTL_DAYS`, default 3
 - **Active encumbrance detection**: Loans without matching releases are flagged in findings. Matching uses explicit entry number references and lender name + chronological order (`tsr_generator/extractors/findings.py`)
 - **Translation**: English→Gujarati lookup via `anyror_hierarchy.json` (~2MB), context-aware for district/taluka/village hierarchies
 - **Certification patterns**: Entries may be certified/uncertified, tracked per-entry during extraction
+
+## Journal Protocol
+
+Project journal is at `docs/journal.md`. **At session start, read it.** Then:
+1. Use `git log` since the last dated entry + the "Active Draft" section to write a new entry for the previous session, then clear the draft.
+2. Surface any lessons from past entries relevant to the current task; suggest alternative approaches when current work matches a past pattern.
+3. **During the session**, append bullets to "Active Draft" as milestones are hit (commits, abandoned approaches, surprising results, key decisions).
+
+Goal: avoid repeating mistakes, document approach so future sessions know what's coming, suggest improvements based on past patterns. Never auto-compact — monthly compactification is PR-based and user-reviewed.
