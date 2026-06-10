@@ -16,6 +16,19 @@
 <!-- Claude: append milestone bullets here during the session. The next session
      formalizes them into a dated entry below and clears this section. -->
 
+**2026-06-10 — CLAUDE.md architecture refresh (closes a bootstrap Next item):**
+- Updated Key Flows / extraction-modes / env-vars / translation sections to match the
+  current pipeline: `EXTRACTION_BACKEND=claude` default (CLI, local-only, hang-prevention
+  flags documented), `TRANSLATION_USE_LLM` + `GEMINI_THINKING_LEVEL` + `CLAUDE_EXTRACTION_MODEL`
+  added, deterministic-first translation noted. Verified every default against code first.
+- Decision: architecture lives in CLAUDE.md (single source of truth, auto-loaded each
+  session), NOT duplicated in this journal — journal records changes/decisions only.
+- Noticed while verifying (not yet acted on): `extract_all_structured` in
+  `unified_extractor.py` (two-pass Gemini variant, ~line 982) has zero callers — dead
+  experimental code, candidate for deletion. Dockerfile pins `GEMINI_MODEL_NAME=gemini-2.5-flash`
+  (stale vs the `gemini-3.1-pro-preview` default) and does not set `EXTRACTION_BACKEND=gemini`,
+  which a cloud/Docker deploy would need.
+
 ---
 
 ## Sessions (newest first)

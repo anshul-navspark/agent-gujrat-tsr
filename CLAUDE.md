@@ -42,18 +42,22 @@ Infrastructure: AnyRoR scraper (anyror/), TSR generator (tsr_generator/), utils 
 ### Key Flows
 
 **TSR Generation Pipeline:**
-PDF → `extract_text_from_pdf()` → `extract_all_unified()` (1 LLM call) → `generate_findings_table()` → `create_tsr_document()` → DOCX
+PDF → `extract_text_from_pdf()` → `extract_all_unified()` (1 LLM call — Claude CLI by default, see Extraction Modes & Backends) → `generate_findings_table()` → `create_tsr_document()` → DOCX
 
 **Scraping Pipeline:**
-Request → TranslationService (English→Gujarati) → AnyRoR Scraper (Selenium + CAPTCHA solver) → PDF → Cache (GCS)
+Request → TranslationService (English→Gujarati, deterministic-first) → AnyRoR Scraper (Selenium + Gemini CAPTCHA solver) → PDF → Cache (GCS or local)
 
-### Two Extraction Modes
+### Extraction Modes & Backends
 
-Controlled by `USE_OPTIMIZED_EXTRACTION` env var (default: `true`):
+Mode is controlled by `USE_OPTIMIZED_EXTRACTION` (default: `true`), switched in `tsr_generator/__init__.py`:
 - **Optimized** (1 LLM call): `tsr_generator/extractors/unified_extractor.py` — 60-70% token savings
-- **Original** (3 LLM calls): `tsr_generator/api/tsr_generator.py`
+- **Original** (3 LLM calls): `tsr_generator/api/tsr_generator.py` — Gemini-only
 
-Mode switching happens in `tsr_generator/__init__.py`.
+The optimized path additionally has a backend switch, `EXTRACTION_BACKEND` (default: `claude`):
+- **claude** — shells out to `claude -p` using the local Claude Code subscription login (no API key). Requires an authenticated `claude` CLI on PATH, so it only works locally — Docker/Streamlit Cloud deploys must set `EXTRACTION_BACKEND=gemini`. The invocation (`_invoke_claude_cli`) passes `--strict-mcp-config` plus a `--settings` override (low effort, no plugins, no auto-memory); without these flags headless calls hang >300s — keep them if you touch it.
+- **gemini** — LangChain `ChatGoogleGenerativeAI` using `GEMINI_MODEL_NAME` + `GEMINI_THINKING_LEVEL`.
+
+CAPTCHA solving and translation always stay on Gemini regardless of this setting.
 
 ### Dependency Injection
 
@@ -67,10 +71,14 @@ The **local** cache defaults to ~never-expire (`LOCAL_CACHE_TTL_DAYS`, default 3
 
 ## Key Environment Variables
 
-- `GEMINI_API_KEY` — required, Google Gemini API key
-- `GEMINI_MODEL_NAME` — main extraction model, default: `gemini-3.1-pro-preview`
+- `GEMINI_API_KEY` — required at startup (`core/config.py` validation); used for CAPTCHA solving, translation, and extraction when `EXTRACTION_BACKEND=gemini`
+- `EXTRACTION_BACKEND` — `claude` (default) or `gemini`; see Extraction Modes & Backends
+- `CLAUDE_EXTRACTION_MODEL` — model alias passed to the `claude` CLI, default: `sonnet`
+- `GEMINI_MODEL_NAME` — Gemini extraction model (only used when `EXTRACTION_BACKEND=gemini`), default: `gemini-3.1-pro-preview`
+- `GEMINI_THINKING_LEVEL` — thinking level for Gemini extraction, default: `low`
 - `CAPTCHA_MODEL_NAME` — captcha solver model, default: `gemini-3-flash-preview`
 - `GEMINI_TRANSLATION_MODEL` — translation lookup model, default: `gemini-3.1-flash-lite-preview`
+- `TRANSLATION_USE_LLM` — enable the LLM fallback for village matching, default: `false` (deterministic exact + scoped matching only)
 - `USE_OPTIMIZED_EXTRACTION` — default: `true`
 - `GCS_CACHE_BUCKET` — optional, enables GCS caching
 - `LOCAL_CACHE_TTL_DAYS` — local cache TTL in days when no GCS bucket; default `36500` (≈never expire)
@@ -81,7 +89,7 @@ The **local** cache defaults to ~never-expire (`LOCAL_CACHE_TTL_DAYS`, default 3
 
 - **Entry types**: SALE, INHERITANCE, PARTITION, LOAN, MORTGAGE, RELEASE, ORDER, PROMULGATION (see `tsr_generator/extractors/entry_schema.py`)
 - **Active encumbrance detection**: Loans without matching releases are flagged in findings. Matching uses explicit entry number references and lender name + chronological order (`tsr_generator/extractors/findings.py`)
-- **Translation**: English→Gujarati lookup via `anyror_hierarchy.json` (~2MB), context-aware for district/taluka/village hierarchies
+- **Translation**: English→Gujarati lookup via `anyror_hierarchy.json` (~2MB), deterministic-first and always scoped top-down (district → taluka → village); LLM fallback only when `TRANSLATION_USE_LLM=true`
 - **Certification patterns**: Entries may be certified/uncertified, tracked per-entry during extraction
 
 ## Journal Protocol
