@@ -54,7 +54,7 @@ Mode is controlled by `USE_OPTIMIZED_EXTRACTION` (default: `true`), switched in 
 - **Original** (3 LLM calls): `tsr_generator/api/tsr_generator.py` — Gemini-only
 
 The optimized path additionally has a backend switch, `EXTRACTION_BACKEND` (default: `claude`):
-- **claude** — shells out to `claude -p` using the local Claude Code subscription login (no API key). Requires an authenticated `claude` CLI on PATH, so it only works locally — Docker/Streamlit Cloud deploys must set `EXTRACTION_BACKEND=gemini`. The invocation (`_invoke_claude_cli`) passes `--strict-mcp-config` plus a `--settings` override (low effort, no plugins, no auto-memory); without these flags headless calls hang >300s — keep them if you touch it.
+- **claude** — shells out to `claude -p` using the local Claude Code subscription login (no API key). Requires an authenticated `claude` CLI on PATH, so it only works locally — Docker/Streamlit Cloud deploys must set `EXTRACTION_BACKEND=gemini`. The invocation (`_invoke_claude_cli`) passes `--strict-mcp-config` plus a `--settings` override (no plugins, no auto-memory, effort from `CLAUDE_EXTRACTION_EFFORT`); the **no-plugins** flag is what prevents the >300s headless hang — keep it if you touch this. Effort defaults to `high` (was a hardcoded `low`); high effort with plugins-off is safe and, on Opus, was faster *and* more accurate than Sonnet in the 2026-06-11 eval. Timeout auto-bumps to 900s for high/xhigh effort.
 - **gemini** — LangChain `ChatGoogleGenerativeAI` using `GEMINI_MODEL_NAME` + `GEMINI_THINKING_LEVEL`.
 
 CAPTCHA solving and translation always stay on Gemini regardless of this setting.
@@ -73,7 +73,8 @@ The **local** cache defaults to ~never-expire (`LOCAL_CACHE_TTL_DAYS`, default 3
 
 - `GEMINI_API_KEY` — required at startup (`core/config.py` validation); used for CAPTCHA solving, translation, and extraction when `EXTRACTION_BACKEND=gemini`
 - `EXTRACTION_BACKEND` — `claude` (default) or `gemini`; see Extraction Modes & Backends
-- `CLAUDE_EXTRACTION_MODEL` — model alias passed to the `claude` CLI, default: `sonnet`
+- `CLAUDE_EXTRACTION_MODEL` — model alias passed to the `claude` CLI, default: `opus` (Opus 4.8; was `sonnet`)
+- `CLAUDE_EXTRACTION_EFFORT` — effort level for the `claude` CLI extraction, default: `high` (was hardcoded `low`); `high`/`xhigh` auto-raise the subprocess timeout to `CLAUDE_EXTRACTION_TIMEOUT` (default 900s)
 - `GEMINI_MODEL_NAME` — Gemini extraction model (only used when `EXTRACTION_BACKEND=gemini`), default: `gemini-3.1-pro-preview`
 - `GEMINI_THINKING_LEVEL` — thinking level for Gemini extraction, default: `low`
 - `CAPTCHA_MODEL_NAME` — captcha solver model, default: `gemini-3-flash-preview`

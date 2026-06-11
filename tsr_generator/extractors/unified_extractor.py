@@ -150,7 +150,8 @@ Other patterns (include "measuring <area>" whenever the source states one — NO
 
 This inheritance was recorded based on the application, death certificate, genealogy (Pedhinamu) and affidavits."
   Drop any segment the source does not provide — omit "(death certificate no. ...)" if absent, omit "- age [N]" if no age is shown, omit the closing supporting-documents sentence if no such documents are listed. NEVER invent a date, certificate number, relationship, age, or document.
-- SALE: "That [Seller] sold Survey No. X measuring <area> Hectare to [Buyer] for Rs. X/- vide document no. Y dated DD/MM/YYYY."
+- SALE: "That [Seller] sold Survey No. X measuring <area> Hectare to [Buyer] for a consideration of Rs. [consideration]/- (market value Rs. [market value]/-) vide document no. Y dated DD/MM/YYYY."
+  The Gujarati source for a sale typically states TWO amounts — માર્કેટ વેલ્યુ / market value (the jantri/assessed value, e.g. "માર્કેટ વેલ્યુ રૂ. 295020/-") AND અવેજ / અવેજની રકમ / consideration (the price actually paid, e.g. "અવેજની રકમ રૂ. 200000/-"). Capture BOTH whenever present: render the consideration as the primary "for a consideration of Rs." amount and append the market value in parentheses as "(market value Rs. .../-)". Omit the "(market value Rs. ...)" segment only when the source states no market value. NEVER invent, drop, or swap the two amounts — the consideration and the market value are distinct figures.
 - PARTITION: When the source lists who received what, you MUST emit the full allocation list (one row per recipient) between the lead-in and the closing sentence, separated by blank lines. Do NOT collapse the lead-in straight into the closing sentence. Do NOT prefix rows with "1.", "2." — emit bare rows; numbering is applied automatically downstream. Format:
 "That the said [OriginalOwner(s)] distributed their land bearing Survey No. X measuring <area> Hectare among themselves as follows:-
 [Recipient1] - Survey No. [X] - [area]
@@ -339,7 +340,7 @@ def extract_all_unified(pdf_text: str) -> UnifiedExtractionResult:
         # Captcha + translation always stay on Gemini regardless of this setting.
         backend = os.getenv('EXTRACTION_BACKEND', 'claude').strip().lower()
         if backend == 'claude':
-            claude_model = os.getenv('CLAUDE_EXTRACTION_MODEL', 'sonnet').strip()
+            claude_model = os.getenv('CLAUDE_EXTRACTION_MODEL', 'opus').strip()
             content = _coerce_text(_invoke_claude_cli(prompt, claude_model))
         else:
             from langchain_google_genai import ChatGoogleGenerativeAI
@@ -558,7 +559,7 @@ def _extract_relevant_sections(pdf_text: str) -> str:
     return '\n\n[...]\n\n'.join(sections)
 
 
-def _invoke_claude_cli(prompt: str, model: str = "sonnet", timeout: int = 300) -> str:
+def _invoke_claude_cli(prompt: str, model: str = "opus", timeout: int = 300) -> str:
     """Run a one-shot extraction via the `claude` CLI in print mode.
 
     Uses Claude Code's logged-in subscription auth (NO ANTHROPIC_API_KEY needed), so
@@ -568,23 +569,30 @@ def _invoke_claude_cli(prompt: str, model: str = "sonnet", timeout: int = 300) -
     have an authenticated `claude` CLI (works locally; NOT on a headless cloud deploy).
     """
     import subprocess
+    # Effort is env-configurable (default "low"). Plugins stay disabled regardless;
+    # the >300s hang was caused by xhigh effort + plugins loading together, so a
+    # deliberate higher effort with plugins off is safe (just slower thinking).
+    _effort = (os.getenv("CLAUDE_EXTRACTION_EFFORT", "high").strip() or "high")
+    # Higher effort thinks longer; give it more headroom unless caller overrode.
+    if _effort in ("high", "xhigh") and timeout == 300:
+        timeout = int(os.getenv("CLAUDE_EXTRACTION_TIMEOUT", "900"))
     cmd = [
         "claude", "-p", "--model", model,
         "--strict-mcp-config",  # don't spawn the session's MCP servers
         # Override the user's heavy interactive config for a fast one-shot call:
-        # low effort + no plugins (the superpowers SessionStart hook) + no
-        # auto-memory/dream. WITHOUT this, each headless call loads xhigh effort
-        # and the plugins and HANGS (>300s) on a ~23KB prompt.
+        # configurable effort + no plugins (the superpowers SessionStart hook) + no
+        # auto-memory/dream. WITHOUT plugins-off, each headless call loads the
+        # plugins and HANGS (>300s) on a ~23KB prompt.
         "--settings",
-        ('{"effortLevel":"low","enabledPlugins":{},"autoMemoryEnabled":false,'
-         '"autoDreamEnabled":false,"promptSuggestionEnabled":false}'),
+        ('{"effortLevel":"%s","enabledPlugins":{},"autoMemoryEnabled":false,'
+         '"autoDreamEnabled":false,"promptSuggestionEnabled":false}' % _effort),
         "--disallowed-tools", "Bash", "Read", "Edit", "Write", "Glob", "Grep",
         "WebFetch", "WebSearch", "Task", "TodoWrite",
         "--system-prompt",
         ("You are a precise data-extraction engine. Follow the user's instructions "
          "exactly and output ONLY the requested JSON object."),
     ]
-    env = {**os.environ, "CLAUDE_EFFORT": "low"}
+    env = {**os.environ, "CLAUDE_EFFORT": _effort}
     try:
         res = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
                              timeout=timeout, env=env)
