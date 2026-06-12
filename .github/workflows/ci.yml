@@ -1,0 +1,38 @@
+name: CI
+
+# Runs the test suite automatically so broken code is caught before it lands
+# on main (and before it can auto-deploy to Cloud Run via cloudbuild.yaml).
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch: {}   # allows a manual run from the Actions tab
+
+jobs:
+  test:
+    name: pytest
+    runs-on: ubuntu-latest
+    env:
+      # The suite is fully mocked (no real network/LLM calls), but core/config.py
+      # requires GEMINI_API_KEY to be present. A dummy value satisfies that check.
+      GEMINI_API_KEY: ci-dummy-key-not-real
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests
+        # Integration tests need external services (AnyRoR, real LLMs) and are
+        # excluded here; everything else runs on every push/PR.
+        run: pytest -m "not integration" -q
