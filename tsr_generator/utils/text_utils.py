@@ -54,7 +54,7 @@ def sanitize_text(text):
     # If string became empty after sanitizing, return placeholder
     if not sanitized.strip():
         return "Not Available"
-    
+
     return sanitized
 
 def translate_gujarati_text(text):

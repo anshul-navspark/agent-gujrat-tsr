@@ -43,7 +43,7 @@ from ..utils.retry_utils import retry_with_backoff, RetryableError
 logger = logging.getLogger(__name__)
 
 # Model configuration
-MODEL_NAME = os.getenv('GEMINI_MODEL_NAME', 'gemini-3-pro-preview')
+MODEL_NAME = os.getenv('GEMINI_MODEL_NAME', 'gemini-3.1-pro-preview')
 
 # Feature flag: classify entries about other survey numbers as NOT RELATED
 CLASSIFY_NOT_RELATED_ENTRIES = True
@@ -75,7 +75,7 @@ Formatting Rules:
 1. ALL descriptions MUST start with "That" (except NOT RELATED, PROMULGATION)
 2. DO NOT use honorifics like "Shri", "Smt", "Mr.", "Mrs."
 3. DO NOT use "account holder", "mortgaged his total land", "of [village] village"
-4. DO NOT include sentences like "This encumbrance entry was recorded based on..." or "This inheritance entry was made..."
+4. For LOAN/RELEASE entries, DO NOT include "based on the agreement dated..." commentary. (For INHERITANCE/DEATH and PARTITION/LIFETIME DISTRIBUTION entries you MUST include a closing sentence listing the documents the mutation was based on — see the description examples.)
 5. Keep descriptions direct and factual. Include all legally relevant details. Do not add commentary or explanatory sentences.
 6. Amounts: "Rs. X/-" or "Rs. X,XXX/-"
 7. ALWAYS use "Survey No." instead of "Khata No." or "Account No."
@@ -86,12 +86,13 @@ Formatting Rules:
 12. Measurements: Use "Acre/Guntha" or "Hectare" in descriptions. For the total_area field, output ONLY the numeric format (e.g., "1-88-48") WITHOUT the word "Hectare".
 13. Translate "bhen" or "ben" suffix as "ben" (e.g. "Shantiben")
 14. Lists: "which are as follows:-" followed by names on separate lines
-15. OMIT sentences like "This entry was made based on..." or "This inheritance entry was made...". Keep descriptions concise.
+15. OMIT vague filler like "This entry was made based on the above." Keep descriptions concise — but DO retain the concrete supporting-documents clause for INHERITANCE/DEATH and PARTITION/LIFETIME DISTRIBUTION entries (application/Arji, death certificate, genealogy/Pedhinamu, affidavits/Sogandnama) when the source states them.
 16. LOAN entries: Do NOT include agreement date. Only describe the loan, borrower, lender, amount, and land details.
 17. OLD SURVEY NUMBERS: If there is a PROMULGATION entry (re-survey), use "old Survey No." for all entries BEFORE the promulgation entry. Use "Survey No." for entries AFTER promulgation. If there is NO promulgation entry, use "Survey No." (without "old").
 18. Always use 4-digit years (DD/MM/YYYY). Never use 2-digit years (DD/MM/YY).
 19. Include Khata number in parentheses after each survey number when visible in the source document, e.g., "5/2(28), 193p1(28)". If no Khata number is visible, omit parentheses.
 20. Translate "Prant Officer" / "પ્રાંત અધિકારી" as "Province Officer". Use "Province Officer" and "Province court" consistently.
+21. BOREWELL NAMING: Always use the full word "Borewell" with hyphenated number — "Borewell-1", "Borewell-2". NEVER write "Bore-1", "bore-1", "pucca bore-1", "1 pucca borewell", "pucca borewell-1". The Gujarati "પાકાે બાેર - ૧" / "પાકાે બાેર" / "બાેર ૧" all map to "Borewell-1" (drop "pucca"; that adjective is implicit).
 """
 
 # Certification patterns (~150 tokens)
@@ -111,10 +112,6 @@ Certification output formats:
 - Always output certification dates in 4-digit year format (DD/MM/YYYY).
 - Default if unclear: entry_status: "" (empty)
 
-SPECIAL RULE FOR PROMULGATION ENTRIES: 
-- For PROMULGATION type entries, certification should be just "The Entry is certified." 
-- Do NOT include certifier name or certification date for promulgation entries.
-
 IMPORTANT: Do NOT output "certified" if the Gujarati text contains રદ, ના મંજૂર, or નામંજુર!
 
 CERTIFICATION EXTRACTION IS REQUIRED:
@@ -128,26 +125,52 @@ CERTIFICATION EXTRACTION IS REQUIRED:
 DESCRIPTION_EXAMPLES = """
 Example descriptions (follow these exact patterns):
 
-LOAN (correct): "That Mer Deva Depa took a loan of Rs. 20,000/- on land bearing old Survey No. 373/p1, 359, 390, 389(215) from Bank of India, Modhvada Branch."
+AREA INCLUSION RULE:
+- For every entry type EXCEPT LOAN and RELEASE (a.k.a. LOAN CLOSE / charge removal), when the source entry mentions a land area (e.g. "હે. ૬-૨૧-૨૦", "Hectare 1-88-48", "3 Acre 23 Guntha", "આ. હે. ચો.મી.", "જમીન હે ..."), you MUST include it in the English description as "measuring <area> Hectare" (or "Acre/Guntha" if the source uses those units), immediately after the Survey No. clause.
+- Convert Gujarati numerals to English digits. Preserve the dash-separated format (e.g. "6-21-20").
+- For LOAN and RELEASE entries: do NOT include any area / hectare / acre measurement — even if the source mentions one. The encumbrance is recorded against the surveys themselves; area is intentionally omitted to keep loan/release descriptions tight.
+- For all other types (SALE, DEATH/INHERITANCE, PARTITION, GIFT, ALLOTMENT, RELINQUISHMENT, LIFETIME_DISTRIBUTION, EXCHANGE, ORDER allotment/circular, TENURE_CHANGE, LAND_ACQUISITION, LEASE, SEIZURE, PROMULGATION, CORRECTION): include area whenever the source states one.
+
+LOAN (correct, no area): "That Mer Deva Depa took a loan of Rs. 20,000/- on land bearing old Survey No. 373/p1, 359, 390, 389(215) from Bank of India, Modhvada Branch."
+LOAN (wrong - includes area): "That Mer Deva Depa took a loan of Rs. 20,000/- on land bearing old Survey No. 373/p1, 359, 390, 389(215) measuring 6-21-20 Hectare from Bank of India, Modhvada Branch." - DO NOT include area in loan descriptions, even when the source shows it.
 LOAN (wrong - includes agreement date): "That Mer Deva Depa took a loan of Rs. 20,000/- from Bank of India, Modhvada Branch based on an agreement dated 14/05/2005." - DO NOT include agreement date!
-LOAN (wrong - too verbose): "That account holder Shri Mer Deva Depa of Keshav village mortgaged his total land of 6-21-20 Hectare of Keshav village, Khata No. 215, bearing Survey No. 390, with Bank of India, Modhwada branch, to obtain a loan of Rs. 20,000/-. This encumbrance entry was recorded based on the agreement dated 14/05/2005."
+LOAN (wrong - too verbose, mortgaging language): "That account holder Shri Mer Deva Depa of Keshav village mortgaged his total land of 6-21-20 Hectare of Keshav village, Khata No. 215, bearing Survey No. 390, with Bank of India, Modhwada branch, to obtain a loan of Rs. 20,000/-. This encumbrance entry was recorded based on the agreement dated 14/05/2005." - drop the village-name padding, "account holder", "mortgaged his total land", trailing commentary, AND the area.
 
 IMPORTANT for LOAN entries:
 - DO NOT include "agreement dated" or "based on an agreement"
-- DO NOT include total land area or hectare measurements in loan descriptions
-- Just state: borrower name, loan amount, survey numbers, bank name and branch
+- DO NOT include total land area or hectare measurements in loan descriptions.
+- State: borrower name, loan amount, survey numbers (with khata in parentheses), bank name and branch.
+- INCLUDE ALL survey numbers listed in the entry's "Other Rights" / બોજા / બીજા હક્ક column, NOT only the subject survey number. A single loan entry frequently encumbers many surveys belonging to the same khata (e.g. "421(608), 422(608), 423(608), 500(608), 501(608), 568(608), 574(715), 602(608), 603(608), 608(608), 609(608)") — output the COMPLETE list exactly as it appears in the source, in the same order, with the khata number in parentheses after each. Do NOT filter, deduplicate, or drop survey numbers just because they differ from the subject survey. The same rule applies to RELEASE / LOAN CLOSE entries that reference the same multi-survey charge.
 
-Other patterns:
-- DEATH: "That upon the demise of [Name], his share in land bearing old Survey No. X(Khata), Y(Khata) came to be mutated in the names of his legal heirs which are as follows:
-[Heir1Name]
-[Heir2Name]"
-- SALE: "That [Seller] sold Survey No. X to [Buyer] for Rs. X/- vide document no. Y dated DD/MM/YYYY."
-- PARTITION: "That Family members distributed their land among themselves as follows:-"
-- RELEASE: "That upon receiving an application from [Name] for removing the charge of [Bank], [Branch]. The said exemption of burden has been recorded. Entry No. X."
-- ORDER (government allotment): "That Government survey was conducted and land bearing Survey No. X was allotted to [Name]."
-- ORDER (circular): "That as per Taluka Circular No. X dated Y, Survey No. Z allotted to [Name]."
+Other patterns (include "measuring <area>" whenever the source states one — NOT for LOAN / RELEASE):
+- DEATH/INHERITANCE: Include the death date and, when shown, the death-certificate number. For EACH heir include their relationship and age when the source states them (the heir table has columns સંબંધ = relationship and ઉં.વ. = age; પત્નિ/પત્ની=wife, પુત્ર=son, પુત્રી=daughter, વિધવા=widow, માતા=mother). End with a sentence listing the documents the mutation was based on when shown (application/Arji, death certificate, genealogy/Pedhinamu, affidavits/Sogandnama). Format:
+"That upon the demise of [Name] on DD/MM/YYYY (death certificate no. [X]), his/her share in land bearing old Survey No. X(Khata), Y(Khata) measuring <area> Hectare came to be mutated in the names of his/her legal heirs which are as follows:-
+[Heir1Name] - [relationship] - age [N]
+[Heir2Name] - [relationship] - age [N]
+
+This inheritance was recorded based on the application, death certificate, genealogy (Pedhinamu) and affidavits."
+  Drop any segment the source does not provide — omit "(death certificate no. ...)" if absent, omit "- age [N]" if no age is shown, omit the closing supporting-documents sentence if no such documents are listed. NEVER invent a date, certificate number, relationship, age, or document.
+- SALE: "That [Seller] sold Survey No. X measuring <area> Hectare to [Buyer] for a consideration of Rs. [consideration]/- (market value Rs. [market value]/-) vide document no. Y dated DD/MM/YYYY."
+  The Gujarati source for a sale typically states TWO amounts — માર્કેટ વેલ્યુ / market value (the jantri/assessed value, e.g. "માર્કેટ વેલ્યુ રૂ. 295020/-") AND અવેજ / અવેજની રકમ / consideration (the price actually paid, e.g. "અવેજની રકમ રૂ. 200000/-"). Capture BOTH whenever present: render the consideration as the primary "for a consideration of Rs." amount and append the market value in parentheses as "(market value Rs. .../-)". Omit the "(market value Rs. ...)" segment only when the source states no market value. NEVER invent, drop, or swap the two amounts — the consideration and the market value are distinct figures.
+- PARTITION: When the source lists who received what, you MUST emit the full allocation list (one row per recipient) between the lead-in and the closing sentence, separated by blank lines. Do NOT collapse the lead-in straight into the closing sentence. Do NOT prefix rows with "1.", "2." — emit bare rows; numbering is applied automatically downstream. Format:
+"That the said [OriginalOwner(s)] distributed their land bearing Survey No. X measuring <area> Hectare among themselves as follows:-
+[Recipient1] - Survey No. [X] - [area]
+[Recipient2] - Survey No. [Y] - [area]
+[Recipient3] - Survey No. [Z] - [area]
+
+The distribution/Partition of the shares as mentioned above was recorded based on their application and their consent as per their respective rights and physical possession."
+  Each allocation row goes on its own line. If the source omits area or survey for a recipient, leave that segment off (e.g. "[Name] - Survey No. 33"). NEVER produce a partition description that has "as follows:-" / "as under:-" followed immediately by the "The distribution..." closing line — the allocation rows MUST be present whenever the source shows them.
+- LIFETIME_DISTRIBUTION / PERSONS_ADD / TO_TRANSFER: When multiple beneficiaries are listed, emit them as bare rows (one per line, no "1.", "2." prefixes):
+"That the said [Distributor] made an application of life time distribution in his land bearing Survey No. X measuring <area> Hectare to [add/transfer to] his legal heirs which are as follows:-
+[Beneficiary1]
+[Beneficiary2]"
+  Single-beneficiary lifetime distributions stay as one prose sentence (no list).
+- RELEASE (no area): "That upon receiving an application from [Name] for removing the charge of [Bank], [Branch]. The said exemption of burden has been recorded. Entry No. X."
+- ORDER (government allotment): "That Government survey was conducted and land bearing Survey No. X measuring <area> Hectare was allotted to [Name]."
+- ORDER (circular): "That as per Taluka Circular No. X dated Y, Survey No. Z measuring <area> Hectare allotted to [Name]."
+- ORDER (error correction): Include ALL survey numbers and corrections listed in the order exactly as they appear in the source. Do NOT filter or omit corrections for other survey numbers. Example: "Vide order was passed by the Mamlatdar, Abdasa, vide No. E-Dhara/Record Promulgation/Error Correction/08 dated 30/09/2008, in land bearing Survey No. 26, remove entry 56 and add 165."
 - NOT RELATED: "This Entry is not related to Present Survey Number."
-- PROMULGATION: Extract the FULL procedural text. Include: issuing authority, court name, all order numbers with dates, public notice and objection period, Mamlatdar preparation, Province Office verification, finalization, page/survey range. Do NOT summarize.
+- PROMULGATION: Extract the FULL procedural text. Include: issuing authority, court name, all order numbers with dates, public notice and objection period, Mamlatdar preparation, Province Office verification, finalization, page/survey range. Do NOT summarize. Preserve old/new area pairs verbatim (e.g. "old area 7-59-29 Hectare, new area 7-70-84 Hectare").
 """
 
 
@@ -311,19 +334,30 @@ def extract_all_unified(pdf_text: str) -> UnifiedExtractionResult:
 
         # Initialize LLM
         load_dotenv()
-        from langchain_google_genai import ChatGoogleGenerativeAI
-        llm = ChatGoogleGenerativeAI(
-            model=MODEL_NAME,
-            google_api_key=os.getenv('GEMINI_API_KEY', ''),
-            temperature=0.0,
-            convert_system_message_to_human=True,
-        )
 
-        # Make the SINGLE API call with retry
-        response = _invoke_with_retry(llm, prompt, max_retries=3)
+        # Extraction backend: 'claude' shells out to the `claude` CLI (Claude Code
+        # subscription auth, NO API key); 'gemini' uses LangChain ChatGoogleGenerativeAI.
+        # Captcha + translation always stay on Gemini regardless of this setting.
+        backend = os.getenv('EXTRACTION_BACKEND', 'claude').strip().lower()
+        if backend == 'claude':
+            claude_model = os.getenv('CLAUDE_EXTRACTION_MODEL', 'opus').strip()
+            content = _coerce_text(_invoke_claude_cli(prompt, claude_model))
+        else:
+            from langchain_google_genai import ChatGoogleGenerativeAI
+            llm = ChatGoogleGenerativeAI(
+                model=MODEL_NAME,
+                google_api_key=os.getenv('GEMINI_API_KEY', ''),
+                temperature=0.0,
+                convert_system_message_to_human=True,
+                # Gemini-3 thinking level (raj-repo tuning: 3-flash=low, 3.5-flash=medium).
+                # Empty/unset -> None (model default). Note: enabling thinking makes
+                # response.content a list of blocks, handled by _coerce_text/_parse_json_response.
+                thinking_level=(os.getenv('GEMINI_THINKING_LEVEL', 'low').strip().lower() or None),
+            )
+            # Make the SINGLE API call with retry
+            response = _invoke_with_retry(llm, prompt, max_retries=3)
+            content = _coerce_text(response.content if hasattr(response, 'content') else str(response))
 
-        # Parse the response
-        content = response.content if hasattr(response, 'content') else str(response)
         result.raw_response = content
         result.output_tokens = len(content) // 4
 
@@ -343,6 +377,34 @@ def extract_all_unified(pdf_text: str) -> UnifiedExtractionResult:
             # Extract mutation entries
             result.mutation_entries = parsed_data.get('mutation_entries', [])
             _normalize_mutation_entries(result.mutation_entries)
+
+            # Trim multi-survey listings in entry descriptions down to the
+            # subject survey. Safe by construction — falls back to original
+            # text if filtering would produce nothing meaningful.
+            try:
+                subject_survey = (result.land_details or {}).get("survey_number", "")
+                # land_details may hold a comma-joined string; use the first one
+                if subject_survey and "," in subject_survey:
+                    subject_survey = subject_survey.split(",")[0].strip()
+                aliases = _compute_survey_aliases(subject_survey, pdf_text)
+                if aliases:
+                    trimmed = 0
+                    for ed in result.mutation_entries:
+                        for key in ("description", "formatted_description", "raw_description"):
+                            desc = ed.get(key, "") if isinstance(ed, dict) else ""
+                            if not desc:
+                                continue
+                            new_desc = _filter_description_to_subject_survey(desc, aliases)
+                            if new_desc != desc:
+                                ed[key] = new_desc
+                                trimmed += 1
+                    if trimmed:
+                        logger.info(
+                            "Survey filter: trimmed %d field(s) to subject survey %s",
+                            trimmed, subject_survey,
+                        )
+            except Exception as e:
+                logger.warning("Survey filter skipped due to error: %s", e)
 
             # Ensure all pre-detected entry numbers are included
             # NO: Do not force include hints as they might be years/survey numbers (false positives)
@@ -495,6 +557,74 @@ def _extract_relevant_sections(pdf_text: str) -> str:
             sections.append(entry_section)
 
     return '\n\n[...]\n\n'.join(sections)
+
+
+def _invoke_claude_cli(prompt: str, model: str = "opus", timeout: int = 300) -> str:
+    """Run a one-shot extraction via the `claude` CLI in print mode.
+
+    Uses Claude Code's logged-in subscription auth (NO ANTHROPIC_API_KEY needed), so
+    extraction can run on Claude (Sonnet/Opus) at low volume without an API key. A
+    minimal --system-prompt strips the heavy agent prompt so it behaves as a plain
+    extraction model. Captcha + translation stay on Gemini. Requires the machine to
+    have an authenticated `claude` CLI (works locally; NOT on a headless cloud deploy).
+    """
+    import subprocess
+    # Effort is env-configurable (default "low"). Plugins stay disabled regardless;
+    # the >300s hang was caused by xhigh effort + plugins loading together, so a
+    # deliberate higher effort with plugins off is safe (just slower thinking).
+    _effort = (os.getenv("CLAUDE_EXTRACTION_EFFORT", "high").strip() or "high")
+    # Higher effort thinks longer; give it more headroom unless caller overrode.
+    if _effort in ("high", "xhigh") and timeout == 300:
+        timeout = int(os.getenv("CLAUDE_EXTRACTION_TIMEOUT", "900"))
+    cmd = [
+        "claude", "-p", "--model", model,
+        "--strict-mcp-config",  # don't spawn the session's MCP servers
+        # Override the user's heavy interactive config for a fast one-shot call:
+        # configurable effort + no plugins (the superpowers SessionStart hook) + no
+        # auto-memory/dream. WITHOUT plugins-off, each headless call loads the
+        # plugins and HANGS (>300s) on a ~23KB prompt.
+        "--settings",
+        ('{"effortLevel":"%s","enabledPlugins":{},"autoMemoryEnabled":false,'
+         '"autoDreamEnabled":false,"promptSuggestionEnabled":false}' % _effort),
+        "--disallowed-tools", "Bash", "Read", "Edit", "Write", "Glob", "Grep",
+        "WebFetch", "WebSearch", "Task", "TodoWrite",
+        "--system-prompt",
+        ("You are a precise data-extraction engine. Follow the user's instructions "
+         "exactly and output ONLY the requested JSON object."),
+    ]
+    env = {**os.environ, "CLAUDE_EFFORT": _effort}
+    try:
+        res = subprocess.run(cmd, input=prompt, capture_output=True, text=True,
+                             timeout=timeout, env=env)
+    except FileNotFoundError:
+        raise RuntimeError("`claude` CLI not on PATH; cannot use EXTRACTION_BACKEND=claude")
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"claude CLI timed out after {timeout}s")
+    if res.returncode != 0:
+        raise RuntimeError(f"claude CLI failed (rc={res.returncode}): {res.stderr[:500]}")
+    out = (res.stdout or "").strip()
+    if not out:
+        raise RuntimeError(f"claude CLI returned empty output; stderr={res.stderr[:300]}")
+    logger.info(f"Claude CLI extraction OK (model={model}, {len(out)} chars out)")
+    return out
+
+
+def _coerce_text(content) -> str:
+    """Flatten a LangChain response.content to a plain string.
+
+    With Gemini-3 thinking enabled, content comes back as a list of blocks
+    like [{'type': 'text', 'text': '...'}] instead of a str. The two-pass
+    parsers expect a str, so normalise here.
+    """
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            item if isinstance(item, str)
+            else item.get("text", "") if isinstance(item, dict)
+            else "" for item in content
+        )
+    return str(content)
 
 
 def _parse_json_response(content) -> Optional[Dict]:
@@ -684,7 +814,7 @@ def _merge_pass2_into_entries(
             "certification_status": p1.get("certification_status", ""),
             "certification_official": p1.get("certification_official", ""),
             "certification_date": p1.get("certification_date", ""),
-            "entry_status": p1.get("certification_status", ""),
+            "entry_status": p1.get("entry_status", "") or p1.get("certification_status", ""),
         }
 
         # Merge Pass 2 fields (if available)
@@ -731,21 +861,21 @@ def _convert_land_details_for_compat(pass1_land: Dict) -> Dict[str, str]:
         val = pass1_land.get(key, "")
         compat[key] = convert_gujarati_to_english_numerals(str(val)) if val else "Not Available"
 
-    # survey_numbers list -> comma-joined string
+    # survey_numbers list -> comma-joined string (convert Gujarati numerals per item)
     sns = pass1_land.get("survey_numbers", [])
     if isinstance(sns, list) and sns:
-        compat["survey_number"] = ", ".join(str(s) for s in sns)
+        compat["survey_number"] = ", ".join(convert_gujarati_to_english_numerals(str(s)) for s in sns)
     else:
-        compat["survey_number"] = str(sns) if sns else "Not Available"
+        compat["survey_number"] = convert_gujarati_to_english_numerals(str(sns)) if sns else "Not Available"
 
     # old_survey_numbers list -> comma-joined string
     old_sns = pass1_land.get("old_survey_numbers", [])
     if isinstance(old_sns, list) and old_sns:
-        compat["old_survey_number"] = ", ".join(str(s) for s in old_sns)
+        compat["old_survey_number"] = ", ".join(convert_gujarati_to_english_numerals(str(s)) for s in old_sns)
     else:
-        compat["old_survey_number"] = str(old_sns) if old_sns else "Not Available"
+        compat["old_survey_number"] = convert_gujarati_to_english_numerals(str(old_sns)) if old_sns else "Not Available"
 
-    # owners list -> comma-joined string
+    # owners list -> comma-joined string (no numeral conversion needed for names)
     owners = pass1_land.get("owners", [])
     if isinstance(owners, list) and owners:
         compat["owner"] = ", ".join(str(o) for o in owners)
@@ -763,6 +893,98 @@ def _convert_land_details_for_compat(pass1_land: Dict) -> Dict[str, str]:
             compat[key] = translate_gujarati_text(compat[key])
 
     return compat
+
+
+def _compute_survey_aliases(subject_survey: str, pdf_text: str) -> set:
+    """
+    Build a match set for the subject survey, including parent and
+    parenthetical resurvey aliases actually observed in the PDF.
+
+    E.g. subject "569/p2" in a PDF containing "569/p2(922)" and "569(320)"
+    yields {"569/p2", "569", "569p2", "569/p2(922)", "569(320)", "922", "320"}.
+    """
+    aliases: set = set()
+    if not subject_survey:
+        return aliases
+    s = subject_survey.strip()
+    aliases.add(s)
+    aliases.add(s.replace(" ", ""))
+    aliases.add(s.replace("/", ""))
+    # Parent survey (strip "/pN" subdivision suffix)
+    parent = re.sub(r"/p\d+$", "", s, flags=re.IGNORECASE)
+    if parent and parent != s:
+        aliases.add(parent)
+    # Parenthetical resurvey aliases from the PDF text, e.g. "569/p2(922)"
+    for alias in list(aliases):
+        for m in re.finditer(re.escape(alias) + r"\((\d+)\)", pdf_text):
+            aliases.add(m.group(0))
+            aliases.add(m.group(1))
+    return {a for a in aliases if a}
+
+
+def _filter_description_to_subject_survey(description: str, aliases: set) -> str:
+    """
+    Trim multi-survey listings in an entry description down to fragments that
+    reference the subject survey (per the alias match set).
+
+    Safety valve: if filtering would leave the description empty or materially
+    shorter than a sentence, return the original text unchanged. This means
+    the filter can only trim verbose entries, never silently drop information.
+    """
+    if not description or not aliases:
+        return description
+
+    original = description
+
+    # --- Strategy 1: comma-separated "Survey No. A, B, C ..." list ---
+    # Match a "Survey No(s)." header followed by a comma-list of >=3 tokens
+    # (tokens can include parenthesised resurvey numbers like "569/p2(922)").
+    list_header_re = re.compile(
+        r"(Survey\s+Nos?\.\s*)"
+        r"((?:[^\s,()]+(?:\([^)]*\))?)(?:\s*,\s*[^\s,()]+(?:\([^)]*\))?){2,})"
+    )
+
+    def _token_base(tok: str) -> str:
+        # Strip a trailing "(...)" resurvey qualifier to get the base survey id.
+        return re.sub(r"\([^)]*\)$", "", tok).strip()
+
+    def _token_matches(tok: str) -> bool:
+        base = _token_base(tok)
+        # Exact match only — substring matching would let parent "569" match
+        # sibling subdivisions like "569/p1".
+        return base in aliases or tok in aliases
+
+    def _keep_in_list(match: "re.Match") -> str:
+        header = match.group(1)
+        list_part = match.group(2)
+        tokens = [t.strip() for t in list_part.split(",")]
+        kept = [t for t in tokens if _token_matches(t)]
+        if not kept:
+            return match.group(0)  # fallback: leave untouched
+        return header + ", ".join(kept)
+
+    description = list_header_re.sub(_keep_in_list, description)
+
+    # --- Strategy 2: repeated "Survey No. X old area ... new area ..." rows ---
+    row_re = re.compile(
+        r"Survey\s+No\.\s*(\S+?)\s+old\s+area\s+[\d.\-]+\s+new\s+area\s+[\d.\-]+\.?",
+        re.IGNORECASE,
+    )
+    rows = list(row_re.finditer(description))
+    if len(rows) > 1:
+        kept_rows = [
+            m.group(0) for m in rows
+            if _token_matches(m.group(1))
+        ]
+        if kept_rows:
+            start = rows[0].start()
+            end = rows[-1].end()
+            description = description[:start] + " ".join(kept_rows) + description[end:]
+
+    # Safety valve — never return something truncated into meaninglessness.
+    if len(description.strip()) < 20:
+        return original
+    return description
 
 
 def extract_all_structured(pdf_text: str) -> StructuredExtractionResult:
@@ -800,6 +1022,10 @@ def extract_all_structured(pdf_text: str) -> StructuredExtractionResult:
             google_api_key=os.getenv('GEMINI_API_KEY', ''),
             temperature=0.0,
             convert_system_message_to_human=True,
+            # Gemini-3 thinking level (raj-repo tuning: 3-flash=low, 3.5-flash=medium).
+            # Empty/unset -> None (model default). Note: enabling thinking makes
+            # response.content a list of blocks, handled by _coerce_text/_parse_json_response.
+            thinking_level=(os.getenv('GEMINI_THINKING_LEVEL', 'low').strip().lower() or None),
         )
 
         # ---- Pass 1: Classification + Land Details ----
@@ -810,7 +1036,7 @@ def extract_all_structured(pdf_text: str) -> StructuredExtractionResult:
         logger.debug("Pass 1 prompt length: %d chars", len(pass1_prompt))
 
         pass1_response = _invoke_with_retry(llm, pass1_prompt, max_retries=3)
-        pass1_content = pass1_response.content if hasattr(pass1_response, 'content') else str(pass1_response)
+        pass1_content = _coerce_text(pass1_response.content if hasattr(pass1_response, 'content') else str(pass1_response))
         logger.debug("Pass 1 raw response length: %d chars", len(pass1_content))
 
         pass1_data = parse_pass1_response(pass1_content)
@@ -849,7 +1075,7 @@ def extract_all_structured(pdf_text: str) -> StructuredExtractionResult:
             logger.debug("Pass 2 prompt length: %d chars", len(pass2_prompt))
 
             pass2_response = _invoke_with_retry(llm, pass2_prompt, max_retries=3)
-            pass2_content = pass2_response.content if hasattr(pass2_response, 'content') else str(pass2_response)
+            pass2_content = _coerce_text(pass2_response.content if hasattr(pass2_response, 'content') else str(pass2_response))
             logger.debug("Pass 2 raw response length: %d chars", len(pass2_content))
 
             pass2_fields = parse_pass2_response(pass2_content)
@@ -871,6 +1097,34 @@ def extract_all_structured(pdf_text: str) -> StructuredExtractionResult:
 
         # ---- Merge & Render ----
         merged_dicts = _merge_pass2_into_entries(classified_entries, pass2_fields)
+
+        # Trim multi-survey listings in descriptions down to the subject survey.
+        # Runs after merge so it operates on the final rendered description.
+        # Safe by construction: falls back to original text if no match.
+        try:
+            subject_survey = ""
+            sns = pass1_land.get("survey_numbers") if isinstance(pass1_land, dict) else None
+            if sns:
+                subject_survey = str(sns[0])
+            aliases = _compute_survey_aliases(subject_survey, pdf_text)
+            if aliases:
+                trimmed = 0
+                for ed in merged_dicts:
+                    desc = ed.get("description", "")
+                    if not desc:
+                        continue
+                    new_desc = _filter_description_to_subject_survey(desc, aliases)
+                    if new_desc != desc:
+                        ed["description"] = new_desc
+                        trimmed += 1
+                if trimmed:
+                    logger.info(
+                        "Survey filter: trimmed %d/%d entry descriptions to subject survey %s",
+                        trimmed, len(merged_dicts), subject_survey,
+                    )
+        except Exception as e:
+            logger.warning("Survey filter skipped due to error: %s", e)
+
         result.mutation_entries = merged_dicts  # raw dicts for backward compat
 
         # Create typed entry objects

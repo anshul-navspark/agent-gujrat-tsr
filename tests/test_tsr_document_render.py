@@ -102,8 +102,10 @@ def test_chain_of_title_uses_decimal_numbering_format():
     assert _abstract_format_for_num_id(doc, num_id) == "decimal"
 
 
-def test_chain_of_title_header_and_note_rows_skip_auto_number():
-    """Header and Note rows must NOT carry numPr — otherwise Word counts them."""
+def test_chain_of_title_header_skips_number_but_note_row_is_numbered():
+    """The explanatory header row must NOT be numbered, but the Note row IS
+    numbered as the final item in the chain (per the lawyers' request — the Note
+    is part of the numbered chain of title, sharing the data rows' counter)."""
     doc = Document()
     entries = [
         GenericEntry(entry_number="100", date="01/01/2000", type="SALE",
@@ -112,7 +114,12 @@ def test_chain_of_title_header_and_note_rows_skip_auto_number():
     add_chain_of_title_section(doc, entries, ["100"])
     table = doc.tables[-1]
     assert _first_para_num_id(table.rows[0].cells[0]) is None, "header row must not be numbered"
-    assert _first_para_num_id(table.rows[-1].cells[0]) is None, "note row must not be numbered"
+
+    data_num_id = _first_para_num_id(table.rows[1].cells[0])
+    note_num_id = _first_para_num_id(table.rows[-1].cells[0])
+    assert note_num_id is not None, "note row must be numbered as part of the chain"
+    assert note_num_id == data_num_id, \
+        "note row must share the data rows' numId so Word counts it next"
 
 
 # ---------------------------------------------------------------------------

@@ -36,6 +36,7 @@ uvicorn>=0.22.0
 python-multipart>=0.0.6
 uvloop>=0.19.0  # Faster event loop
 httptools>=0.6.0  # Faster HTTP parsing
+httpx>=0.24.0  # Required by fastapi.testclient for in-process API calls
 
 # Cloud Storage for caching
 google-cloud-storage>=2.10.0

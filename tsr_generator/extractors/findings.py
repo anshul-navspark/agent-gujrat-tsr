@@ -257,7 +257,7 @@ def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None,
     # Generate dynamic encumbrance text
     if profile == "final_sample_v1":
         # Match the hand-typed "Final TSR Sample" phrasing more closely
-        encumbrance_period = (land_details or {}).get("encumbrance_period_years", "13")
+        encumbrance_period = (land_details or {}).get("encumbrance_period_years", "30")
         if has_encumbrances:
             encumbrance_text = f"{encumbrance_period} years.  As per revenue records there is charge subsisting over the land."
             charge_detail_text = "As per revenue records there is charge subsisting over the land."
@@ -363,7 +363,7 @@ def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None,
         },
         {
             'sn': '10.',
-            'particular': "Details of creation of charge or redemption for a minimum period of 13 year and subsisting charges, as per encumbrance certificate for the last 13 year.",
+            'particular': "Details of creation of charge or redemption for a minimum period of 30 year and subsisting charges, as per encumbrance certificate for the last 30 year.",
             'observation': charge_detail_text  # DYNAMIC
         },
         {

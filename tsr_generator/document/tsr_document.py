@@ -114,7 +114,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         ref_prefix = sanitize_text(land_details.get("ref_prefix") or "ABREL")
         if profile == "final_sample_v1":
             report_date = sanitize_text(land_details.get("report_date") or current_date)
-            ref_text_val = f"Ref. No. {ref_prefix}/GUJ/{taluka_prefix}/{village_prefix}/{survey_number}\t\t\t\tDated :{report_date}"
+            ref_text_val = f"Ref. No. {ref_prefix}/GUJ/{district_prefix}/{taluka_prefix}/{village_prefix}/{survey_number}\t\t\t\tDated :{report_date}"
         else:
             ref_text_val = f"Ref. No. {ref_prefix}/GUJ/{district_prefix}/{taluka_prefix}/{village_prefix}/{survey_number}                    Dated: {current_date}"
 
@@ -160,28 +160,29 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         
         # Add introduction
         doc.add_paragraph("Dear Sir,")
+        village_name = sanitize_text(land_details.get('village_name', 'Not Available')).title()
+        taluka_name  = sanitize_text(land_details.get('taluka_name',  'Not Available')).title()
+        district_name = sanitize_text(land_details.get('district_name', 'Not Available')).title()
+
         if profile == "final_sample_v1":
             intro_text = (
                 f"We have been engaged as per above subject reference for the Title Investigation of land situated at "
-                f"Village- {sanitize_text(land_details.get('village_name', 'Not Available'))}, "
-                f"Taluka-{sanitize_text(land_details.get('taluka_name', 'Not Available'))}, "
-                f"District- {sanitize_text(land_details.get('district_name', 'Not Available'))} (Gujrat). "
+                f"Village- {village_name}, "
+                f"Taluka-{taluka_name}, "
+                f"District- {district_name} (Gujrat). "
                 f"Our detailed report and findings are as under: -"
             )
         else:
-            intro_text = f"     We have been engaged for the Title Investigation of land situated at Village- {sanitize_text(land_details.get('village_name', 'Not Available'))}, Taluka-{sanitize_text(land_details.get('taluka_name', 'Not Available'))}, District- {sanitize_text(land_details.get('district_name', 'Not Available'))}. Our detailed report and findings are as under:"
+            intro_text = f"     We have been engaged for the Title Investigation of land situated at Village- {village_name}, Taluka-{taluka_name}, District- {district_name}. Our detailed report and findings are as under:"
 
         doc.add_paragraph(intro_text)
         
         # Section 1: Property Details
         add_section_heading(
             doc,
-            "Description, nature, and area of land with survey/plot numbers",
+            "1.  Description, nature, and area of land with survey/plot numbers",
             numbered=True,
         )
-        if profile == "final_sample_v1":
-            doc.add_paragraph("The Borrower has acquired/purchased the Immovable Properties description whereof (including the names of the Title Holders/Sellers) have been tabulated hereinbelow:")
-        
         # Create property details table
         property_table = doc.add_table(rows=1, cols=5)
         property_table.style = 'Table Grid'
@@ -213,7 +214,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         row[0].text = "1"
         
         nature = sanitize_text(land_details.get('nature_of_land'))
-       
+
         if profile == "final_sample_v1":
             if 'new tenure' in nature.lower():
                 row[1].text = "New Tenure  Agricultural"
@@ -299,7 +300,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         doc.add_paragraph()
         add_section_heading(
             doc,
-            "Details/Description of document scrutinized",
+            "2.  Details/Description of document scrutinized",
             numbered=True,
         )
         
@@ -335,8 +336,8 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
             ("Village Form No. 8A", "Online", "Not Applicable"),
             ("Old Scanned Village Form No. 7/12 starting from the year 1952 to 2004", "Online", "Not Applicable"),
         ]
-        if profile != "final_sample_v1" and (land_details or {}).get("include_encumbrance_certificate", True):
-            standard_docs.append(("Encumbrance Certificate for a period of 30 Years", "Digital Certified copy", sanitize_text(land_details.get('taluka_name', 'Not Available'))))
+        if (land_details or {}).get("include_encumbrance_certificate", True):
+            standard_docs.append(("Encumbrance Certificate for a period of 30 Years", "Digital Certified copy", sanitize_text((land_details or {}).get('taluka_name', 'Not Available'))))
         
         for doc_type, perusal, office in standard_docs:
             row = docs_table.add_row().cells

@@ -1,3 +1,14 @@
+---
+title: Gujarat TSR Agent
+emoji: 📄
+colorFrom: blue
+colorTo: green
+sdk: streamlit
+sdk_version: 1.41.0
+app_file: app/streamlit_app_cloud.py
+pinned: false
+---
+
 # Gujarat TSR Agent
 
 A comprehensive automation solution for fetching land records from the Gujarat AnyRoR portal and generating Title Search Reports (TSR) using AI-powered document processing.

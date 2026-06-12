@@ -101,6 +101,7 @@ class LandRecordRequest(BaseModel):
     survey_number: str
     output_format: str = "zip"  # Added to support returning just docx
     client_id: Optional[str] = None  # Picks a client from clients.json
+    skip_cache: bool = False  # When true, bypass cache read and write
 
 
 def _build_request_metadata_for_client(
@@ -256,18 +257,42 @@ def process_record(
     except Exception as e:
         logger.warning(f"Invalid district '{request.district}': {e}")
         raise HTTPException(status_code=400, detail=f"Invalid district: '{request.district}' is not in our database")
-    
+
     try:
-        taluka_guj = translation_service.translate_to_gujarati(request.taluka, context='taluka')
+        taluka_guj = translation_service.translate_to_gujarati(
+            request.taluka, context='taluka', parent_district=district_guj
+        )
     except Exception as e:
-        logger.warning(f"Invalid taluka '{request.taluka}': {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid taluka: '{request.taluka}' is not in our database")
-    
+        logger.warning(f"Invalid taluka '{request.taluka}' under district '{district_guj}': {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid taluka: '{request.taluka}' is not in district '{request.district}'",
+        )
+
     try:
-        village_guj = translation_service.translate_to_gujarati(request.village, context='village')
+        village_guj = translation_service.translate_to_gujarati(
+            request.village, context='village',
+            parent_district=district_guj, parent_taluka=taluka_guj,
+        )
     except Exception as e:
-        logger.warning(f"Invalid village '{request.village}': {e}")
-        raise HTTPException(status_code=400, detail=f"Invalid village: '{request.village}' is not in our database")
+        logger.warning(
+            f"Invalid village '{request.village}' under {district_guj}/{taluka_guj}: {e}"
+        )
+        detail = (
+            f"Invalid village: '{request.village}' is not in "
+            f"{request.district}/{request.taluka}"
+        )
+        # Surface the translator's 'did you mean ...?' hint (a suggestion only).
+        _msg = str(e)
+        _idx = _msg.lower().find("did you mean")
+        if _idx != -1:
+            _hint = _msg[_idx:]
+            _q = _hint.find("?")
+            if _q != -1:
+                _hint = _hint[: _q + 1]
+            _hint = _hint.strip()
+            detail += ". " + _hint[0].upper() + _hint[1:]
+        raise HTTPException(status_code=400, detail=detail)
     
     # Log translations for debugging
     logger.info(f"Translation results: district '{request.district}' -> '{district_guj}', "
@@ -290,7 +315,7 @@ def process_record(
     pdf_key = None
     cached_pdf_content: Optional[bytes] = None
     cached_docx_content: Optional[bytes] = None
-    if cache_service is not None:
+    if cache_service is not None and not request.skip_cache:
         try:
             pdf_key = cache_service.generate_cache_key_from_translated(
                 translated_district=district_guj,
@@ -458,7 +483,7 @@ def process_record(
         
         # ===== CACHE STORE =====
         # Store the result in cache using translated values for the key
-        if cache_service is not None and pdf_key is not None:
+        if cache_service is not None and not request.skip_cache and pdf_key is not None:
             try:
                 if cached_pdf_content is None and pdf_content:
                     cache_service.cache_pdf_by_key(pdf_key, pdf_content)
@@ -548,7 +573,9 @@ def debug_environment():
         "python_version": platform.python_version(),
         "environment_variables": {
             "GEMINI_API_KEY": "SET" if os.getenv("GEMINI_API_KEY") else "NOT SET",
-            "GEMINI_MODEL_NAME": os.getenv("GEMINI_MODEL_NAME", "default: gemini-2.5-flash"),
+            "GEMINI_MODEL_NAME": os.getenv("GEMINI_MODEL_NAME", "default: gemini-3.1-pro-preview"),
+            "CAPTCHA_MODEL_NAME": os.getenv("CAPTCHA_MODEL_NAME", "default: gemini-3-flash-preview"),
+            "GEMINI_TRANSLATION_MODEL": os.getenv("GEMINI_TRANSLATION_MODEL", "default: gemini-3.1-flash-lite-preview"),
             "CHROME_BIN": os.getenv("CHROME_BIN", "NOT SET"),
             "CHROMEDRIVER_PATH": os.getenv("CHROMEDRIVER_PATH", "NOT SET"),
             "GCS_CACHE_BUCKET": os.getenv("GCS_CACHE_BUCKET", "NOT SET"),

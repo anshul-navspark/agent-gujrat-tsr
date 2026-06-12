@@ -14,6 +14,7 @@ from api.server import app
 from api.dependencies import (
     get_cache_service_dependency,
     get_scraping_service_dependency,
+    get_translation_service_dependency,
 )
 
 
@@ -45,8 +46,15 @@ def mocked_scrape_failure():
     mock_cache.get_cached_pdf_by_key.return_value = None
     mock_cache.get_cached_docx_by_key.return_value = None
 
+    # Translation is mocked so the request always clears the English->Gujarati
+    # validation gate and reaches the scrape step — this test is about
+    # scrape-failure handling, not about whether a village name resolves.
+    mock_translation = MagicMock()
+    mock_translation.translate_to_gujarati.side_effect = lambda text, *a, **k: f"{text}-guj"
+
     app.dependency_overrides[get_scraping_service_dependency] = lambda: mock_scraper
     app.dependency_overrides[get_cache_service_dependency] = lambda: mock_cache
+    app.dependency_overrides[get_translation_service_dependency] = lambda: mock_translation
     try:
         yield
     finally:

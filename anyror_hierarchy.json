@@ -10,7 +10,8 @@
     "talukas": {
       "લખપત": {
         "english_names": [
-          "Lkhpt"
+          "Lkhpt",
+          "Lakhpat"
         ],
         "villages": {
           "અકરી - 040": [
@@ -263,7 +264,8 @@
           ],
           "બરંદા - 073": [
             "Brnda - 073",
-            "Brnda"
+            "Brnda",
+            "Baranda"
           ],
           "બીટીયારી - 057": [
             "Beeteeyaree - 057",
@@ -397,20 +399,25 @@
       },
       "રાપર": {
         "english_names": [
-          "Rapr"
+          "Rapr",
+          "rapar",
+          "Raper"
         ],
         "villages": {
           "અમરાપર - 069": [
             "Amrapr - 069",
-            "Amrapr"
+            "Amrapr",
+            "Amrapur"
           ],
           "આડેસર - 039": [
             "Aadesr - 039",
-            "Aadesr"
+            "Aadesr",
+            "Adesar"
           ],
           "આણંદપર - 009": [
             "Aanndpr - 009",
-            "Aanndpr"
+            "Aanndpr",
+            "Anandpur"
           ],
           "ઉમૈયા - 046": [
             "Umaiya - 046",
@@ -614,7 +621,11 @@
           ],
           "બાદરગઢ - 075": [
             "Badrgdh - 075",
-            "Badrgdh"
+            "Badrgdh",
+            "Badargadh",
+            "Badrgadh",
+            "Badargarh",
+            "Badargad"
           ],
           "બાદલપર - 082": [
             "Badlpr - 082",
@@ -3701,7 +3712,8 @@
   "બનાસકાંઠા": {
     "english_names": [
       "Banaskantha",
-      "Bnaskantha"
+      "Bnaskantha",
+      "banskantha"
     ],
     "talukas": {
       "ધાનેરા": {
@@ -3897,7 +3909,8 @@
           "માલોત્રા - 050": [
             "Malot Ra - 050",
             "Malot Ra",
-            "Malotra"
+            "Malotra",
+            "malhotra"
           ],
           "મોટા મેડા - 028": [
             "Mota Meda - 028",
@@ -22710,7 +22723,9 @@
           ],
           "બરડીયા - 011": [
             "Brdeeya - 011",
-            "Brdeeya"
+            "Brdeeya",
+            "bardiya",
+            "baradiya"
           ],
           "બેલડા - 023": [
             "Belda - 023",
@@ -25542,7 +25557,9 @@
     "talukas": {
       "પોરબંદર": {
         "english_names": [
-          "Porbndr"
+          "Porbndr",
+          "Porbandar",
+          "porbandar"
         ],
         "villages": {
           "અડવાણા - 002": [
@@ -25687,11 +25704,14 @@
           "પાલખડા - 028": [
             "Palkhda - 028",
             "Palkhda",
-            "Palakhada"
+            "Palakhada",
+            "palkhada"
           ],
           "ફટાણા - 010": [
             "Phtana - 010",
-            "Phtana"
+            "Phtana",
+            "Fatana - 010",
+            "Fatana"
           ],
           "બખરલા - 045": [
             "Bkhrla - 045",
@@ -25703,7 +25723,11 @@
           ],
           "બરડીયા - 040": [
             "Brdeeya - 040",
-            "Brdeeya"
+            "Brdeeya",
+            "Baradiya",
+            "baradiya",
+            "Bardiya",
+            "bardiya"
           ],
           "બેરણ - 038": [
             "Bern - 038",
@@ -25833,7 +25857,8 @@
           ],
           "સીસલી - 011": [
             "Seeslee - 011",
-            "Seeslee"
+            "Seeslee",
+            "sisli"
           ],
           "સોઢાણા - 003": [
             "Sodhana - 003",

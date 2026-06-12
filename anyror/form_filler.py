@@ -36,67 +36,204 @@ class FormFiller:
         self.captcha_solver = captcha_solver
         self.logger = logger or logging.getLogger(__name__)
     
-    def navigate_to_form(self):
-        """Navigate to the AnyRoR form page."""
-        self.logger.debug(f"Navigating to AnyRoR website: {CONFIG['URL']}")
-        
+    def _log_page_diagnostics(self, context: str):
+        """Log diagnostic info about the current page state for debugging Cloud failures."""
         try:
-            # First try the direct land record URL
-            self.driver.get(CONFIG['URL'])
-            time.sleep(2)  # Wait for initial load
-            
-            # Check if we need to navigate to the correct page
             current_url = self.driver.current_url
-            if 'LandRecordRural.aspx' not in current_url:
-                self.logger.debug("Not on land record page, trying alternative navigation")
-                
-                # Try clicking the land record link if present
-                try:
-                    land_record_link = self.driver.find_element(By.XPATH, "//a[contains(text(), 'Land Record')]")
-                    land_record_link.click()
-                    time.sleep(2)
-                except Exception as e:
-                    self.logger.warning(f"Could not find land record link: {str(e)}")
-            
-            # Wait for the page to load and verify we're on the correct page
-            try:
-                # Wait for the land record type dropdown
-                self.wait.until(
-                    EC.presence_of_element_located((By.ID, CONFIG['LAND_RECORD_TYPE_ID']))
+            page_title = self.driver.title
+            ready_state = self.driver.execute_script("return document.readyState")
+            body_length = self.driver.execute_script("return document.body ? document.body.innerHTML.length : 0")
+            select_ids = self.driver.execute_script(
+                "return Array.from(document.querySelectorAll('select')).map(s => s.id)"
+            )
+            self.logger.error(
+                f"[{context}] URL={current_url} | title={page_title} | "
+                f"readyState={ready_state} | bodyLen={body_length} | selects={select_ids}"
+            )
+            # If the body is tiny, the page probably didn't load at all
+            if body_length < 500:
+                snippet = self.driver.execute_script(
+                    "return document.body ? document.body.innerHTML.substring(0, 500) : '(no body)'"
                 )
-                
-                # Log the current URL and page title for debugging
-                self.logger.debug(f"Current URL: {self.driver.current_url}")
-                self.logger.debug(f"Page Title: {self.driver.title}")
-                
-                # Check if the dropdown is actually visible
-                dropdown = self.driver.find_element(By.ID, CONFIG['LAND_RECORD_TYPE_ID'])
-                if not dropdown.is_displayed():
-                    self.logger.warning("Land record dropdown is present but not visible")
-                    
-                # Get all dropdown options for debugging
-                select = Select(dropdown)
-                options = [f"{o.get_attribute('value')}: {o.text}" for o in select.options]
-                self.logger.debug(f"Available options in land record dropdown: {options}")
-                
-            except Exception as e:
-                self.logger.error(f"Error waiting for land record form: {str(e)}")
-                self.logger.error(traceback.format_exc())
-                
-                # Try to get the page source for debugging
+                self.logger.error(f"[{context}] Page body snippet: {snippet}")
+        except Exception as diag_err:
+            self.logger.error(f"[{context}] Failed to collect diagnostics: {diag_err}")
+
+    def _preflight_check(self):
+        """Check if the AnyRoR site is reachable via Python and Chrome.
+
+        Tests both Python sockets (informational) and Chrome's own network stack
+        (authoritative for scraping).  On IPv6-only hosts (e.g. Streamlit Cloud)
+        the Python TCP check may fail while Chrome succeeds via NAT64 — the Chrome
+        result is what determines the return value.
+        """
+        import socket
+        import urllib.request
+        import urllib.error
+        url = CONFIG['URL']
+        host = 'anyror.gujarat.gov.in'
+        python_ok = False
+
+        # Step 1: DNS resolution — AF_UNSPEC so DNS64 returns NAT64-mapped
+        # addresses on IPv6-only hosts instead of raw IPv4.
+        try:
+            addrs = socket.getaddrinfo(host, 443, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            addr_strs = [sa[0] for (af, _st, _pr, _cn, sa) in addrs]
+            self.logger.info(f"Preflight DNS OK: {host} -> {addr_strs}")
+        except socket.gaierror as e:
+            self.logger.error(f"Preflight DNS FAILED: {host} cannot be resolved: {e}")
+            addrs = []
+
+        # Step 2: TCP connection — try every resolved address so NAT64-mapped
+        # IPv6 addresses are attempted on IPv6-only hosts.
+        if addrs:
+            for af, socktype, proto, _cn, sa in addrs:
                 try:
-                    self.logger.debug(f"Page source: {self.driver.page_source[:1000]}...")
-                except:
-                    pass
-                
-                raise
-            
-            self.logger.debug("Successfully navigated to the land record form page")
-            
+                    sock = socket.socket(af, socktype, proto)
+                    sock.settimeout(10)
+                    sock.connect(sa)
+                    sock.close()
+                    self.logger.info(f"Preflight TCP OK: {host}:443 reachable via {sa[0]}")
+                    python_ok = True
+                    break
+                except OSError as e:
+                    self.logger.warning(f"Preflight TCP: {sa[0]}:{sa[1]} failed: {e}")
+            if not python_ok:
+                self.logger.error(
+                    f"Preflight TCP FAILED: {host}:443 unreachable from Python "
+                    f"(all addresses tried). May be an IPv6-only host without NAT64."
+                )
+
+        # Step 3: Python HTTP (only if TCP worked — otherwise skip to Chrome)
+        if python_ok:
+            try:
+                req = urllib.request.Request(url, method='HEAD')
+                req.add_header('User-Agent', 'Mozilla/5.0')
+                resp = urllib.request.urlopen(req, timeout=15)
+                self.logger.info(f"Preflight HTTP OK: {url} returned HTTP {resp.status}")
+            except Exception as e:
+                self.logger.warning(f"Preflight HTTP FAILED: {url}: {e}")
+                python_ok = False
+
+        # Step 4: Chrome connectivity test (authoritative).
+        # Only run when Python TCP failed — on IPv6-only hosts (e.g. Streamlit Cloud)
+        # Python sockets can't reach IPv4 sites but Chrome can via NAT64.
+        # When Python already confirmed reachability, skip this — the JS fetch()
+        # to anyror.gujarat.gov.in always hangs in headless Chrome (the site stalls
+        # HEAD requests from automated browsers), wasting 120s and risking session
+        # corruption when the script timeout fires.
+        if python_ok:
+            self.logger.info("Preflight: Python confirmed reachability, skipping Chrome test")
+            return True
+
+        try:
+            script = """
+            var done = arguments[0];
+            fetch(arguments[1], {method: 'HEAD', mode: 'no-cors', cache: 'no-store'})
+                .then(function() { done({ok: true, error: null}); })
+                .catch(function(e) { done({ok: false, error: e.toString()}); });
+            """
+            # Use a short timeout so a hung fetch() aborts cleanly without
+            # blocking ChromeDriver's HTTP server for 120s (which corrupts the session).
+            self.driver.set_script_timeout(10)
+            try:
+                result = self.driver.execute_async_script(script, url)
+            finally:
+                self.driver.set_script_timeout(120)
+            if result and result.get('ok'):
+                self.logger.info("Preflight Chrome OK: fetch() reached the site")
+                return True
+            else:
+                err = result.get('error') if result else 'no result'
+                self.logger.error(f"Preflight Chrome FAILED: fetch() error: {err}")
         except Exception as e:
-            self.logger.error(f"Error navigating to form page: {str(e)}")
-            self.logger.error(traceback.format_exc())
-            raise
+            self.logger.warning(f"Preflight Chrome test inconclusive: {e}")
+
+        # Fall back to Python result if Chrome test was inconclusive
+        return python_ok
+
+    def navigate_to_form(self):
+        """Navigate to the AnyRoR form page with retry logic for slow connections."""
+        self.logger.info(f"Navigating to AnyRoR website: {CONFIG['URL']}")
+
+        # Diagnostic: check if the site is reachable outside Chrome
+        site_reachable = self._preflight_check()
+        if not site_reachable:
+            self.logger.error(
+                "AnyRoR site is unreachable via both Python and Chrome. "
+                "Likely cause: IPv6-only host without NAT64, or site blocking cloud IPs."
+            )
+
+        max_nav_retries = 3
+        for attempt in range(max_nav_retries):
+            try:
+                if attempt > 0:
+                    self.logger.warning(f"Retry attempt {attempt+1}/{max_nav_retries}")
+                    # On retry, do a fresh driver.get() instead of JS navigation
+                    # JS navigation doesn't trigger a full page reload and can leave
+                    # the page in a broken state if the previous load timed out
+                    self.driver.delete_all_cookies()
+
+                try:
+                    self.driver.get(CONFIG['URL'])
+                except TimeoutException:
+                    # page_load_timeout fired - the page is still loading but we
+                    # can check what we have so far (eager strategy may have given
+                    # us a partial DOM)
+                    self.logger.warning(
+                        f"Page load timed out on attempt {attempt+1}, "
+                        f"checking if DOM is usable anyway"
+                    )
+
+                # Wait for initial load
+                time.sleep(3)
+
+                # Check if we need to navigate to the correct page
+                current_url = self.driver.current_url
+                if 'LandRecordRural.aspx' not in current_url:
+                    self.logger.warning(f"Not on land record page (URL: {current_url}), trying alternative navigation")
+
+                    try:
+                        land_record_link = self.driver.find_element(By.XPATH, "//a[contains(text(), 'Land Record')]")
+                        land_record_link.click()
+                        time.sleep(2)
+                    except Exception as e:
+                        self.logger.warning(f"Could not find land record link: {str(e)}")
+
+                # Wait for the page to load and verify we're on the correct page
+                # Use a shorter per-attempt timeout (30s) so retries happen faster
+                per_attempt_wait = WebDriverWait(self.driver, 30)
+                try:
+                    per_attempt_wait.until(
+                        EC.presence_of_element_located((By.ID, CONFIG['LAND_RECORD_TYPE_ID']))
+                    )
+
+                    self.logger.info(f"Page loaded: URL={self.driver.current_url}, title={self.driver.title}")
+
+                    dropdown = self.driver.find_element(By.ID, CONFIG['LAND_RECORD_TYPE_ID'])
+                    if not dropdown.is_displayed():
+                        self.logger.warning("Land record dropdown is present but not visible")
+
+                    select = Select(dropdown)
+                    options = [f"{o.get_attribute('value')}: {o.text}" for o in select.options]
+                    self.logger.debug(f"Available options in land record dropdown: {options}")
+
+                    self.logger.info("Successfully navigated to the land record form page")
+                    return
+
+                except Exception as e:
+                    self._log_page_diagnostics(f"attempt {attempt+1}")
+                    self.logger.error(f"Error waiting for land record form (attempt {attempt+1}): {str(e)}")
+                    if attempt == max_nav_retries - 1:
+                        raise
+
+            except Exception as e:
+                if attempt == max_nav_retries - 1:
+                    self._log_page_diagnostics("final failure")
+                    self.logger.error(f"Navigation attempt {attempt+1} failed: {str(e)}")
+                    raise
+                self.logger.error(f"Navigation attempt {attempt+1} failed: {str(e)}")
+                time.sleep(2 ** attempt)  # Exponential backoff
     
     def select_land_record_type(self):
         """Select the land record type."""
@@ -500,38 +637,123 @@ class FormFiller:
         except TimeoutException:
             self.logger.warning("Survey dropdown options did not populate in time")
             
+        # Build a list of candidate strings to try, including paiki variants.
+        # Gujarat AnyRoR may display "569/p1" as "569/1", "569 પૈકી 1", "569 paiki 1",
+        # "569pk1", or with Gujarati digits. Picking the wrong/first option silently
+        # has caused the wrong parcel (e.g. Gauchar wasteland) to be scraped, so we
+        # try several normalised forms and fail loudly if none match.
+        candidates = self._build_survey_candidates(survey_block_number)
+
         try:
-            result = self.select_dropdown_option(CONFIG['SURVEY_DROPDOWN_ID'], survey_block_number, partial_match=True)
-            if result:
-                self.logger.debug("Survey/Block Number selected successfully")
-            else:
-                self.logger.warning(f"Survey/Block Number not found matching: {survey_block_number}")
-                
-                # If not found by partial match, try to select the first option as fallback
-                dropdown = self.wait.until(
-                    EC.element_to_be_clickable((By.ID, CONFIG['SURVEY_DROPDOWN_ID']))
-                )
-                select = Select(dropdown)
-                if len(select.options) > 1:  # Skip the first option if it's a placeholder
-                    select.select_by_index(1)
-                    self.logger.debug("Selected first available Survey/Block Number as fallback")
+            for candidate in candidates:
+                if self.select_dropdown_option(
+                    CONFIG['SURVEY_DROPDOWN_ID'], candidate, partial_match=True
+                ):
+                    self.logger.debug(
+                        f"Survey/Block Number selected successfully via candidate: {candidate}"
+                    )
                     return True
-            return result
+
+            # No candidate matched. Log the available options to aid debugging
+            # and return False rather than silently selecting the first option,
+            # which previously caused the wrong parcel to be scraped.
+            try:
+                dropdown = self.driver.find_element(By.ID, CONFIG['SURVEY_DROPDOWN_ID'])
+                available = [o.text.strip() for o in Select(dropdown).options]
+            except Exception:
+                available = []
+            self.logger.error(
+                f"Survey/Block Number '{survey_block_number}' not found. "
+                f"Tried candidates: {candidates}. Available options: {available}"
+            )
+            return False
         except Exception as e:
             self.logger.error(f"Error selecting survey number: {str(e)}")
-            # Try to select the first option as fallback
-            try:
-                dropdown = self.wait.until(
-                    EC.element_to_be_clickable((By.ID, CONFIG['SURVEY_DROPDOWN_ID']))
-                )
-                select = Select(dropdown)
-                if len(select.options) > 1:  # Skip the first option if it's a placeholder
-                    select.select_by_index(1)
-                    self.logger.debug("Selected first available Survey/Block Number as fallback after error")
-                    return True
-            except Exception as inner_e:
-                self.logger.error(f"Error in fallback survey selection: {str(inner_e)}")
             return False
+
+    def _build_survey_candidates(self, survey_block_number):
+        """Generate candidate strings for matching a survey number in the dropdown.
+
+        AnyRoR dropdowns mix Latin and Gujarati digits. A plain subdivision like
+        "38/3" is rendered as "38/૩"; paiki entries like "569/p1" render as
+        "569/p૧". The digit 5 is sometimes shown as the letter "પ" instead of
+        the digit "૫" (an AnyRoR quirk), so both are tried.
+
+        Examples:
+            "569/p1" → ["569/p1", "569/p૧", "૫૬૯/p૧", "569/1", ...]
+            "38/3"   → ["38/3", "38/૩", "૩૮/૩"]
+            "568"    → ["568", "૫૬૮"]
+        """
+        import re
+
+        s = str(survey_block_number).strip()
+        candidates = [s]
+
+        gujarati_digits = str.maketrans("0123456789", "૦૧૨૩૪૫૬૭૮૯")
+        # AnyRoR sometimes renders the digit 5 as the letter પ rather than ૫
+        gujarati_digits_pa = str.maketrans("0123456789", "૦૧૨૩૪પ૬૭૮૯")
+
+        def add(v):
+            if v and v not in candidates:
+                candidates.append(v)
+
+        # Always try full Gujarati-digit translations of the raw input
+        add(s.translate(gujarati_digits))
+        add(s.translate(gujarati_digits_pa))
+
+        # Plain subdivision form: "38/3" → also try "38/૩"
+        m_plain = re.match(r"^(\d+)\s*/\s*(\d+)$", s)
+        if m_plain:
+            base, part = m_plain.group(1), m_plain.group(2)
+            part_g = part.translate(gujarati_digits)
+            part_g_pa = part.translate(gujarati_digits_pa)
+            base_g = base.translate(gujarati_digits)
+            add(f"{base}/{part_g}")
+            add(f"{base}/{part_g_pa}")
+            add(f"{base_g}/{part_g}")
+            add(f"{base_g}/{part_g_pa}")
+
+        # Paiki forms: "569/p1", "569/P2", "569p1", "569pk1"
+        m = re.match(r"^(\d+)\s*/?\s*p(?:k)?\s*(\d+)$", s, re.IGNORECASE)
+        if m:
+            base, part = m.group(1), m.group(2)
+            base_g = base.translate(gujarati_digits)
+            part_g = part.translate(gujarati_digits)
+            part_g_pa = part.translate(gujarati_digits_pa)
+            variants = [
+                # AnyRoR commonly uses Latin "p" + Gujarati digit, e.g. "569/p૧"
+                f"{base}/p{part_g}",
+                f"{base}/p{part_g_pa}",
+                f"{base_g}/p{part_g}",
+                f"{base}/{part_g}",
+                f"{base}/{part}",
+                f"{base} પૈકી {part}",
+                f"{base} પેકી {part}",
+                f"{base} paiki {part}",
+                f"{base} Paiki {part}",
+                f"{base}pk{part}",
+                f"{base}/p{part}",
+                f"{base}/P{part}",
+                f"{base}{part}",
+                f"{base_g} પૈકી {part_g}",
+            ]
+            for v in variants:
+                add(v)
+
+        # General multi-level form. AnyRoR keeps the BASE survey number in Latin
+        # digits but renders every subdivision/paiki digit in Gujarati, keeping
+        # the Latin 'p' and '/' separators -- e.g. the dropdown shows "50p૩/p૨",
+        # "2p૪/૧", "32/૨p૧૦". The single-level regexes above miss two-level
+        # inputs like "50p3/p2" or "2P4/1", so handle the general case here:
+        # leading digits stay Latin, every other digit is translated.
+        m_multi = re.match(r"^(\d+)((?:/?[pP]?\d+)+)$", s)
+        if m_multi:
+            base = m_multi.group(1)
+            rest = s[len(base):].replace(" ", "").replace("P", "p")  # dropdown uses lowercase p
+            add(f"{base}{rest.translate(gujarati_digits)}")
+            add(f"{base}{rest.translate(gujarati_digits_pa)}")  # digit 5 rendered as પ
+
+        return candidates
     
     def solve_captcha(self):
         """

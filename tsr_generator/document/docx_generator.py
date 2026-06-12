@@ -14,9 +14,11 @@ from tsr_generator.extractors.unified_extractor import _normalize_date_str
 def _create_decimal_numbering(document):
     """Create a fresh decimal numbering definition that restarts at 1.
 
-    Each call yields a distinct numId so independent counters can coexist
-    (e.g., one per table). Word renders the number from the lvl's rPr —
-    the cell paragraph itself stays empty.
+    Returns the numId to reference from a paragraph's w:numPr. Each call yields a
+    distinct numId so independent counters can coexist (e.g., one per table).
+
+    Number is rendered by Word, so font/weight/size live in the lvl's rPr — the
+    cell paragraph itself stays empty.
     """
     numbering = document.part.numbering_part.element
 
@@ -75,7 +77,7 @@ def _create_decimal_numbering(document):
 
 
 def _apply_list_number(paragraph, num_id, ilvl=0):
-    """Attach numbering properties so Word renders an auto-number."""
+    """Attach numbering properties to a paragraph so Word renders an auto-number."""
     pPr = paragraph._p.get_or_add_pPr()
     numPr = OxmlElement('w:numPr')
     ilvl_e = OxmlElement('w:ilvl')
@@ -186,6 +188,121 @@ def add_section_heading(doc, text, level=1, numbered=True):
     
     return heading
 
+def _number_names_after_follows(description: str) -> str:
+    """Number newline-separated rows that appear after 'as follows:' / 'as under:'.
+
+    The list ends at the first blank line, the closing 'The distribution/Partition…'
+    sentence, the certification line, or end-of-string — whichever comes first.
+    Strips any leading 'N.' the LLM may have already added so we don't double-number.
+    """
+    leading_num_re = re.compile(r'^\s*\d+\.\s*')
+    lead_in_re = re.compile(r'as (?:follows|under):[-]?\s*$', re.IGNORECASE)
+    stop_re = re.compile(
+        r'^\s*The (?:Entry|distribution|Partition|partition|above|said)\b|^\s*Note\b',
+        re.IGNORECASE,
+    )
+
+    lines = description.split('\n')
+    out = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        out.append(line)
+        if not lead_in_re.search(line):
+            i += 1
+            continue
+
+        j = i + 1
+        rows = []
+        while j < len(lines):
+            row_raw = lines[j]
+            row = row_raw.strip()
+            if not row or stop_re.match(row_raw):
+                break
+            rows.append(leading_num_re.sub('', row))
+            j += 1
+
+        for idx, row in enumerate(rows, 1):
+            out.append(f"{idx}. {row}")
+        i = j
+
+    return '\n'.join(out)
+
+
+def _parse_survey_correction_table(description):
+    """Detect the 'Survey No. / Error / Correction' inline-table pattern in an entry description.
+
+    Returns (pre_text, rows, post_text) where rows is a list of dicts with keys
+    'survey_no', 'error', 'correction', or None if the pattern is not present.
+    """
+    MARKER = "Survey No. / Error / Correction"
+    idx = description.find(MARKER)
+    if idx == -1:
+        return None
+
+    pre_text = description[:idx].rstrip(": ")
+    after_marker = description[idx + len(MARKER):].strip()
+
+    # Each entry looks like: "98/p10 ! 98/p25 / Survey No. 98/p10"
+    row_re = re.compile(
+        r'(\S+/\S+)\s*!\s*(\S+/\S+)\s*/\s*Survey No\.\s*(\S+?)(?=[,\.])'
+    )
+    rows = []
+    last_end = 0
+    for m in row_re.finditer(after_marker):
+        rows.append({
+            'survey_no': m.group(1),
+            'error': m.group(2),
+            'correction': f"Survey No. {m.group(3)}",
+        })
+        last_end = m.end()
+
+    if not rows:
+        return None
+
+    post_text = after_marker[last_end:].lstrip('., ').strip()
+    return pre_text, rows, post_text
+
+
+def _add_nested_table_to_cell(cell, document, headers, rows_data):
+    """Insert a small bordered table inside a table cell.
+
+    Creates the table in the document body, then moves its XML element
+    into the cell before the cell's final paragraph (Word requires tc
+    to end with a w:p element).
+    """
+    from docx.oxml.ns import qn
+
+    nested = document.add_table(rows=0, cols=len(headers))
+    nested.style = 'Table Grid'
+
+    # Header row
+    hdr_row = nested.add_row()
+    for i, hdr in enumerate(headers):
+        c = hdr_row.cells[i]
+        c.paragraphs[0].clear()
+        run = c.paragraphs[0].add_run(hdr)
+        run.bold = True
+        run.font.name = 'Times New Roman'
+        run.font.size = Pt(11)
+
+    # Data rows
+    for rd in rows_data:
+        dr = nested.add_row()
+        for i, val in enumerate(rd.values()):
+            c = dr.cells[i]
+            c.paragraphs[0].clear()
+            run = c.paragraphs[0].add_run(val)
+            run.font.name = 'Times New Roman'
+            run.font.size = Pt(11)
+
+    # Move tbl XML from document body into the cell (before last w:p)
+    tbl_el = nested._tbl
+    tbl_el.getparent().remove(tbl_el)
+    last_p = cell._tc.findall(qn('w:p'))[-1]
+    cell._tc.insert(list(cell._tc).index(last_p), tbl_el)
+
+
 def add_chain_of_title_section(document, entries, entry_table):
     """
     Add Chain of Title section with a two-column table format where:
@@ -205,9 +322,13 @@ def add_chain_of_title_section(document, entries, entry_table):
     logger.debug("Adding Chain of Title section with two-column format")
 
     # Add section heading
-    add_section_heading(document, "Chain of Title", numbered=True)
+    add_section_heading(document, "3.  Chain of Title", numbered=True)
 
-    if not entries:
+    # Only bail out when we have *neither* hydrated entries *nor* bare entry
+    # numbers. When the PDF only lists numbers (no descriptions), entries is []
+    # but entry_table still holds them — the loop below renders placeholder
+    # rows for those, matching how manually typed TSRs handle this case.
+    if not entries and not entry_table:
         paragraph = document.add_paragraph()
         paragraph.add_run("No entries found in the document.").italic = True
         return {}
@@ -233,21 +354,21 @@ def add_chain_of_title_section(document, entries, entry_table):
     
     # Add header row with explanatory text
     header_row_cells = table.add_row().cells
-    
+
     # Set cell widths for the header row
     for i, width in enumerate(col_widths):
         table.rows[-1].cells[i].width = Inches(width)
-    
+
     # First column is empty
-    
+
     # Second column: Add explanatory text
-    header_text = "Brief history and flow of title with respect to Immovable Properties \u2013 For 30 Year Period - Based on perusal of the documents referred in S. No. 2 above."
+    header_text = "The trajectory of title pertaining to immovable properties over a 30-year span is delineated herein, drawing from a meticulous examination of the documents cited under Table Number 2. The inclusion of the land revenue record preceding this 30-year period serves solely to enhance comprehension of the title's lineage."
     header_para = header_row_cells[1].paragraphs[0]
     header_run = header_para.add_run(header_text)
     header_run.bold = True
     header_run.font.name = 'Times New Roman'
     header_run.font.size = Pt(12.5)
-    
+
     # Format the header paragraph
     header_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
     header_para.paragraph_format.line_spacing = 1.15
@@ -299,25 +420,58 @@ def add_chain_of_title_section(document, entries, entry_table):
             if entry:
                 # Existing entry logic
                 safe_date = entry.date if getattr(entry, 'date', '') else ""
-                header_text = f"Entry No. {entry.entry_number} Dated {safe_date} "
+                # Elide " Dated " when no date — avoids "Entry No. X Dated That ..."
+                header_text = (
+                    f"Entry No. {entry.entry_number} Dated {safe_date} "
+                    if safe_date
+                    else f"Entry No. {entry.entry_number} "
+                )
                 header_run = entry_para.add_run(header_text)
                 header_run.bold = True
                 header_run.font.name = 'Times New Roman'
                 header_run.font.size = Pt(12.5)
                 
-                # Add description
+                # Add description — detect inline survey-correction table
                 description = entry.formatted_description or ""
                 description = description.strip()
                 if description and not description.startswith("That"):
                     description = f"That {description}"
-                desc_run = entry_para.add_run(description)
-                desc_run.font.name = 'Times New Roman'
-                desc_run.font.size = Pt(12.5)
-                
+                description = _number_names_after_follows(description)
+
+                parsed = _parse_survey_correction_table(description)
+                if parsed:
+                    pre_text, corr_rows, post_text = parsed
+                    # Write pre-table text into entry_para
+                    desc_run = entry_para.add_run(pre_text)
+                    desc_run.font.name = 'Times New Roman'
+                    desc_run.font.size = Pt(12.5)
+                    entry_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+                    entry_para.paragraph_format.line_spacing = 1.15
+
+                    # Insert nested table in the cell
+                    _add_nested_table_to_cell(
+                        row_cells[1], document,
+                        headers=['Survey No.', 'Error', 'Correction'],
+                        rows_data=corr_rows,
+                    )
+
+                    # Any text after the table (rare) goes in a new paragraph
+                    if post_text:
+                        post_para = row_cells[1].add_paragraph()
+                        post_run = post_para.add_run(post_text)
+                        post_run.font.name = 'Times New Roman'
+                        post_run.font.size = Pt(12.5)
+                        post_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+                        post_para.paragraph_format.line_spacing = 1.15
+                else:
+                    desc_run = entry_para.add_run(description)
+                    desc_run.font.name = 'Times New Roman'
+                    desc_run.font.size = Pt(12.5)
+
                 # Format the entry paragraph
-                entry_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
+                entry_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
                 entry_para.paragraph_format.line_spacing = 1.15
-                
+
                 # Add certification: use existing cert or default for non-promulgation entries
                 _entry_type_val = entry.type.value if hasattr(entry.type, 'value') else str(entry.type)
                 _skip_cert_types = ['Promulgation', 'Not Related', 'PROMULGATION', 'NOT_RELATED']
@@ -394,11 +548,16 @@ def add_chain_of_title_section(document, entries, entry_table):
                             # No official found, use simple format
                             certification_text = f"The Entry is {status_word}."
 
-                    # Certification on new line immediately after description (no gap)
-                    entry_para.add_run("\n")
-                    cert_run = entry_para.add_run(certification_text)
+                    # Certification in a separate paragraph to avoid justification stretching
+                    # the last line of the description (soft line breaks cause JUSTIFY to
+                    # stretch that line; a true paragraph end does not).
+                    cert_para = row_cells[1].add_paragraph()
+                    cert_run = cert_para.add_run(certification_text)
                     cert_run.font.name = 'Times New Roman'
                     cert_run.font.size = Pt(12.5)
+                    cert_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+                    cert_para.paragraph_format.line_spacing = 1.15
+                    cert_para.paragraph_format.space_before = Pt(0)
             else:
                 # Placeholder logic
                 header_text = f"Entry No. {num} Dated : "
@@ -418,7 +577,11 @@ def add_chain_of_title_section(document, entries, entry_table):
     active_encumbrances, active_entry_nums = detect_active_encumbrances(entries)
 
     note_row_cells = table.add_row().cells
-    # First column: empty
+    # First column: continue the same auto-numbering so the Note appears as
+    # the next item in the list (matches user request — Note is part of the
+    # numbered chain of title).
+    note_row_cells[0].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
+    _apply_list_number(note_row_cells[0].paragraphs[0], num_id)
 
     note_para_1 = note_row_cells[1].paragraphs[0]
 
@@ -756,7 +919,7 @@ def add_findings_table(doc, findings):
     
     # Add section heading
     doc.add_paragraph()
-    add_section_heading(doc, "Findings & opinion based our title investigation:-", numbered=True)
+    add_section_heading(doc, "4.  Findings & opinion based our title investigation:-", numbered=True)
     
     # Create and format the table
     table = doc.add_table(rows=1, cols=3)

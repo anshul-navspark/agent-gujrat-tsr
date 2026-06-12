@@ -56,12 +56,10 @@ class AnyRoRScraper:
                 self.logger.warning(f"AnyRoRScraper: Error during cleanup: {e}")
             finally:
                 self.driver = None
-        
-        if self.web_driver_manager:
-            try:
-                self.web_driver_manager.close()
-            except Exception as e:
-                self.logger.warning(f"AnyRoRScraper: Error closing WebDriverManager: {e}")
+                # Clear the web_driver_manager's reference too so its close()
+                # doesn't try to quit the same driver again
+                if self.web_driver_manager:
+                    self.web_driver_manager.driver = None
     
     def fetch_land_record(self, district_name, taluka_name, village_name, survey_block_number, output_path):
         """
@@ -93,8 +91,9 @@ class AnyRoRScraper:
                 
             # Initialize WebDriver if not already done
             if not self.driver:
-                self.driver = self.web_driver_manager.initialize_webdriver(headless=self.headless, timeout=30)
-                self.form_filler = FormFiller(self.driver, WebDriverWait(self.driver, 30), self.captcha_solver, self.logger)
+                # Use longer timeout for Streamlit Cloud (120s)
+                self.driver = self.web_driver_manager.initialize_webdriver(headless=self.headless, timeout=120)
+                self.form_filler = FormFiller(self.driver, WebDriverWait(self.driver, 120), self.captcha_solver, self.logger)
             
             # Navigate to the form
             self.form_filler.navigate_to_form()
