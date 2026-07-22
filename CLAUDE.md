@@ -45,7 +45,9 @@ Infrastructure: AnyRoR scraper (anyror/), TSR generator (tsr_generator/), utils 
 PDF → `extract_text_from_pdf()` → `extract_all_unified()` (1 LLM call — Claude CLI by default, see Extraction Modes & Backends) → `generate_findings_table()` → `create_tsr_document()` → DOCX
 
 **Scraping Pipeline:**
-Request → TranslationService (English→Gujarati, deterministic-first) → AnyRoR Scraper (Selenium + Gemini CAPTCHA solver) → PDF → Cache (GCS or local)
+Request → TranslationService (English→Gujarati, deterministic-first) → AnyRoR fetch → PDF → Cache (GCS or local)
+
+`AnyRoRScraper.fetch_land_record()` has two paths. **Primary (default): browser-free HTTP fetch** (`anyror/http_fetch.py`) — AnyRoR's WAF resets the Selenium/Chrome browser but lets plain `requests` through, so it walks the ASP.NET cascading postbacks with `requests`, solves the inline base64 captcha with the Gemini `CaptchaSolver`, and renders the record HTML to PDF with a **local** headless Chrome (loading a local file only — never navigating to AnyRoR). **Fallback: the original Selenium scraper.** Toggle the primary off with `ANYROR_HTTP_FETCH=false` (then it's Selenium-only). Gotcha baked into the code: the captcha input field is `txt_captcha_1` (underscore before the `1`), NOT the stale `CONFIG['CAPTCHA_INPUT_ID']` value `txt_captcha1` — posting to the wrong name silently yields "Capcha is not matched". PDF rendering needs a Chrome binary (`CHROME_BIN`, else auto-detected).
 
 ### Extraction Modes & Backends
 
@@ -85,6 +87,8 @@ The **local** cache defaults to ~never-expire (`LOCAL_CACHE_TTL_DAYS`, default 3
 - `LOCAL_CACHE_TTL_DAYS` — local cache TTL in days when no GCS bucket; default `36500` (≈never expire)
 - `HEADLESS` — browser headless mode for scraping
 - `MAX_WORKERS` — parallel processing thread count
+- `ANYROR_HTTP_FETCH` — `true` (default): use the browser-free HTTP fetch as the primary scrape path, Selenium as fallback; `false`: Selenium only. See Scraping Pipeline
+- `CHROME_BIN` — Chrome/Chromium binary used by the HTTP-fetch path to render the record HTML to PDF; auto-detected (system Chrome / Playwright chromium) if unset
 
 ## Domain Concepts
 
