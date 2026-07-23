@@ -29,6 +29,35 @@
   (stale vs the `gemini-3.1-pro-preview` default) and does not set `EXTRACTION_BACKEND=gemini`,
   which a cloud/Docker deploy would need.
 
+**2026-07-22/23 — Browser-free AnyRoR fetch (WAF workaround) + made it the default:**
+- Task: generate TSRs for Belda (Talaja, Bhavnagar) surveys `24/p1` + `48/p4` from a
+  handwritten WhatsApp note. The local Selenium scraper was **WAF-blocked** the whole
+  session (`ERR_CONNECTION_RESET`/`CLOSED`; the 44 KB `selects=[]` JS-challenge page).
+- Ruled out every network angle: WARP/Cloudflare egress (`104.28.x`) is WAF-blocked;
+  switching Wi-Fi/mobile didn't help (same office public IP / IPv6-broken Airtel);
+  Abu's PC (192.168.29.58) shares the office IP **and** runs WARP → no help; the deployed
+  Cloud Run scraper is **down** (503 crash-on-boot, likely a dead `GEMINI_API_KEY` secret;
+  gcloud scoped to the wrong project so couldn't inspect).
+- **Key discovery:** AnyRoR's WAF resets the *browser* but lets plain HTTP `requests`
+  through. Built `anyror/http_fetch.py` — walks the ASP.NET cascading postbacks with
+  `requests`, solves the inline base64 captcha via the Gemini `CaptchaSolver`, renders the
+  record HTML → PDF with a **local** headless Chrome (local file only, never navigates to
+  AnyRoR). Fetched both RoRs → PDFs → TSRs (Opus/high) end-to-end.
+- **The bug that ate ~2 hours:** the captcha field is **`txt_captcha_1`** (underscore
+  before the `1`), NOT the stale `CONFIG['CAPTCHA_INPUT_ID']` = `txt_captcha1`. Posting to
+  the wrong name silently returns "Capcha is not matched" for *every* submit — proven not
+  a model/OCR issue by reading captchas by eye and still getting rejected. Also learned the
+  survey option format quirks (base ASCII + Gujarati paiki digit, `5`→`પ`, `/p` vs `p`
+  inconsistent: `24p૧` vs `48/p૪`).
+- Per Anshul's call, **wired http_fetch as the PRIMARY path** in
+  `AnyRoRScraper.fetch_land_record()` (Selenium fallback, `ANYROR_HTTP_FETCH` toggle) —
+  same dict/PDF contract so callers are unchanged. Added `tests/test_http_fetch.py` (14,
+  incl. a regression guard for the captcha field name + the primary/fallback wiring); full
+  suite **380 passed**. PR #9 (`feat/anyror-http-fetch-default`), **CI green**. Awaiting
+  merge decision (merge → Cloud Run auto-deploy, but GCP IP is WAF-blocked so this helps
+  local, not the remote).
+- Memory saved: `project_anyror_http_fetch.md`.
+
 ---
 
 ## Sessions (newest first)
