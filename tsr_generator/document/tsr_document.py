@@ -152,7 +152,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
                     f"in connection with land situated at "
                     f"Village- {sanitize_text(land_details.get('village_name') or 'Not Available')}, "
                     f"Taluka-{sanitize_text(land_details.get('taluka_name') or 'Not Available')}, "
-                    f"District- {sanitize_text(land_details.get('district_name') or 'Not Available')} (Gujrat)."
+                    f"District- {sanitize_text(land_details.get('district_name') or 'Not Available')} (Gujarat)."
                 )
                 doc.add_paragraph(re_line)
         else:
@@ -169,7 +169,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
                 f"We have been engaged as per above subject reference for the Title Investigation of land situated at "
                 f"Village- {village_name}, "
                 f"Taluka-{taluka_name}, "
-                f"District- {district_name} (Gujrat). "
+                f"District- {district_name} (Gujarat). "
                 f"Our detailed report and findings are as under: -"
             )
         else:
