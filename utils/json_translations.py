@@ -25,6 +25,7 @@ load_dotenv()
 _ROMAN_EQUIV = (
     ("garh", "gadh"),   # ગઢ "fort" suffix: 'garh' (Hindi-style) == 'gadh'
     ("w", "v"),         # વ is romanized as either v or w
+    ("ee", "i"),        # ઈ / િ long-i: AnyRoR writes 'Bodkee', reports write 'Bodki'
 )
 
 _VOWELS = str.maketrans("", "", "aeiou")

@@ -150,7 +150,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
                 f"We have been engaged as per above subject reference for the Title Investigation of land situated at "
                 f"Village- {village_name}, "
                 f"Taluka-{taluka_name}, "
-                f"District- {district_name} (Gujrat). "
+                f"District- {district_name} (Gujarat). "
                 f"Our detailed report and findings are as under: -"
             )
         else:
