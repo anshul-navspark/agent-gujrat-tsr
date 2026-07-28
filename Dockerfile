@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y \
     chromium-driver \
     build-essential \
     libpoppler-cpp-dev \
+    poppler-utils \
     pkg-config \
     python3-dev \
     fonts-indic \
