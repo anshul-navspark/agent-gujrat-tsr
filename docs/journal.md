@@ -88,6 +88,35 @@
   lawyer review. The dropped certificate dates / khata numbers look like a prompt gap
   independent of this fix.
 - IP block never cleared: 12 checks over ~55 min, all TLS-reset. Stopped polling.
+- **Afternoon: all 7 Bodki TSRs delivered to OneDrive**; Mittali reviewed and marked 5
+  `- complete` (44, 44-p1, 45-4p2, 57p1, 57p3) and sent them to the client. 56p1/56p2
+  await her review. Her PC reachable over SSH as host `mittali` (192.168.29.69).
+- **Learnings encoded from her edits** (commit `18f352f`, 406 tests): INHERITANCE drops
+  its supporting-documents closing sentence (PARTITION keeps its own); no heir ages or
+  death-certificate numbers but keep the exact death date; `નિસંતાન` MUST survive as
+  "(Childless)"; omnibus *correction orders* trim to the subject survey (but bulk *loan*
+  lists keep every name — confirmed by her keeping entry 539's 19 names verbatim);
+  "affidavits before the Notary" not "their consent"; release-certificate dates never
+  stated in any phrasing; partition allocations render as a nested table; full month name
+  in the Ref date.
+- **Empty-client-field bug fixed across FOUR layers** (`core/clients.py`, `api/server.py`,
+  `tsr_generator_optimized.py`, `tsr_document.py`): an explicitly empty field in
+  clients.json was indistinguishable from a missing one, so hardcoded ABREL defaults were
+  silently reinstated. NO client could suppress the CIN / Kind Attn / Re: lines. Not
+  Bodki-specific — it would have put ABREL's CIN on every new client's report.
+- **Measured: 49% of chain entries are index-only** (25 of 51 across the 7 reports) — they
+  appear in AnyRoR's "Entry Details" index with no detail row, because they predate the
+  digital record. Mittali hand-types these from the old scanned Village Form 7/12.
+  Per Anshul (2026-07-28): this is by design, NOT a gap to close; do not chase it.
+- **Cross-reference caveat:** findings 5/18 compute "point N in table no. 3" from the
+  charge entries' chain positions — correct at generation time in all 7 files. It goes
+  stale only when the lawyer INSERTS a chain row (she added entry 82 to 57p3, shifting
+  the charges from positions 2-3 to 3-4). Not a generator bug; parked with her.
+- **Process lessons:** (1) a running uvicorn serves STALE code — always restart after a
+  prompt/template edit, this silently generated 56p1/56p2 with an outdated prompt;
+  (2) never write to a OneDrive file without checking it is not open in Word — the batch
+  uploader overwrote 57p1.docx while she had it open; a lock guard is now in place;
+  (3) base64-over-SSH times out past ~300KB — use scp.
 
 ---
 
