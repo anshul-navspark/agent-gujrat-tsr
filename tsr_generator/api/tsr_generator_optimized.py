@@ -114,7 +114,11 @@ def generate_tsr_from_pdf_optimized(
                 'ref_prefix',
                 'reference_email_date',
             ):
-                if request_metadata.get(client_field):
+                # Forward explicitly-empty values too - "" means "omit this
+                # line" downstream, while a missing key falls back to the
+                # built-in default. Filtering on truthiness here silently
+                # re-inserted the hardcoded ABREL CIN / Kind Attn.
+                if request_metadata.get(client_field) is not None:
                     land_details[client_field] = request_metadata[client_field]
 
         # Fix entry descriptions to use the correct survey number if it was overridden

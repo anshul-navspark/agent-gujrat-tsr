@@ -1,15 +1,15 @@
 {
-  "default_client_id": "abrel_spv_2",
-  "clients": [
-    {
-      "id": "abrel_spv_2",
-      "display_name": "ABREL SPV 2 Limited (Aditya Birla)",
-      "client_name": "ABREL SPV 2 Limited",
-      "client_cin": "(CIN: U40108MH2020PLC352631),",
-      "client_address": "A-2, Aditya Birla Centre, S.K. Ahire Marg,\nWorli, Mumbai-400030.",
-      "kind_attn": "Kind Attn.: Mr. Rahul Patil",
-      "ref_prefix": "ABREL",
-      "reference_email_date": "21.11.2023"
-    }
-  ]
+ "default_client_id": "abrel_spv_2",
+ "clients": [
+  {
+   "id": "abrel_spv_2",
+   "display_name": "ABREL SPV 2 Limited (Aditya Birla)",
+   "client_name": "ABREL SPV 2 Limited",
+   "client_cin": "",
+   "client_address": "A-2, Aditya Birla Centre, S.K. Ahire Marg,\nWorli, Mumbai-400030.",
+   "kind_attn": "",
+   "ref_prefix": "ABREL",
+   "reference_email_date": ""
+  }
+ ]
 }

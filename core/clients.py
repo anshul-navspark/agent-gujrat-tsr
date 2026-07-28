@@ -121,10 +121,14 @@ def load_client_library(path: Union[str, Path, None] = None) -> ClientLibrary:
             display_name=entry["display_name"],
             client_name=entry["client_name"],
             client_address=entry["client_address"],
-            client_cin=entry.get("client_cin") or None,
-            kind_attn=entry.get("kind_attn") or None,
+            # `or None` would collapse an explicitly-empty "" into None, which
+            # downstream means "not set" and re-inserts the hardcoded default.
+            # A key present but empty means "omit this line in the report", so
+            # preserve it; only a MISSING key becomes None.
+            client_cin=entry.get("client_cin"),
+            kind_attn=entry.get("kind_attn"),
             ref_prefix=entry.get("ref_prefix") or None,
-            reference_email_date=entry.get("reference_email_date") or None,
+            reference_email_date=entry.get("reference_email_date"),
         )
 
     default_id = raw.get("default_client_id")

@@ -111,7 +111,13 @@ def _build_request_metadata_for_client(
     survey_number: str,
     client: Optional[Client],
 ) -> dict:
-    """Build the request_metadata dict, merging in only non-None client fields."""
+    """Build the request_metadata dict, merging in client fields that are set.
+
+    An explicitly EMPTY client field (e.g. `client_cin: ""` in clients.json)
+    must be forwarded, not dropped: downstream it means "omit this line". Only
+    a MISSING/None field falls back to the built-in ABREL default. Filtering on
+    truthiness here made it impossible to suppress the CIN / Kind Attn lines.
+    """
     metadata = {
         "district": district,
         "taluka": taluka,
@@ -128,7 +134,7 @@ def _build_request_metadata_for_client(
             "reference_email_date",
         ):
             value = getattr(client, field)
-            if value:
+            if value is not None:
                 metadata[field] = value
     return metadata
 

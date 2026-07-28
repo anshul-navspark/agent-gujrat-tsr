@@ -16,20 +16,85 @@
 <!-- Claude: append milestone bullets here during the session. The next session
      formalizes them into a dated entry below and clears this section. -->
 
-**2026-06-10 — CLAUDE.md architecture refresh (closes a bootstrap Next item):**
-- Updated Key Flows / extraction-modes / env-vars / translation sections to match the
-  current pipeline: `EXTRACTION_BACKEND=claude` default (CLI, local-only, hang-prevention
-  flags documented), `TRANSLATION_USE_LLM` + `GEMINI_THINKING_LEVEL` + `CLAUDE_EXTRACTION_MODEL`
-  added, deterministic-first translation noted. Verified every default against code first.
-- Decision: architecture lives in CLAUDE.md (single source of truth, auto-loaded each
-  session), NOT duplicated in this journal — journal records changes/decisions only.
-- Noticed while verifying (not yet acted on): `extract_all_structured` in
-  `unified_extractor.py` (two-pass Gemini variant, ~line 982) has zero callers — dead
-  experimental code, candidate for deletion. Dockerfile pins `GEMINI_MODEL_NAME=gemini-2.5-flash`
-  (stale vs the `gemini-3.1-pro-preview` default) and does not set `EXTRACTION_BACKEND=gemini`,
-  which a cloud/Docker deploy would need.
+**2026-07-28 — Bodki (Talaja, Bhavnagar) TSR batch; scrape/extract decoupled:**
+- Identified the "Bodki" site from OneDrive TSRs (`2023 GUJRAT aditya Birla/TSR of
+  Bhavnagar -Solar/Bodki 4dec 2023/`): Village Bodki, Taluka Talaja, District Bhavnagar,
+  client ABREL SPV 2. Cross-checked against `anyror_hierarchy.json` → `બોડકી - 094`.
+- **Portal spells the village "Bodkee", the lawyer's TSRs spell it "Bodki".** Passing
+  "Bodki" → HTTP 400 with a correct "did you mean: Bodkee" hint (deterministic matcher
+  did its job — no silent wrong-village fetch). Candidate fix: add the spelling variant.
+- **Probe-before-batch pattern (new, worth keeping):** dumped the live survey dropdown
+  (664 options) via steps 1–4 of the postback walk — no captcha, no submit — before
+  generating anything. Caught that requested survey `56` does **not** exist as a plain
+  number (only `56p૧`/`56p૨`), and confirmed `44`, `44/p૧`, `45/૪p૨`, `57p૧`, `57p૩`.
+  Cheap insurance against wrong-record TSRs; probe script kept in the session scratchpad.
+- Confirmed `_survey_candidate_texts` would NOT have matched `45/4p2` (its paiki regex
+  assumes a plain integer base, so `45/4` + `p2` falls through) — but http_fetch fails
+  loudly with the option list rather than silently picking option 0, so it surfaced.
+  The slash-insensitive fallback is what actually rescues this case.
+- Per Anshul: **decoupled scraping from extraction** — scrape-only pass seeds the local
+  cache under the same key `/process-record` computes (verified: survey 44 resolved to the
+  identical key `3ab75d34…` from both paths), so the later TSR pass skips the WAF entirely.
+- Cloud Run deployment still down: `/health` → **500** (was 503 on 2026-07-22). Local
+  http_fetch is currently the only working path; it walked AnyRoR fine from this machine.
+- **WAF IP-block hit mid-batch** (~11:11, after ~4 dropdown walks in 7 min): survey 44
+  completed at 11:09, then every connection from 49.36.238.109 got TLS-reset (curl exit 35).
+  Cloudflare is a **known dead end** here (journal 2026-07-22: WARP `104.28.x` is WAF-blocked;
+  `warp-cli` not installed, and `cloudflared` is a tunnel client that can't change egress).
+  Pacing lesson: 3s between records is too aggressive; use ~60s.
+- **BIG FIND — `pypdf` mis-decodes Gujarati; it is NOT model-drop.** Chasing a "use
+  screenshots instead" idea, rendered the survey-44 PDF to 200-DPI PNG and read it with
+  Opus 5 vision. The vision read was *cleaner than the PDF text layer*, which led to
+  measuring three extractors on the identical file (16 pages):
+  | extractor | correct `ો` | decomposed `ાે` | mid-word gaps |
+  |---|---|---|---|
+  | **pypdf (in use)** | **0** | 227 | **587** |
+  | PyMuPDF | 242 | 0 | 10 |
+  | poppler `pdftotext` | 242 | 0 | 88 |
+  pypdf drops conjuncts/reph outright (`જીલ્લો`→`જી ાે`, `દ્વારા`→` ારા`, `ગ્રામ્ય`→` ામ્ય`)
+  and **corrupts holder names** (`હિતેષભાઈ`→`હતેષભાઈ`). poppler reads all of them correctly;
+  PyMuPDF is close but doubles `ા` in ર-conjuncts. The PDF is fine — pypdf's char mapping isn't.
+- Consequence: **every locally generated TSR was extracted from mangled text**, and the
+  2026-05 "extraction gaps = model-drop" diagnosis is confounded. Any model/prompt eval
+  predating this needs re-baselining. Memory `project_anyror_pdfs_are_text` corrected.
+- Proposed fix (NOT yet applied, awaiting Anshul): swap `pypdf` → poppler `pdftotext` in
+  `tsr_generator/utils/pdf_utils.py::_extract_text_cached`, pypdf as fallback, then
+  regenerate survey 44 with `skip_cache=true`.
+- Also found: `tsr_generator/__main__.py:28` passes `args.output_path` but argparse defines
+  `output` → the CLI documented in CLAUDE.md crashes with `AttributeError` on every run,
+  and it imports the original 3-call Gemini path, bypassing the Claude/Opus backend.
+- **Fix landed on `main`:** `3563a28` (pdftotext → PyMuPDF → pypdf chain + 9 tests) and
+  `302f6a6` (poppler-utils in `Dockerfile.optimized` — cloudbuild builds *that*, not
+  `Dockerfile`, so the first commit alone would never have reached the deployed image).
+  Merged into the working branch as `fd54ccb`. **Both still unpushed** (push → Cloud Run
+  auto-deploy, wanted Anshul's go-ahead).
+- **`main` is not a runnable configuration.** It lacks `http_fetch` (PR #9) *and* the
+  multi-client cache (PR #8) — its cache looks for `tsr.docx`, not `docx_{client_id}.docx`.
+  Switching the tree to main and running the API made it miss the cached PDF and fall back
+  to Selenium → chromedriver → WAF 500. Also: main's 3 failing tests are already fixed on
+  the PR branches (feature branch: **389 passed, 0 failed**). Argument for merging #8/#9.
+- **Regenerated survey 44 off the cached PDF** (deleted only `docx_*.docx`, kept
+  `original.pdf` → forces DOCX regen with no scrape; `skip_cache=true` would have been
+  WRONG, it bypasses the PDF cache too and would have triggered a doomed scrape).
+- **Old-vs-new TSR diff is MIXED, not a clean win** — 8 of 56 blocks differ. Better: entry
+  539 now isolates the one relevant loan instead of dumping 19 unrelated farmers; entry 543
+  numbering fixed. Worse: entry 89 became an empty stub (`Entry No. 89 Dated :`), entries
+  1351/1352 **dropped the certificate dates**, 543/1142 dropped khata numbers in parens,
+  and 1353 turned "affidavits before the Notary" (source: `નોટરી રૂબરૂના સોગંદનામા મુજબ`)
+  into "their consent" — the OLD wording was the accurate one there.
+  **Lesson: the fix corrects the INPUT (measured, certain); it does NOT follow that the
+  OUTPUT improves.** A single before/after run changes two variables at once (input text +
+  LLM sampling) and cannot separate them. Needs a controlled repeat-run comparison plus
+  lawyer review. The dropped certificate dates / khata numbers look like a prompt gap
+  independent of this fix.
+- IP block never cleared: 12 checks over ~55 min, all TLS-reset. Stopped polling.
 
-**2026-07-22/23 — Browser-free AnyRoR fetch (WAF workaround) + made it the default:**
+---
+
+## Sessions (newest first)
+
+### 2026-07-22/23 — Browser-free AnyRoR fetch (WAF workaround) + made it the default
+
 - Task: generate TSRs for Belda (Talaja, Bhavnagar) surveys `24/p1` + `48/p4` from a
   handwritten WhatsApp note. The local Selenium scraper was **WAF-blocked** the whole
   session (`ERR_CONNECTION_RESET`/`CLOSED`; the 44 KB `selects=[]` JS-challenge page).
@@ -60,7 +125,21 @@
 
 ---
 
-## Sessions (newest first)
+### 2026-06-10 — CLAUDE.md architecture refresh (closes a bootstrap Next item)
+
+- Updated Key Flows / extraction-modes / env-vars / translation sections to match the
+  current pipeline: `EXTRACTION_BACKEND=claude` default (CLI, local-only, hang-prevention
+  flags documented), `TRANSLATION_USE_LLM` + `GEMINI_THINKING_LEVEL` + `CLAUDE_EXTRACTION_MODEL`
+  added, deterministic-first translation noted. Verified every default against code first.
+- Decision: architecture lives in CLAUDE.md (single source of truth, auto-loaded each
+  session), NOT duplicated in this journal — journal records changes/decisions only.
+- Noticed while verifying (not yet acted on): `extract_all_structured` in
+  `unified_extractor.py` (two-pass Gemini variant, ~line 982) has zero callers — dead
+  experimental code, candidate for deletion. Dockerfile pins `GEMINI_MODEL_NAME=gemini-2.5-flash`
+  (stale vs the `gemini-3.1-pro-preview` default) and does not set `EXTRACTION_BACKEND=gemini`,
+  which a cloud/Docker deploy would need.
+
+---
 
 ### 2026-06-10 — Journal system bootstrap + current-state snapshot
 

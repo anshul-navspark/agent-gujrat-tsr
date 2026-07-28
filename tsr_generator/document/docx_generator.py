@@ -264,6 +264,46 @@ def _parse_survey_correction_table(description):
     return pre_text, rows, post_text
 
 
+_ALLOC_ROW_RE = re.compile(
+    r"^\s*(?:\d+[\.\)]\s*)?(?P<name>.+?)\s+-\s+Survey No\.\s*(?P<survey>[^\s-]\S*)"
+    r"\s+-\s+(?P<area>\d+-\d+-\d+|\d+-\d+)\s*$"
+)
+
+
+def _parse_allocation_table(description):
+    """Detect partition / distribution allocation rows in an entry description.
+
+    The lawyer renders these as a table (Sr.no. | Name | Survey Number |
+    Area) rather than inline prose - she rebuilt it by hand on both the
+    Bodki 44 and 44/p1 reports (2026-07-28 review), so emit it directly.
+
+    Returns (pre_text, rows, post_text) or None. Requires at least TWO
+    contiguous allocation rows: a single-beneficiary distribution stays as
+    prose, matching the existing prompt rule.
+    """
+    lines = description.split("\n")
+    first = last = None
+    rows = []
+    for i, ln in enumerate(lines):
+        m = _ALLOC_ROW_RE.match(ln)
+        if m:
+            if first is None:
+                first = i
+            last = i
+            rows.append({
+                "name": m.group("name").strip().rstrip(","),
+                "survey": m.group("survey").strip(),
+                "area": m.group("area").strip(),
+            })
+        elif rows and ln.strip():
+            break          # allocation rows must be contiguous
+    if len(rows) < 2:
+        return None
+    pre_text = "\n".join(lines[:first]).strip()
+    post_text = "\n".join(lines[last + 1:]).strip()
+    return pre_text, rows, post_text
+
+
 def _add_nested_table_to_cell(cell, document, headers, rows_data):
     """Insert a small bordered table inside a table cell.
 
@@ -438,8 +478,35 @@ def add_chain_of_title_section(document, entries, entry_table):
                     description = f"That {description}"
                 description = _number_names_after_follows(description)
 
-                parsed = _parse_survey_correction_table(description)
-                if parsed:
+                # Partition / distribution allocations render as a nested
+                # table (Sr.no. | Name | Survey Number | Area) - the lawyer
+                # rebuilt this by hand on both the Bodki 44 and 44/p1 reports.
+                alloc = _parse_allocation_table(description)
+                if alloc:
+                    a_pre, a_rows, a_post = alloc
+                    if a_pre:
+                        r = entry_para.add_run(a_pre)
+                        r.font.name = 'Times New Roman'
+                        r.font.size = Pt(12.5)
+                    entry_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+                    entry_para.paragraph_format.line_spacing = 1.15
+                    _add_nested_table_to_cell(
+                        row_cells[1], document,
+                        headers=['Sr.no.', 'Name', 'Survey Number', 'Area (Acre/Hectare)'],
+                        rows_data=[{'sr': str(i), 'name': a['name'],
+                                    'survey': a['survey'], 'area': a['area']}
+                                   for i, a in enumerate(a_rows, 1)],
+                    )
+                    if a_post:
+                        pp = row_cells[1].add_paragraph()
+                        pr = pp.add_run(a_post)
+                        pr.font.name = 'Times New Roman'
+                        pr.font.size = Pt(12.5)
+                        pp.paragraph_format.line_spacing = 1.15
+                parsed = None if alloc else _parse_survey_correction_table(description)
+                if alloc:
+                    pass          # already rendered above
+                elif parsed:
                     pre_text, corr_rows, post_text = parsed
                     # Write pre-table text into entry_para
                     desc_run = entry_para.add_run(pre_text)
