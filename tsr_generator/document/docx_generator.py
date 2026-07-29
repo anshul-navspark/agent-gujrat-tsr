@@ -493,7 +493,9 @@ def add_chain_of_title_section(document, entries, entry_table):
                     _add_nested_table_to_cell(
                         row_cells[1], document,
                         headers=['Sr.no.', 'Name', 'Survey Number', 'Area (Acre/Hectare)'],
-                        rows_data=[{'sr': str(i), 'name': a['name'],
+                        # Lawyer numbers these rows "1." "2." "3." (with the
+                        # period) - matches the nested tables she builds by hand.
+                        rows_data=[{'sr': f"{i}.", 'name': a['name'],
                                     'survey': a['survey'], 'area': a['area']}
                                    for i, a in enumerate(a_rows, 1)],
                     )

@@ -85,6 +85,15 @@ Formatting Rules:
 11. Use caste titles only when part of the name: Thakor, Patel, Kanbi, Choudhary, Rabari, Vadher, Solanki
 12. Measurements: Use "Acre/Guntha" or "Hectare" in descriptions. For the total_area field, output ONLY the numeric format (e.g., "1-88-48") WITHOUT the word "Hectare".
 13. Translate "bhen" or "ben" suffix as "ben" (e.g. "Shantiben")
+13a. TRANSLITERATION - do not confuse these three letters:
+   ઘ = "Gh"  (ઘોહાભાઈ = Ghohabhai, NOT Dhohabhai; ઘુના = Ghuna)
+   ધ = "Dh"  (ધીરાણ = dhiran, ધોહાભાઈ = Dhohabhai)
+   દ = "D"   (દેહુરભાઈ = Dehurbhai)
+   Rendering ઘ as "Dh" misspells the title holder's name - corrected by the
+   lawyer on 2026-07-28 (Bhagubhai Ghohabhai, survey 57p1).
+   When the SAME person's name is spelled inconsistently across the record
+   (AnyRoR does this), use the spelling that appears most often rather than
+   whichever the Ownership Details row happens to use.
 14. Lists: "which are as follows:-" followed by names on separate lines
 15. OMIT vague filler like "This entry was made based on the above." Keep descriptions concise — but DO retain the concrete supporting-documents clause for INHERITANCE/DEATH and PARTITION/LIFETIME DISTRIBUTION entries (application/Arji, death certificate, genealogy/Pedhinamu, affidavits/Sogandnama) when the source states them.
 16. LOAN entries: Do NOT include agreement date. Only describe the loan, borrower, lender, amount, and land details.
