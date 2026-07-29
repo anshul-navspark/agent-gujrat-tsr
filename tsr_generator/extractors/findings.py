@@ -275,10 +275,15 @@ def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None,
     # Generate conditional title conclusion with dynamic cross-references
     if has_encumbrances and entry_to_row_map:
         # Resolve active encumbrance entry numbers to their chain-of-title row numbers
+        # Emit a marker rather than a bare number: the DOCX writer turns each
+        # {{XREF:<entry>:<row>}} into a Word REF field bound to that chain row's
+        # bookmark, so the reference follows Word's renumbering when a row is
+        # inserted. Static numbers went stale twice in the 2026-07-28 batch.
         row_numbers = []
         for entry_num in active_entry_nums:
             if entry_num in entry_to_row_map:
-                row_numbers.append(str(entry_to_row_map[entry_num]))
+                row_numbers.append(
+                    "{{XREF:%s:%s}}" % (entry_num, entry_to_row_map[entry_num]))
 
         if row_numbers:
             if len(row_numbers) == 1:

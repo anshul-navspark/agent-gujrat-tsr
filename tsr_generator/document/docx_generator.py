@@ -89,6 +89,55 @@ def _apply_list_number(paragraph, num_id, ilvl=0):
     pPr.append(numPr)
 
 
+# --- Word cross-reference machinery -----------------------------------------
+# The chain-of-title rows carry Word auto-numbers (see _apply_list_number), so
+# they renumber themselves when a lawyer inserts or deletes a row. The findings
+# cross-reference ("subject to point N in table no. 3") used to be static text,
+# so any such edit silently invalidated it - it broke twice in the 2026-07-28
+# Bodki batch, once pointing at a charge RELEASE instead of a charge. These
+# emit a REF field bound to a bookmark on the referenced row, so Word recomputes
+# the number along with the list.
+
+def _add_bookmark(paragraph, name, bmk_id):
+    """Bookmark a numbered chain row so a REF field can point at it."""
+    start = OxmlElement('w:bookmarkStart')
+    start.set(qn('w:id'), str(bmk_id))
+    start.set(qn('w:name'), name)
+    end = OxmlElement('w:bookmarkEnd')
+    end.set(qn('w:id'), str(bmk_id))
+    paragraph._p.insert(0, start)
+    paragraph._p.append(end)
+
+
+def _add_ref_field(paragraph, bookmark, cached):
+    r"""Insert { REF <bookmark> \r \h } - renders the row's list number.
+
+    `cached` is what Word shows until fields are refreshed (it updates on
+    open/print, or Ctrl+A F9); we seed it with the number computed at
+    generation time so the document reads correctly even unrefreshed.
+    """
+    def _run(child):
+        r = OxmlElement('w:r'); r.append(child)
+        paragraph._p.append(r)
+        return r
+    begin = OxmlElement('w:fldChar'); begin.set(qn('w:fldCharType'), 'begin')
+    _run(begin)
+    instr = OxmlElement('w:instrText'); instr.set(qn('xml:space'), 'preserve')
+    instr.text = f' REF {bookmark} \\r \\h '
+    _run(instr)
+    sep = OxmlElement('w:fldChar'); sep.set(qn('w:fldCharType'), 'separate')
+    _run(sep)
+    t = OxmlElement('w:t'); t.text = str(cached)
+    _run(t)
+    end = OxmlElement('w:fldChar'); end.set(qn('w:fldCharType'), 'end')
+    _run(end)
+
+
+def chain_bookmark_name(entry_number):
+    """Stable bookmark name for a chain entry (Word: letters/digits/underscore)."""
+    return f"chainEntry{re.sub(r'[^0-9A-Za-z]', '', str(entry_number))}"
+
+
 def add_table_with_header(doc, headers, rows, style=None, col_widths=None):
     """
     Add a table with headers to the document
@@ -453,6 +502,10 @@ def add_chain_of_title_section(document, entries, entry_table):
             # auto-renumbers when a lawyer inserts/deletes a row.
             row_cells[0].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
             _apply_list_number(row_cells[0].paragraphs[0], num_id)
+            # Bookmark so the findings cross-reference can point at this
+            # row and follow Word's renumbering if rows are inserted.
+            _add_bookmark(row_cells[0].paragraphs[0],
+                          chain_bookmark_name(num), 1000 + row_index)
 
             # Second column: Entry details
             entry_para = row_cells[1].paragraphs[0]
@@ -1038,8 +1091,22 @@ def add_findings_table(doc, findings):
         # Add particular
         row_cells[1].text = finding['particular']
         row_cells[1].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
-        # Add observation
-        row_cells[2].text = finding['observation']
+        # Add observation. {{XREF:<entry>:<row>}} markers become Word REF
+        # fields pointing at the chain row's bookmark, so the number follows
+        # Word's renumbering instead of going stale on an insertion.
+        observation = finding['observation']
+        if "{{XREF:" in observation:
+            para = row_cells[2].paragraphs[0]
+            for piece in re.split(r'(\{\{XREF:[^:}]+:[^}]+\}\})', observation):
+                if not piece:
+                    continue
+                m = re.fullmatch(r'\{\{XREF:([^:}]+):([^}]+)\}\}', piece)
+                if m:
+                    _add_ref_field(para, chain_bookmark_name(m.group(1)), m.group(2))
+                else:
+                    para.add_run(piece)
+        else:
+            row_cells[2].text = observation
         row_cells[2].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
         
         # Apply formatting to all cells
