@@ -118,6 +118,81 @@
   uploader overwrote 57p1.docx while she had it open; a lock guard is now in place;
   (3) base64-over-SSH times out past ~300KB — use scp.
 
+**2026-07-31 — Bhungar (Talaja, Bhavnagar) TSRs 57p1/57p3/56; NAT64 discovery; encumbrance bug:**
+- New site **ભુંગર - 093 "Bhungar"**, the village adjacent to Bodki (094). Translator resolves
+  the user's spelling "Bhunagar" → `ભુંગર - 093` unaided. Probe-before-batch again paid off:
+  dumped all 329 survey options; `56` exists plain here (unlike Bodki, where only 56p1/56p2
+  exist), plus `57p૧`/`57p૨`/`57p૩`. All 3 requested surveys delivered.
+- **Selenium is the WAF *trigger*, not a victim.** Anshul asked to default to Selenium; tested
+  it honestly on a fresh IP → the WAF block page ("Attack ID 20000009", `selects=[]`) on
+  navigation #1, and that IP escalated to a full block in ~4 min. http_fetch had fetched a
+  record cleanly on the same connection minutes earlier. Reverted; `.env` now carries a
+  "do not set this to false" comment. Consider removing the Selenium fallback entirely — when
+  http_fetch fails because the IP is blocked, the fallback fires a browser at the WAF and
+  deepens the block.
+- **The big one: many "WAF blocks" this session were actually IPv6/NAT64 routing.** The mobile
+  hotspot flips, as its CGNAT address rotates, between (a) IPv6-only + NAT64/DNS64
+  (`AAAA = 64:ff9b::67ea:a267`, the well-known prefix wrapping `103.234.162.103`) where IPv4
+  is dead, and (b) IPv4-working / IPv6-dead. `curl` survives both via happy-eyeballs;
+  `requests`/urllib3 does **not**. urllib3's `create_connection` *does* iterate all
+  getaddrinfo results, but a **scalar** timeout is spent in full on the first dead address so
+  it never reaches the second → 25-30s hangs misread as WAF blocks.
+  **Fix = short CONNECT timeout, long read timeout** (`timeout=(6, 45)`), which falls through
+  to whichever family is alive in *either* direction. Pinning a family is wrong — we proved
+  both directions occur within one hour. Currently a scratchpad monkeypatch; belongs in
+  `http_fetch.py`. Distinguish the signatures: TLS reset (exit 35) / "Web Page Blocked" +
+  Attack ID = real WAF; connect timeout (exit 28) / errno 65 = probably this routing issue.
+- **Encumbrance false positive in `findings.py` (unresolved, affects legal output).** 57p3
+  reported "charge subsisting" citing entries 446+454, but entry 760 (2016) discharges *both*
+  — "State Bank of India, Agriculture Branch, Talaja **and** Bodki Seva Sahkari Mandali Ltd."
+  (446 is the same charge pre-merger: S.B.S. = State Bank of Saurashtra → SBI 2008, and
+  "Krushi Vibhag" = "Agriculture Branch"). Two compounding defects: (1) `_extract_lender_name`
+  regexes all require the literal word `Bank`, so a co-op society ("Bodki Seva Sahkari
+  Mandali") yields `None` and can never match a release — `[A-Za-z\s]+` also can't match
+  "S.B.S." because of the periods; (2) one `lender` field per entry, so a release naming
+  **two** institutions can clear at most one loan. Direction of error is the dangerous one:
+  a false encumbrance on clear land. **Flagged to Anshul; the 5 delivered Bodki reports may
+  carry the same defect** (Bodki entry 539 was a bulk loan list, same no-"Bank" lender shape)
+  — audit not yet run, awaiting his call.
+- Process: generated 57p3/56 TSRs from banked PDFs via a scratchpad replica of
+  `/process-record`'s post-scrape step (`_build_request_metadata_for_client` +
+  `generate_tsr_from_pdf`) — `/generate-tsr` takes no `client_id` and would have reinstated
+  the hardcoded ABREL defaults that `18f352f` suppressed. Scrape-then-extract-offline is the
+  right sequencing: AnyRoR access is the scarce resource, extraction is local.
+- Also confirmed: a uvicorn started before a template commit serves stale code (restarted it
+  4 min shy of `87397a5`). `.env` is tracked in git with a live `GEMINI_API_KEY` — flagged.
+- Delivered the 3 DOCX to OneDrive under `Bodki 4dec 2023/**Bhungar 31.07.2026**/` — a named
+  subfolder, not loose, because Bodki and Bhungar both have surveys 57p1/57p3 and her
+  delivered Bodki versions of exactly those sit in `TSR in word/`. Checked for `~$` Word lock
+  files first (the 28-July overwrite lesson) and used `cp -n`.
+
+**2026-08-01 — Diffed Mittali's delivered Bodki TSRs against the generated Bhungar ones:**
+- **Structure is identical** — 12 paragraphs, 4 tables, Table 2 boilerplate byte-identical,
+  Table 4 23×3. A full diff of the findings tables (her 57p3 vs mine) returns **only rows 5
+  and 18**. Ref line adapts correctly (`.../BOD/57p3` vs `.../BHU/57p3`).
+- **Findings 5/18 phrasing depends on DEFECT TYPE, not on review status** (first guess was
+  "she edits the pointer out" — wrong, `45-4p2` is complete and keeps it). Bank charge →
+  "subject to bank charge." plainly; bespoke defect (uncertified entries, name mismatch) →
+  "point no. N in table no. 3". She writes "point **no.** N", no trailing "above"; generator
+  emits "point 8 and 9 in table no. 3 **above**" unconditionally. Captured in memory
+  `project-tsr-drafting-findings-5-18` — **inferred from her files, not confirmed by her.**
+- **Encumbrance audit of the 7 delivered Bodki TSRs: CLEAN.** Co-op releases matched fine
+  there (57p1: release 535 cleared loans 326/360, actives 585/740/921; 56p2: release 1104
+  cleared 326, actives 713/825; 57p3: 947/1063 with no release, both active). Nothing wrong
+  reached the client — the item flagged for audit on 07-31 is closed.
+- **Root cause of the 57p3 false encumbrance corrected by unit-testing
+  `detect_active_encumbrances` directly.** My 07-31 claim that the "Bank"-only regex means
+  co-op lenders "can never match" was WRONG — `_get_lender_from_entry` prefers the LLM's
+  structured `lender` field and the regex is only a fallback. Operative defect is the
+  **single `lender` field**: entry 760 names two institutions, only the first survives, so
+  454 is never cleared (`760 = both names → active ['446']`; `760 = first only → active
+  ['446','454']`, which is what reality produced). Entry 446 stays active under *every*
+  scenario — S.B.S. (State Bank of Saurashtra, merged into SBI 2008) vs "State Bank of India,
+  Agriculture Branch" is a semantic identity no string matcher reaches.
+- Method note: the first synthetic repro was invalid — it used key `entry_type` when
+  `_get_entry_type_str` reads `type`, so it found 0 loan entries and "passed" vacuously. The
+  giveaway was in an INFO log line I had grepped away. Always assert the intermediate count.
+
 ---
 
 ## Sessions (newest first)
