@@ -16,6 +16,44 @@
 <!-- Claude: append milestone bullets here during the session. The next session
      formalizes them into a dated entry below and clears this section. -->
 
+**2026-08-10 — Visavada (Porbandar) surveys 61-64; format drift traced to a doc profile:**
+- Anshul flagged that TSRs had been carrying "extra info" for ~15 days and supplied
+  `~/Downloads/1772.docx` (Visavada survey 1772, delivered Dec 2025) as the target format,
+  guessing Opus 5 was the cause. **It was not the model — it was template code.**
+  `tsr_document.py` / `findings.py` branch on `land_details["tsr_profile"]`, default
+  `final_sample_v1`, added 2026-07-28 in `18f352f`. The delivered format is the *legacy*
+  branch. Diffs: intro gains "as per above subject reference"/"(Gujarat)"/trailing "-";
+  recipient gains CIN + Kind Attn + Re: lines; findings 5/18 swap "point no. 3 of table
+  no. 4" for a live REF field; tabs + curly apostrophes in headers. Fix was one metadata
+  key, not a prompt change. Memory: `project-tsr-document-profile`.
+- Added `tsr_profile` to the `request_metadata` whitelist in `tsr_generator_optimized.py`
+  so the profile is selectable per request; **repo default is still `final_sample_v1`** —
+  flipping it is an open decision for Anshul (legacy hardcodes the ABREL recipient and
+  ignores `clients.json`, so it is not a free switch).
+- Also patched the legacy area format to the delivered style
+  (`0-52-72 Hectare i.e., (05272 Sq. mts)`, zero-padded, lowercase "mts").
+- **Repeated the 2026-07-28 pacing mistake and lost the batch.** Fetch script used
+  `time.sleep(4)` between records against the journal's own "use ~60s" lesson, and
+  `fetch_record_html` defaults to `attempts=10`. Survey 61 landed 11:50; TLS reset by
+  11:51; ~24 further requests fired into the block before I killed it. Signature was
+  `SSLError(SSLEOFError)` = real WAF IP block, not the NAT64 timeout. Memory:
+  `feedback-anyror-pacing-60s`.
+- **Recovered without touching AnyRoR again:** Anshul hand-saved the four record pages
+  from his browser as `.mht`. Chrome reads MHTML natively, so
+  `--headless --print-to-pdf` on the `.mht` produced clean 9-12 page PDFs with an intact
+  Gujarati text layer — a genuine WAF-free path for any record a human can load in a
+  browser. Worth keeping in the toolkit.
+- Confirmed there is **no VPS** (checked ssh config, repo, journal) — the Oracle Cloud
+  Mumbai microservice is still an unbuilt "Next" item. Cloud Run is down *and* GCP-blocked;
+  WARP egress is WAF-blocked; free proxies return the block page. Only a fresh Indian
+  residential IP works. A paid Indian *residential* proxy is untested and plausible.
+- Delivered `~/Downloads/{61,62,63,64}.docx`. Old-survey cross-check vs source: 109/2,
+  109/3, 110, 113 — all correct. Survey 61's tenure came back as "Old, Agricultural" on a
+  re-run (LLM variance; the `'old tenure' in nature` check fell through to the raw value),
+  corrected to "Old Tenure / Agricultural Use" after verifying જુ ની શરત (જુ .શ) in the
+  source PDF. **Extraction phrasing varies run-to-run — the tenure branch needs a
+  normalizer, not an exact-substring match.**
+
 **2026-07-28 — Bodki (Talaja, Bhavnagar) TSR batch; scrape/extract decoupled:**
 - Identified the "Bodki" site from OneDrive TSRs (`2023 GUJRAT aditya Birla/TSR of
   Bhavnagar -Solar/Bodki 4dec 2023/`): Village Bodki, Taluka Talaja, District Bhavnagar,
