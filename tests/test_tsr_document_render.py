@@ -151,10 +151,12 @@ def test_re_line_omitted_when_no_reference_email_date(tmp_path):
     """No reference_email_date and no re_line override -> Re: paragraph is dropped,
     and the hardcoded fallback date must not leak into the doc."""
     out = tmp_path / "no_re_line.docx"
+    land = _base_land_details()
+    land["tsr_profile"] = "final_sample_v1"  # the Re: line only exists in this profile
     create_tsr_document(
         entry_table=["100"],
         entries=_entries(),
-        land_details=_base_land_details(),
+        land_details=land,
         findings=[],
         output_path=str(out),
     )
@@ -168,6 +170,7 @@ def test_re_line_omitted_when_no_reference_email_date(tmp_path):
 def test_re_line_uses_reference_email_date_from_land_details(tmp_path):
     out = tmp_path / "with_date.docx"
     land = _base_land_details()
+    land["tsr_profile"] = "final_sample_v1"  # the Re: line only exists in this profile
     land["reference_email_date"] = "15.05.2026"
     create_tsr_document(
         entry_table=["100"],
@@ -188,6 +191,7 @@ def test_re_line_uses_full_override(tmp_path):
     """A caller-supplied re_line should be used verbatim, even without a date."""
     out = tmp_path / "override.docx"
     land = _base_land_details()
+    land["tsr_profile"] = "final_sample_v1"  # the Re: line only exists in this profile
     land["re_line"] = "Re:\tCustom matter — Survey 32, Trambo."
     create_tsr_document(
         entry_table=["100"],
@@ -200,3 +204,28 @@ def test_re_line_uses_full_override(tmp_path):
     assert any("Custom matter" in t for t in texts), \
         f"override re_line must appear; got {texts}"
     assert not any("21.11.2023" in t for t in texts)
+
+
+def test_default_profile_is_legacy_lawyer_format(tmp_path):
+    """The default layout must be the lawyer's delivered format (legacy).
+
+    Regression guard for the 2026-08-10 report: `final_sample_v1` shipped as the
+    default on 2026-07-28 and quietly added padding the lawyer strips out again.
+    """
+    out = tmp_path / "default_profile.docx"
+    create_tsr_document(
+        entry_table=["100"],
+        entries=_entries(),
+        land_details=_base_land_details(),  # no tsr_profile -> default applies
+        findings=[],
+        output_path=str(out),
+    )
+    texts = _paragraph_texts(str(out))
+    intro = next((t for t in texts if "We have been engaged" in t), None)
+    assert intro is not None, f"expected an intro paragraph; got {texts}"
+    assert "as per above subject reference" not in intro, \
+        f"final_sample_v1 padding leaked into the default profile: {intro!r}"
+    assert "(Gujarat)" not in intro, \
+        f"final_sample_v1 padding leaked into the default profile: {intro!r}"
+    assert intro.rstrip().endswith("Our detailed report and findings are as under:"), \
+        f"intro must match the lawyer's delivered wording; got {intro!r}"

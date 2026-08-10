@@ -113,6 +113,10 @@ def generate_tsr_from_pdf_optimized(
                 'kind_attn',
                 'ref_prefix',
                 'reference_email_date',
+                # Document layout profile. Absent -> 'final_sample_v1' default
+                # downstream; pass 'legacy' for the pre-2026-07-28 layout the
+                # lawyer's delivered reports use.
+                'tsr_profile',
             ):
                 # Forward explicitly-empty values too - "" means "omit this
                 # line" downstream, while a missing key falls back to the

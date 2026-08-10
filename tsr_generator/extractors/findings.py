@@ -245,7 +245,7 @@ def generate_findings_table(pdf_text: str, entries: Optional[List[Dict]] = None,
     logger = logging.getLogger(__name__)
     logger.debug("Generating findings with dynamic encumbrance detection")
     
-    profile = (land_details or {}).get("tsr_profile", "final_sample_v1")
+    profile = (land_details or {}).get("tsr_profile", "legacy")
 
     # Detect active encumbrances and rejected entries
     active_encumbrances, active_entry_nums = detect_active_encumbrances(entries or [])

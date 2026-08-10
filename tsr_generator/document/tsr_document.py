@@ -102,7 +102,7 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         number_para.underline = True
         number_para.font.size = Pt(12)  # Header text size
         
-        profile = (land_details or {}).get("tsr_profile", "final_sample_v1")
+        profile = (land_details or {}).get("tsr_profile", "legacy")
 
         # Add the reference number and date
         # Lawyer writes the full month name ('28 July 2026'), not '28 Jul 2026'
@@ -258,7 +258,11 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
             if area_match:
                 hectares, acres, guntha = map(int, area_match.groups())
                 sq_meters = int((hectares * 10000) + (acres * 100) + guntha)
-                area = f"{area} - i.e. ({sq_meters} Sq. Mts)"
+                if profile == "final_sample_v1":
+                    area = f"{area} - i.e. ({sq_meters} Sq. Mts)"
+                else:
+                    # Lawyer's delivered format: "0-52-72 Hectare i.e., (05272 Sq. mts)"
+                    area = f"{area} Hectare i.e., ({sq_meters:05d} Sq. mts)"
         row[2].text = area
         
         survey = sanitize_text(land_details.get('survey_number'))
