@@ -113,10 +113,39 @@
 - Committed to `feat/old-entry-chain-phase0` → **PR #10**. Deliberately left OUT of the commit:
   `.env` (tracked + carries secrets) and `anyror_hierarchy.json` (auto-learned spelling
   variations from earlier sessions, unrelated to this change).
-- **Note for whoever merges:** `anyror/http_fetch.py` does not exist on `main` at all — the
-  entire browser-free fetch is still unmerged (PR #9, open since 2026-07-22). Every scraper
-  fix since then is stacked on unmerged work. **Five PRs are open** (#6–#10); this is the
-  backlog to clear before the scraper story is really "fixed" on main.
+- **MERGED TO MAIN (per Anshul's call).** `anyror/http_fetch.py` had never existed on `main` —
+  the entire browser-free fetch sat unmerged in PR #9 since 2026-07-22, with every later
+  scraper fix stacked on top of it. PR #10's base was **`feat/anyror-http-fetch-default`**,
+  not main, which is also why its CI never fired (the workflow only triggers on PRs *into*
+  main). Since #9's branch was fully contained in phase0, the fix was one PR, not two:
+  merged `origin/main` into the branch (1 commit behind — the squashed "Bodki" naming fix;
+  auto-merged clean), re-ran the suite (**438 passed**), retargeted **PR #10 → main**, and
+  merged. **GitHub auto-closed PR #9 as merged**, since its commits became reachable.
+  `main` is now `91ae302`; post-merge CI on main **green**.
+- **Retargeting a PR does not trigger CI** — `pull_request` fires on
+  opened/synchronize/reopened, not `edited`. Had to `gh workflow run CI --ref <branch>` and
+  match the run's `headSha` against the local HEAD to prove CI covered the exact merge commit.
+  Worth remembering: "CI green" on a stacked PR can mean CI never ran at all.
+- **THE "MERGE → CLOUD RUN AUTO-DEPLOY" ASSUMPTION IS FALSE — nothing has deployed since
+  2026-04-10.** `/health` was 503 right after the merge, which looked like the merge had
+  broken the deploy (main had not moved since 2026-07-28, so 31 commits landed at once).
+  It had not. Evidence: **the most recent Cloud Build is 2026-04-10**, and the serving
+  revision is **`agent-gujarat-tsr-00150-gzz`, deployed 2026-04-10** — four months stale.
+  The merge triggered **no build at all**, so it cannot have caused the 503, which is a
+  long-standing broken/stale revision. Also consistent: the merge changed **no deploy inputs**
+  (`requirements.txt`, `Dockerfile`, `cloudbuild.yaml` are all untouched), and the merged code
+  imports cleanly in a stripped environment (`api.server` boots with only `GEMINI_API_KEY` set).
+  **Two triggers on `^main$` exist and are not marked disabled, yet neither fired — the
+  GitHub→Cloud Build connection is the thing to fix.** Until then, every "merge to main and it
+  auto-deploys" expectation in this repo (and in memory `feedback-cicd-workflow`) is wrong.
+- **The gcloud permission blocker was an ACCOUNT problem, not a project problem** — a false
+  lead carried since 2026-07-22 ("gcloud scoped to the wrong project"). The project is right:
+  `neon-alcove-479309-q3` **is** project number `642363716512`, matching the Cloud Run URL.
+  The active gcloud account is `rishabhucd@gmail.com`, which gets `PERMISSION_DENIED`;
+  **`anshul@navspark.in` is already authenticated on this machine and can read builds, services,
+  revisions, and triggers**. Use `--account=anshul@navspark.in --project=neon-alcove-479309-q3`.
+- Note that even once deploys work, the cloud path still needs `EXTRACTION_BACKEND=gemini`
+  (the `claude` CLI default is local-only) and still faces the GCP-IP WAF block on AnyRoR.
 
 **2026-08-21 (later) — Old-entry chain for Miyani 1300: Mittali already appended it; verified:**
 - Task: add the pre-digital chain entries to the three 1300 TSRs from two handwritten photos
