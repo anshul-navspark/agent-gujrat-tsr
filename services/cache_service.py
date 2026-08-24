@@ -295,6 +295,124 @@ class CacheService:
             self.logger.error(f"Failed to cache record: {e}")
             return False
     
+    # ---- Per-PDF / per-client split cache ----
+
+    def get_cached_pdf_by_key(self, pdf_key: str) -> Optional[bytes]:
+        """Return the cached PDF bytes for this location key, or None on miss/expiry."""
+        try:
+            metadata_blob = self._bucket.blob(self._get_cache_path(pdf_key, "metadata.json"))
+            pdf_blob = self._bucket.blob(self._get_cache_path(pdf_key, "original.pdf"))
+            if not metadata_blob.exists() or not pdf_blob.exists():
+                return None
+            metadata = json.loads(metadata_blob.download_as_text())
+            if not self._is_cache_valid(metadata):
+                self.logger.info(f"PDF cache expired for key {pdf_key}")
+                self._cleanup_cache(pdf_key)
+                return None
+            return pdf_blob.download_as_bytes()
+        except NotFound:
+            return None
+        except Exception as e:
+            self.logger.error(f"Error reading PDF cache: {e}")
+            return None
+
+    def cache_pdf_by_key(self, pdf_key: str, pdf_content: bytes) -> bool:
+        """Store the PDF under this location key. Creates a metadata.json if absent."""
+        try:
+            metadata_path = self._get_cache_path(pdf_key, "metadata.json")
+            metadata_blob = self._bucket.blob(metadata_path)
+            if not metadata_blob.exists():
+                metadata = {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "ttl_days": self.ttl_days,
+                }
+                metadata_blob.upload_from_string(
+                    json.dumps(metadata, indent=2, ensure_ascii=False),
+                    content_type="application/json",
+                )
+
+            pdf_blob = self._bucket.blob(self._get_cache_path(pdf_key, "original.pdf"))
+            pdf_blob.upload_from_string(pdf_content, content_type="application/pdf")
+            self.logger.info(f"Cached PDF {pdf_key}: {len(pdf_content)} bytes")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to cache PDF: {e}")
+            return False
+
+    def get_cached_docx_by_key(self, pdf_key: str, client_id: str) -> Optional[bytes]:
+        """Return the cached DOCX bytes for this (location, client) pair, or None on miss."""
+        try:
+            metadata_blob = self._bucket.blob(self._get_cache_path(pdf_key, "metadata.json"))
+            docx_blob = self._bucket.blob(self._get_cache_path(pdf_key, f"docx_{client_id}.docx"))
+            if not metadata_blob.exists() or not docx_blob.exists():
+                return None
+            metadata = json.loads(metadata_blob.download_as_text())
+            if not self._is_cache_valid(metadata):
+                self.logger.info(f"DOCX cache expired for key {pdf_key}")
+                self._cleanup_cache(pdf_key)
+                return None
+            return docx_blob.download_as_bytes()
+        except NotFound:
+            return None
+        except Exception as e:
+            self.logger.error(f"Error reading DOCX cache: {e}")
+            return None
+
+    def cache_docx_by_key(
+        self,
+        pdf_key: str,
+        client_id: str,
+        original_request: LandRecordRequest,
+        translated_district: str,
+        translated_taluka: str,
+        translated_village: str,
+        docx_content: bytes,
+        additional_metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Store the DOCX under cache/{pdf_key}/docx_{client_id}.docx."""
+        try:
+            metadata_path = self._get_cache_path(pdf_key, "metadata.json")
+            metadata_blob = self._bucket.blob(metadata_path)
+            metadata: Dict[str, Any] = {}
+            if metadata_blob.exists():
+                try:
+                    metadata = json.loads(metadata_blob.download_as_text())
+                except Exception:
+                    metadata = {}
+            metadata.update({
+                "timestamp": metadata.get("timestamp") or datetime.now(timezone.utc).isoformat(),
+                "original_district": original_request.district,
+                "original_taluka": original_request.taluka,
+                "original_village": original_request.village,
+                "survey_number": original_request.survey_number,
+                "translated_district": translated_district,
+                "translated_taluka": translated_taluka,
+                "translated_village": translated_village,
+                "ttl_days": self.ttl_days,
+                **(additional_metadata or {}),
+            })
+            docx_versions = metadata.get("docx_versions") or {}
+            docx_versions[client_id] = datetime.now(timezone.utc).isoformat()
+            metadata["docx_versions"] = docx_versions
+
+            metadata_blob.upload_from_string(
+                json.dumps(metadata, indent=2, ensure_ascii=False),
+                content_type="application/json",
+            )
+
+            docx_blob = self._bucket.blob(self._get_cache_path(pdf_key, f"docx_{client_id}.docx"))
+            docx_blob.upload_from_string(
+                docx_content,
+                content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+            self.logger.info(
+                f"Cached DOCX {pdf_key}/docx_{client_id}: {len(docx_content)} bytes"
+            )
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to cache DOCX: {e}")
+            return False
+
     def _get_cache_path(self, cache_key: str, filename: str) -> str:
         """Get full GCS path for a cached file."""
         return f"{self.cache_prefix}/{cache_key}/{filename}"
@@ -544,7 +662,9 @@ class CacheService:
             deleted_count = 0
             
             for b in blobs:
-                if b.name.endswith("tsr.docx"):
+                name = b.name
+                # Old combined key OR new per-client key
+                if name.endswith("tsr.docx") or ("/docx_" in name and name.endswith(".docx")):
                     try:
                         b.delete()
                         deleted_count += 1
@@ -739,6 +859,127 @@ class LocalCacheService:
             self.logger.error(f"Failed to write local cache: {e}")
             return False
 
+    # ---- Per-PDF / per-client split cache ----
+
+    def get_cached_pdf_by_key(self, pdf_key: str) -> Optional[bytes]:
+        """Return the cached PDF bytes for this location key, or None on miss/expiry."""
+        entry = self._entry_dir(pdf_key)
+        metadata_path = os.path.join(entry, "metadata.json")
+        pdf_path = os.path.join(entry, "original.pdf")
+
+        if not os.path.exists(metadata_path) or not os.path.exists(pdf_path):
+            return None
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                metadata = json.load(f)
+        except Exception as e:
+            self.logger.warning(f"Could not read local cache metadata: {e}")
+            return None
+        if not self._is_cache_valid(metadata):
+            self.logger.info(f"Local PDF cache expired for key {pdf_key}")
+            self._cleanup_cache(pdf_key)
+            return None
+        with open(pdf_path, "rb") as f:
+            return f.read()
+
+    def cache_pdf_by_key(self, pdf_key: str, pdf_content: bytes) -> bool:
+        """Store the PDF under this location key. Creates a metadata.json if absent."""
+        try:
+            entry = self._entry_dir(pdf_key)
+            os.makedirs(entry, exist_ok=True)
+
+            metadata_path = os.path.join(entry, "metadata.json")
+            if not os.path.exists(metadata_path):
+                metadata = {
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "ttl_days": self.ttl_days,
+                }
+                with open(metadata_path, "w", encoding="utf-8") as f:
+                    json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+            with open(os.path.join(entry, "original.pdf"), "wb") as f:
+                f.write(pdf_content)
+            self.logger.info(f"Locally cached PDF {pdf_key}: {len(pdf_content)} bytes")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to write local PDF cache: {e}")
+            return False
+
+    def get_cached_docx_by_key(self, pdf_key: str, client_id: str) -> Optional[bytes]:
+        """Return the cached DOCX bytes for this (location, client) pair, or None on miss."""
+        entry = self._entry_dir(pdf_key)
+        metadata_path = os.path.join(entry, "metadata.json")
+        docx_path = os.path.join(entry, f"docx_{client_id}.docx")
+
+        if not os.path.exists(metadata_path) or not os.path.exists(docx_path):
+            return None
+        try:
+            with open(metadata_path, "r", encoding="utf-8") as f:
+                metadata = json.load(f)
+        except Exception as e:
+            self.logger.warning(f"Could not read local cache metadata: {e}")
+            return None
+        if not self._is_cache_valid(metadata):
+            self.logger.info(f"Local DOCX cache expired for key {pdf_key}")
+            self._cleanup_cache(pdf_key)
+            return None
+        with open(docx_path, "rb") as f:
+            return f.read()
+
+    def cache_docx_by_key(
+        self,
+        pdf_key: str,
+        client_id: str,
+        original_request: LandRecordRequest,
+        translated_district: str,
+        translated_taluka: str,
+        translated_village: str,
+        docx_content: bytes,
+        additional_metadata: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Store the DOCX under cache/{pdf_key}/docx_{client_id}.docx."""
+        try:
+            entry = self._entry_dir(pdf_key)
+            os.makedirs(entry, exist_ok=True)
+
+            metadata_path = os.path.join(entry, "metadata.json")
+            metadata: Dict[str, Any] = {}
+            if os.path.exists(metadata_path):
+                try:
+                    with open(metadata_path, "r", encoding="utf-8") as f:
+                        metadata = json.load(f)
+                except Exception:
+                    metadata = {}
+
+            metadata.update({
+                "timestamp": metadata.get("timestamp") or datetime.now(timezone.utc).isoformat(),
+                "original_district": original_request.district,
+                "original_taluka": original_request.taluka,
+                "original_village": original_request.village,
+                "survey_number": original_request.survey_number,
+                "translated_district": translated_district,
+                "translated_taluka": translated_taluka,
+                "translated_village": translated_village,
+                "ttl_days": self.ttl_days,
+                **(additional_metadata or {}),
+            })
+            docx_versions = metadata.get("docx_versions") or {}
+            docx_versions[client_id] = datetime.now(timezone.utc).isoformat()
+            metadata["docx_versions"] = docx_versions
+
+            with open(metadata_path, "w", encoding="utf-8") as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+
+            with open(os.path.join(entry, f"docx_{client_id}.docx"), "wb") as f:
+                f.write(docx_content)
+            self.logger.info(
+                f"Locally cached DOCX {pdf_key}/docx_{client_id}: {len(docx_content)} bytes"
+            )
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to write local DOCX cache: {e}")
+            return False
+
     def _cleanup_cache(self, cache_key: str) -> None:
         import shutil
         entry = self._entry_dir(cache_key)
@@ -767,6 +1008,39 @@ class LocalCacheService:
             }
         except Exception as e:
             return {"error": str(e)}
+
+    def clear_all_docx_cache(self) -> int:
+        """
+        Clear all generated TSR DOCX files from the local cache.
+
+        Matches both legacy 'tsr.docx' files and new per-client
+        'docx_{client_id}.docx' files. PDFs and metadata are preserved.
+
+        Returns:
+            Number of files deleted.
+        """
+        deleted_count = 0
+        try:
+            if not os.path.isdir(self.cache_dir):
+                return 0
+            for entry_name in os.listdir(self.cache_dir):
+                entry_dir = os.path.join(self.cache_dir, entry_name)
+                if not os.path.isdir(entry_dir):
+                    continue
+                for filename in os.listdir(entry_dir):
+                    is_old = filename == "tsr.docx"
+                    is_new = filename.startswith("docx_") and filename.endswith(".docx")
+                    if is_old or is_new:
+                        try:
+                            os.remove(os.path.join(entry_dir, filename))
+                            deleted_count += 1
+                        except Exception as e:
+                            self.logger.warning(f"Failed to delete {filename}: {e}")
+            self.logger.info(f"Local cache clearing complete. Deleted {deleted_count} DOCX files.")
+            return deleted_count
+        except Exception as e:
+            self.logger.error(f"Error during local DOCX cache clearing: {e}")
+            return deleted_count
 
     def check_and_clear_docx_if_new_version(self, current_version: str) -> bool:
         return False

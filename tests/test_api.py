@@ -122,10 +122,14 @@ class TestGenerateTSREndpoint:
             'file': ('test.pdf', io.BytesIO(pdf_content), 'application/pdf')
         }
 
-        # Mock the generator
-        with patch('api.server.generate_tsr_from_pdf') as mock_gen:
-            mock_gen.return_value = {'success': False, 'error': "Test mock error"}
-            
+        # Mock the generator. The endpoint lazy-loads it via get_tsr_generator(),
+        # so patch that to return a stub callable rather than the (non-module-level)
+        # generate_tsr_from_pdf symbol.
+        with patch('api.server.get_tsr_generator') as mock_get_gen:
+            mock_get_gen.return_value = MagicMock(
+                return_value={'success': False, 'error': "Test mock error"}
+            )
+
             # Use dependency override for file service
             from api.dependencies import get_file_service_dependency
             from api.server import app

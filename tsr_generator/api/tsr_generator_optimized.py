@@ -106,6 +106,24 @@ def generate_tsr_from_pdf_optimized(
                 land_details['taluka_name'] = request_metadata['taluka']
             if request_metadata.get('district'):
                 land_details['district_name'] = request_metadata['district']
+            for client_field in (
+                'client_name',
+                'client_cin',
+                'client_address',
+                'kind_attn',
+                'ref_prefix',
+                'reference_email_date',
+                # Document layout profile. Absent -> 'final_sample_v1' default
+                # downstream; pass 'legacy' for the pre-2026-07-28 layout the
+                # lawyer's delivered reports use.
+                'tsr_profile',
+            ):
+                # Forward explicitly-empty values too - "" means "omit this
+                # line" downstream, while a missing key falls back to the
+                # built-in default. Filtering on truthiness here silently
+                # re-inserted the hardcoded ABREL CIN / Kind Attn.
+                if request_metadata.get(client_field) is not None:
+                    land_details[client_field] = request_metadata[client_field]
 
         # Fix entry descriptions to use the correct survey number if it was overridden
         if old_survey and old_survey != land_details.get('survey_number'):

@@ -60,3 +60,4 @@ deprecated
 # Worktrees
 .worktrees
 .gstack/
+.env.local

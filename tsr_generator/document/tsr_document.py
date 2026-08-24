@@ -102,20 +102,22 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         number_para.underline = True
         number_para.font.size = Pt(12)  # Header text size
         
-        profile = (land_details or {}).get("tsr_profile", "final_sample_v1")
+        profile = (land_details or {}).get("tsr_profile", "legacy")
 
         # Add the reference number and date
-        current_date = datetime.now().strftime('%d %b %Y')
+        # Lawyer writes the full month name ('28 July 2026'), not '28 Jul 2026'
+        current_date = datetime.now().strftime('%d %B %Y')
         survey_number = sanitize_text(land_details.get('survey_number', '13'))
         ref_para = doc.add_paragraph()
         village_prefix = land_details.get('village_name', 'N/A')[:3].upper()
         district_prefix = land_details.get('district_name', 'N/A')[:3].upper()
         taluka_prefix = land_details.get('taluka_name', 'N/A')[:3].upper()
+        ref_prefix = sanitize_text(land_details.get("ref_prefix") or "ABREL")
         if profile == "final_sample_v1":
-            report_date = land_details.get("report_date") or current_date
-            ref_text_val = f"Ref. No. ABREL/GUJ/{district_prefix}/{taluka_prefix}/{village_prefix}/{survey_number}\t\t\t\tDated :{report_date}"
+            report_date = sanitize_text(land_details.get("report_date") or current_date)
+            ref_text_val = f"Ref. No. {ref_prefix}/GUJ/{district_prefix}/{taluka_prefix}/{village_prefix}/{survey_number}\t\t\t\tDated: {report_date}"
         else:
-            ref_text_val = f"Ref. No. ABREL/GUJ/{district_prefix}/{taluka_prefix}/{village_prefix}/{survey_number}                    Dated: {current_date}"
+            ref_text_val = f"Ref. No. {ref_prefix}/GUJ/{district_prefix}/{taluka_prefix}/{village_prefix}/{survey_number}                    Dated: {current_date}"
 
         ref_text = ref_para.add_run(ref_text_val)
         ref_text.bold = True
@@ -133,9 +135,42 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
         address_para = doc.add_paragraph()
         address_para.paragraph_format.left_indent = Inches(0.5)
         if profile == "final_sample_v1":
-            client_name = land_details.get("client_name") or "Aditya Birla Renewable Energy Ltd."
-            client_address = land_details.get("client_address") or "A-2, Aditya Birla Centre, S.K. Ahire Marg,\nWorli, Mumbai-400030."
-            address_para.add_run(f"{client_name}\n{client_address}\n")
+            # An ABSENT key falls back to the ABREL default; an explicitly EMPTY
+            # value means "omit this line". Before 2026-07-28 both were treated
+            # the same (`or default`), so a client could never suppress the CIN
+            # or Kind Attn lines - clearing them in clients.json silently
+            # re-inserted the hardcoded ABREL values. The lawyer deletes both
+            # from the final report.
+            def _client_field(key, default):
+                val = land_details.get(key, default)
+                return sanitize_text(val) if val else ""
+
+            client_name = _client_field("client_name", "ABREL SPV 2 Limited")
+            client_cin = _client_field("client_cin", "(CIN: U40108MH2020PLC352631),")
+            client_address = _client_field(
+                "client_address",
+                "A-2, Aditya Birla Centre, S.K. Ahire Marg,\nWorli, Mumbai-400030.")
+            address_lines = "\n".join(
+                p for p in (client_name, client_cin, client_address) if p)
+            address_para.add_run(address_lines + "\n")
+            kind_attn = _client_field("kind_attn", "Kind Attn.: Mr. Rahul Patil")
+            if kind_attn:
+                doc.add_paragraph(kind_attn)
+            # Re: line is client-driven. Render only when a full override is
+            # provided, or when the client supplies a reference_email_date.
+            re_line_override = land_details.get("re_line")
+            reference_email_date = land_details.get("reference_email_date")
+            if re_line_override:
+                doc.add_paragraph(sanitize_text(re_line_override))
+            elif reference_email_date:
+                re_line = sanitize_text(
+                    f"Re:\tEmail Dated {sanitize_text(reference_email_date)} "
+                    f"in connection with land situated at "
+                    f"Village- {sanitize_text(land_details.get('village_name') or 'Not Available')}, "
+                    f"Taluka-{sanitize_text(land_details.get('taluka_name') or 'Not Available')}, "
+                    f"District- {sanitize_text(land_details.get('district_name') or 'Not Available')} (Gujarat)."
+                )
+                doc.add_paragraph(re_line)
         else:
             address_para.add_run("Aditya Birla Renewable Energy Ltd.\nA-2, Aditya Birla Centre, S.K. Ahire Marg,\nWorli, Mumbai-400030.\n")
         
@@ -223,7 +258,11 @@ def create_tsr_document(entry_table, entries, land_details, findings, output_pat
             if area_match:
                 hectares, acres, guntha = map(int, area_match.groups())
                 sq_meters = int((hectares * 10000) + (acres * 100) + guntha)
-                area = f"{area} - i.e. ({sq_meters} Sq. Mts)"
+                if profile == "final_sample_v1":
+                    area = f"{area} - i.e. ({sq_meters} Sq. Mts)"
+                else:
+                    # Lawyer's delivered format: "0-52-72 Hectare i.e., (05272 Sq. mts)"
+                    area = f"{area} Hectare i.e., ({sq_meters:05d} Sq. mts)"
         row[2].text = area
         
         survey = sanitize_text(land_details.get('survey_number'))

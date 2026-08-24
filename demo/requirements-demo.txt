@@ -1,0 +1,4 @@
+# Extra Python deps for the demo recorder (most already in the repo's requirements.txt).
+# System deps NOT installable via pip: ffmpeg (brew install ffmpeg) + Google Chrome.
+selenium>=4.40
+streamlit>=1.30

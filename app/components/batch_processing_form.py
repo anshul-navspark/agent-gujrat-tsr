@@ -32,6 +32,13 @@ def batch_processing_form(api_client: TSRAPIClient, max_workers: int = 20) -> No
         max_workers: Number of parallel workers for processing. Defaults to 20.
     """
     st.subheader("📊 Batch Processing (Excel)")
+    active_client_id = st.session_state.get("active_client_id")
+    if active_client_id:
+        from core.clients import get_client_library
+        lib = get_client_library()
+        client = lib.clients.get(active_client_id)
+        if client:
+            st.caption(f"Batch will generate TSRs for: **{client.client_name}**")
     st.caption("Upload an Excel file with land records to process in batch.")
 
     # File uploader
@@ -230,7 +237,8 @@ def _retry_failed_entries(api_client: TSRAPIClient, results: List[Dict[str, Any]
                 results[i]['taluka'],
                 results[i]['village'],
                 results[i]['survey'],
-                results[i].get('row_idx', i)
+                results[i].get('row_idx', i),
+                st.session_state.get("active_client_id"),
             ): i for i in failed_indices
         }
         
@@ -322,7 +330,8 @@ def _process_batch(
                 str(row[taluka_col]).strip(),
                 str(row[village_col]).strip(),
                 survey_number,
-                idx + start_row  # Original row index
+                idx + start_row,  # Original row index
+                st.session_state.get("active_client_id"),
             )
             future_to_row[future] = idx
 
@@ -419,7 +428,8 @@ def _process_single_record(
     taluka: str,
     village: str,
     survey: str,
-    row_idx: int
+    row_idx: int,
+    client_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Process a single record via the API.
 
@@ -439,7 +449,8 @@ def _process_single_record(
             district=district,
             taluka=taluka,
             village=village,
-            survey_number=survey
+            survey_number=survey,
+            client_id=client_id,
         )
 
         docx_path = None

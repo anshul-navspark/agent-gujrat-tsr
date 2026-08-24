@@ -92,8 +92,10 @@ class TestTokenOptimization:
         result = _extract_relevant_sections(small_doc)
         assert result == small_doc
 
-        # Large document should be truncated
-        large_doc = "Header " * 500 + "Entry Details " + "Content " * 500 + " Jantri Detail " + "Footer " * 500
+        # Large document (over the ~15000-char passthrough threshold) should be
+        # truncated down to the land-details header + the Entry Details section.
+        large_doc = "Header " * 800 + "Entry Details " + "Content " * 800 + " Jantri Detail " + "Footer " * 800
+        assert len(large_doc) > 15000
         result = _extract_relevant_sections(large_doc)
         assert len(result) < len(large_doc)
 
@@ -176,12 +178,12 @@ class TestTokenOptimization:
 class TestOptimizationIntegration:
     """Integration tests for the optimization (require API key)."""
 
-    @pytest.mark.skipif(
-        not os.getenv('GEMINI_API_KEY'),
-        reason="GEMINI_API_KEY not set"
-    )
     def test_unified_extraction_with_mock_response(self):
-        """Test unified extraction with mocked LLM response."""
+        """Test unified extraction with a mocked LLM response.
+
+        Fully mocked — drives the default `claude` backend with a stubbed CLI
+        call, so it needs no API key or network.
+        """
         from tsr_generator.extractors.unified_extractor import extract_all_unified
 
         sample_text = """
@@ -226,11 +228,14 @@ class TestOptimizationIntegration:
             ]
         }'''
 
-        with patch('tsr_generator.extractors.unified_extractor.ChatGoogleGenerativeAI') as mock_llm_class:
-            mock_llm = MagicMock()
-            mock_llm.invoke.return_value = mock_response
-            mock_llm_class.return_value = mock_llm
-
+        # Force the default 'claude' backend and stub the CLI call so the test
+        # is deterministic and offline. _invoke_claude_cli returns the raw model
+        # text (the JSON blob); the rest of extract_all_unified parses it.
+        with patch.dict(os.environ, {'EXTRACTION_BACKEND': 'claude'}), \
+             patch(
+                 'tsr_generator.extractors.unified_extractor._invoke_claude_cli',
+                 return_value=mock_response.content,
+             ):
             result = extract_all_unified(sample_text)
 
             # Verify extraction was successful

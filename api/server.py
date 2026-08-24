@@ -7,6 +7,7 @@ import os
 import shutil
 import tempfile
 import logging
+from typing import Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Depends
 from fastapi.responses import Response
 from pydantic import BaseModel
@@ -15,6 +16,11 @@ from urllib.parse import quote
 # Import core models and services
 from core.models import LandRecordRequest as CoreLandRecordRequest
 from core.config import get_config
+from core.clients import Client, get_client_library
+from core.anyror_maintenance import (
+    is_anyror_maintenance_window,
+    maintenance_window_message,
+)
 from services.file_service import get_file_service
 from services.translation_service import get_translation_service
 from services.scraping_service import get_scraping_service
@@ -94,7 +100,43 @@ class LandRecordRequest(BaseModel):
     village: str
     survey_number: str
     output_format: str = "zip"  # Added to support returning just docx
+    client_id: Optional[str] = None  # Picks a client from clients.json
     skip_cache: bool = False  # When true, bypass cache read and write
+
+
+def _build_request_metadata_for_client(
+    district: str,
+    taluka: str,
+    village: str,
+    survey_number: str,
+    client: Optional[Client],
+) -> dict:
+    """Build the request_metadata dict, merging in client fields that are set.
+
+    An explicitly EMPTY client field (e.g. `client_cin: ""` in clients.json)
+    must be forwarded, not dropped: downstream it means "omit this line". Only
+    a MISSING/None field falls back to the built-in ABREL default. Filtering on
+    truthiness here made it impossible to suppress the CIN / Kind Attn lines.
+    """
+    metadata = {
+        "district": district,
+        "taluka": taluka,
+        "village": village,
+        "survey_number": survey_number,
+    }
+    if client is not None:
+        for field in (
+            "client_name",
+            "client_cin",
+            "client_address",
+            "kind_attn",
+            "ref_prefix",
+            "reference_email_date",
+        ):
+            value = getattr(client, field)
+            if value is not None:
+                metadata[field] = value
+    return metadata
 
 
 @app.post("/generate-tsr")
@@ -263,75 +305,89 @@ def process_record(
                f"taluka '{request.taluka}' -> '{taluka_guj}', "
                f"village '{request.village}' -> '{village_guj}'")
     
+    # ===== RESOLVE CLIENT =====
+    client_library = get_client_library()
+    resolved_client = client_library.resolve(request.client_id)
+    if request.client_id and (resolved_client is None or resolved_client.id != request.client_id):
+        logger.warning(
+            "Unknown client_id %r — falling back to default (%s)",
+            request.client_id,
+            resolved_client.id if resolved_client else None,
+        )
+
     # ===== CACHE CHECK =====
     # Check cache using translated (Gujarati) values for the cache key
     # This ensures cache hits work correctly regardless of English spelling variations
+    pdf_key = None
+    cached_pdf_content: Optional[bytes] = None
+    cached_docx_content: Optional[bytes] = None
     if cache_service is not None and not request.skip_cache:
         try:
-            # Generate cache key from translated Gujarati values
-            cache_key = cache_service.generate_cache_key_from_translated(
+            pdf_key = cache_service.generate_cache_key_from_translated(
                 translated_district=district_guj,
                 translated_taluka=taluka_guj,
                 translated_village=village_guj,
-                survey_number=request.survey_number
+                survey_number=request.survey_number,
             )
-            
-            # Check cache using the pre-computed key
-            cached_result = cache_service.get_cached_record_by_key(cache_key)
-            if cached_result is not None:
-                import time; time.sleep(5)
-                docx_content, pdf_content, cache_metadata = cached_result
-                logger.info(
-                    f"✅ CACHE HIT for {request.district}/{request.taluka}/{request.village}/{request.survey_number} "
-                    f"- cached on {cache_metadata.get('timestamp', 'unknown')}"
+
+            cached_pdf_content = cache_service.get_cached_pdf_by_key(pdf_key)
+            if resolved_client is not None:
+                cached_docx_content = cache_service.get_cached_docx_by_key(
+                    pdf_key, resolved_client.id
                 )
-                
-                # Generate filenames using file service
+
+            if cached_pdf_content is not None and cached_docx_content is not None:
+                logger.info(
+                    "✅ FULL CACHE HIT for %s/%s/%s/%s (client=%s)",
+                    request.district, request.taluka, request.village,
+                    request.survey_number, resolved_client.id if resolved_client else None,
+                )
+
                 docx_filename = file_service.generate_filename(core_request, file_type='docx', prefix='TSR')
                 pdf_filename = file_service.generate_filename(core_request, file_type='pdf', prefix='Original')
                 zip_filename = file_service.generate_filename(core_request, file_type='zip', prefix='TSR_Package')
-                
+
                 if getattr(request, 'output_format', 'zip') == 'docx':
                     encoded_filename = quote(docx_filename)
                     return Response(
-                        content=docx_content,
+                        content=cached_docx_content,
                         media_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                         headers={
                             'Content-Disposition': f"attachment; filename=\"{docx_filename}\"; filename*=UTF-8''{encoded_filename}",
                             'X-Cache-Status': 'HIT',
-                            'X-Cache-Timestamp': cache_metadata.get('timestamp', '')
                         }
                     )
-                else:
-                    # Create ZIP file using file service
-                    files_to_zip = {docx_filename: docx_content}
-                    if pdf_content:
-                        files_to_zip[pdf_filename] = pdf_content
-                    
-                    zip_content = file_service.create_zip(files_to_zip, zip_filename)
-                    
-                    # Prepare filename for header
-                    encoded_filename = quote(zip_filename)
-                    zip_filename_ascii = f"TSR_Package_{os.urandom(4).hex()}.zip"
-                    
-                    return Response(
-                        content=zip_content,
-                        media_type='application/zip',
-                        headers={
-                            'Content-Disposition': f"attachment; filename=\"{zip_filename_ascii}\"; filename*=UTF-8''{encoded_filename}",
-                            'X-Cache-Status': 'HIT',
-                            'X-Cache-Timestamp': cache_metadata.get('timestamp', '')
-                        }
-                    )
-            else:
-                # Cache miss - log it explicitly
+                files_to_zip = {docx_filename: cached_docx_content}
+                if cached_pdf_content:
+                    files_to_zip[pdf_filename] = cached_pdf_content
+                zip_content = file_service.create_zip(files_to_zip, zip_filename)
+                encoded_filename = quote(zip_filename)
+                zip_filename_ascii = f"TSR_Package_{os.urandom(4).hex()}.zip"
+                return Response(
+                    content=zip_content,
+                    media_type='application/zip',
+                    headers={
+                        'Content-Disposition': f"attachment; filename=\"{zip_filename_ascii}\"; filename*=UTF-8''{encoded_filename}",
+                        'X-Cache-Status': 'HIT',
+                    }
+                )
+
+            if cached_pdf_content is not None:
                 logger.info(
-                    f"❌ CACHE MISS for {request.district}/{request.taluka}/{request.village}/{request.survey_number} "
-                    f"- will fetch from source"
+                    "🟡 PARTIAL CACHE HIT (PDF hit, DOCX miss) for %s/%s/%s/%s (client=%s)",
+                    request.district, request.taluka, request.village,
+                    request.survey_number, resolved_client.id if resolved_client else None,
+                )
+            else:
+                logger.info(
+                    "❌ CACHE MISS for %s/%s/%s/%s",
+                    request.district, request.taluka, request.village, request.survey_number,
                 )
         except Exception as e:
-            # Log cache error but continue with normal processing
             logger.warning(f"Cache check failed, proceeding without cache: {e}")
+            pdf_key = None
+            cached_pdf_content = None
+            cached_docx_content = None
     
     # ===== CACHE MISS - PROCEED WITH SCRAPING =====
     temp_dir = tempfile.gettempdir()
@@ -345,19 +401,28 @@ def process_record(
         if " - " in district_guj:
             logger.error(f"SUSPICIOUS: District translation '{district_guj}' looks like a village code!")
 
-        # Fetch land record (using already-translated Gujarati values)
-        logger.info(f"Calling scraper with: district='{district_guj}', taluka='{taluka_guj}', village='{village_guj}', survey='{request.survey_number}'")
-        result = scraping_service.fetch_land_record(
-            district=district_guj,
-            taluka=taluka_guj,
-            village=village_guj,
-            survey_number=request.survey_number,
-            output_path=pdf_path
-        )
-        
-        if not result.get('success'):
-            logger.error(f"Scraping failed with result: {result}")
-            raise HTTPException(status_code=500, detail=f"Scraping failed: {result.get('error')}")
+        if cached_pdf_content is not None:
+            with open(pdf_path, "wb") as f:
+                f.write(cached_pdf_content)
+            logger.info(f"Wrote cached PDF to {pdf_path}, skipping scrape")
+        else:
+            logger.info(
+                f"Calling scraper with: district='{district_guj}', taluka='{taluka_guj}', "
+                f"village='{village_guj}', survey='{request.survey_number}'"
+            )
+            result = scraping_service.fetch_land_record(
+                district=district_guj,
+                taluka=taluka_guj,
+                village=village_guj,
+                survey_number=request.survey_number,
+                output_path=pdf_path
+            )
+            if not result.get('success'):
+                logger.error(f"Scraping failed with result: {result}")
+                from datetime import datetime, timezone as _tz
+                if is_anyror_maintenance_window(datetime.now(_tz.utc)):
+                    raise HTTPException(status_code=503, detail=maintenance_window_message())
+                raise HTTPException(status_code=500, detail=f"Scraping failed: {result.get('error')}")
             
         # Enhanced logging for diagnostics
         logger.info(f"PDF scraped successfully: {pdf_path}")
@@ -386,12 +451,13 @@ def process_record(
         # Generate TSR (lazy load to improve startup time)
         logger.info(f"Starting TSR generation from PDF: {pdf_path}")
         generate_tsr = get_tsr_generator()
-        _request_metadata = {
-            'district': request.district,
-            'taluka': request.taluka,
-            'village': request.village,
-            'survey_number': request.survey_number
-        }
+        _request_metadata = _build_request_metadata_for_client(
+            district=request.district,
+            taluka=request.taluka,
+            village=request.village,
+            survey_number=request.survey_number,
+            client=resolved_client,
+        )
         tsr_result = generate_tsr(pdf_path, docx_path, logger, request_metadata=_request_metadata)
         
         logger.info(f"TSR generation result: success={tsr_result.get('success')}, error={tsr_result.get('error')}")
@@ -423,24 +489,26 @@ def process_record(
         
         # ===== CACHE STORE =====
         # Store the result in cache using translated values for the key
-        if cache_service is not None and not request.skip_cache:
+        if cache_service is not None and not request.skip_cache and pdf_key is not None:
             try:
-                # Use same cache key generation as lookup (based on translated Gujarati values)
-                cache_service.cache_record_by_key(
-                    cache_key=cache_key,  # Use the same key we generated for lookup
-                    original_request=core_request,
-                    translated_district=district_guj,
-                    translated_taluka=taluka_guj,
-                    translated_village=village_guj,
-                    docx_content=docx_content,
-                    pdf_content=pdf_content
-                )
+                if cached_pdf_content is None and pdf_content:
+                    cache_service.cache_pdf_by_key(pdf_key, pdf_content)
+                if resolved_client is not None:
+                    cache_service.cache_docx_by_key(
+                        pdf_key=pdf_key,
+                        client_id=resolved_client.id,
+                        original_request=core_request,
+                        translated_district=district_guj,
+                        translated_taluka=taluka_guj,
+                        translated_village=village_guj,
+                        docx_content=docx_content,
+                    )
                 logger.info(
-                    f"💾 CACHED record for {request.district}/{request.taluka}/{request.village}/{request.survey_number} "
-                    f"(cache_key: {cache_key[:16]}...)"
+                    "💾 CACHED PDF + DOCX for %s/%s/%s/%s (client=%s)",
+                    request.district, request.taluka, request.village,
+                    request.survey_number, resolved_client.id if resolved_client else None,
                 )
             except Exception as e:
-                # Log cache error but don't fail the request
                 logger.warning(f"Failed to cache record: {e}")
         
         # Generate filenames using file service

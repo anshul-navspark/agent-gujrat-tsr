@@ -4,6 +4,7 @@ FastAPI Dependencies.
 """
 from fastapi import Depends
 import logging
+import os
 from typing import Generator, Optional
 
 from services.file_service import FileService, get_file_service
@@ -26,7 +27,9 @@ def get_scraping_service_dependency() -> Generator[ScrapingService, None, None]:
     
     Yields a scraping service instance and ensures cleanup.
     """
-    service = get_scraping_service(headless=True, logger=logger)
+    # Demo/visible-browser support: HEADLESS=false makes the scraper Chrome visible on screen.
+    headless = os.getenv("HEADLESS", "true").strip().lower() not in ("false", "0", "no")
+    service = get_scraping_service(headless=headless, logger=logger)
     try:
         yield service
     finally:

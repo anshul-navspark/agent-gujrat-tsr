@@ -21,6 +21,7 @@ A comprehensive automation solution for fetching land records from the Gujarat A
 - **Optimized Extraction**: Single LLM call for 60% faster processing with identical accuracy
 - **Batch Processing**: Process multiple records from Excel files with parallel execution
 - **Multi-Language Support**: English to Gujarati translation for form inputs
+- **Multi-Client Support**: Save lender/client details in `clients.json` and pick the active client from a sidebar dropdown. The Streamlit UI plumbs the selection through the API into the DOCX template.
 - **Cloud Deployment**: Deployable on Google Cloud Run for serverless operation
 - **Streamlit UI**: User-friendly web interface for record processing
 - **GCS Caching**: Cache fetched records in Google Cloud Storage to avoid re-fetching for 1 week
@@ -199,6 +200,39 @@ Enable via environment variable:
 USE_OPTIMIZED_EXTRACTION=true
 GEMINI_MODEL_NAME=gemini-2.5-flash
 ```
+
+---
+
+## 👥 Multi-Client TSRs
+
+The application supports generating TSRs for multiple clients (lenders / borrowers / counterparties).
+
+### How it works
+
+1. A `clients.json` file at the repo root holds saved client details:
+   - `client_name`, `client_cin`, `client_address`, `kind_attn`, `ref_prefix`, `reference_email_date`
+2. The Streamlit sidebar has an **Active Client** dropdown listing every entry by `display_name`.
+3. The selected client flows through the API into the generated DOCX (the "To:" block and the "Ref. No." prefix both update).
+4. The GCS cache is split: scraped PDFs are shared across clients, generated DOCXs are stored per-client. Two clients running the same survey get distinct DOCXs.
+
+### Adding a client
+
+Edit `clients.json`, add an entry like:
+
+```json
+{
+  "id": "my_new_client",
+  "display_name": "My New Client",
+  "client_name": "My New Client Pvt Ltd",
+  "client_cin": "(CIN: ...),",
+  "client_address": "Address line 1,\nAddress line 2.",
+  "kind_attn": "Kind Attn.: Mr. Foo",
+  "ref_prefix": "MNC",
+  "reference_email_date": "DD.MM.YYYY"
+}
+```
+
+Then commit and redeploy. The new client appears in the sidebar dropdown.
 
 ---
 

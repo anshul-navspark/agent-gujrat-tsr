@@ -88,6 +88,56 @@ def _apply_list_number(paragraph, num_id, ilvl=0):
     numPr.append(numId_e)
     pPr.append(numPr)
 
+
+# --- Word cross-reference machinery -----------------------------------------
+# The chain-of-title rows carry Word auto-numbers (see _apply_list_number), so
+# they renumber themselves when a lawyer inserts or deletes a row. The findings
+# cross-reference ("subject to point N in table no. 3") used to be static text,
+# so any such edit silently invalidated it - it broke twice in the 2026-07-28
+# Bodki batch, once pointing at a charge RELEASE instead of a charge. These
+# emit a REF field bound to a bookmark on the referenced row, so Word recomputes
+# the number along with the list.
+
+def _add_bookmark(paragraph, name, bmk_id):
+    """Bookmark a numbered chain row so a REF field can point at it."""
+    start = OxmlElement('w:bookmarkStart')
+    start.set(qn('w:id'), str(bmk_id))
+    start.set(qn('w:name'), name)
+    end = OxmlElement('w:bookmarkEnd')
+    end.set(qn('w:id'), str(bmk_id))
+    paragraph._p.insert(0, start)
+    paragraph._p.append(end)
+
+
+def _add_ref_field(paragraph, bookmark, cached):
+    r"""Insert { REF <bookmark> \r \h } - renders the row's list number.
+
+    `cached` is what Word shows until fields are refreshed (it updates on
+    open/print, or Ctrl+A F9); we seed it with the number computed at
+    generation time so the document reads correctly even unrefreshed.
+    """
+    def _run(child):
+        r = OxmlElement('w:r'); r.append(child)
+        paragraph._p.append(r)
+        return r
+    begin = OxmlElement('w:fldChar'); begin.set(qn('w:fldCharType'), 'begin')
+    _run(begin)
+    instr = OxmlElement('w:instrText'); instr.set(qn('xml:space'), 'preserve')
+    instr.text = f' REF {bookmark} \\r \\h '
+    _run(instr)
+    sep = OxmlElement('w:fldChar'); sep.set(qn('w:fldCharType'), 'separate')
+    _run(sep)
+    t = OxmlElement('w:t'); t.text = str(cached)
+    _run(t)
+    end = OxmlElement('w:fldChar'); end.set(qn('w:fldCharType'), 'end')
+    _run(end)
+
+
+def chain_bookmark_name(entry_number):
+    """Stable bookmark name for a chain entry (Word: letters/digits/underscore)."""
+    return f"chainEntry{re.sub(r'[^0-9A-Za-z]', '', str(entry_number))}"
+
+
 def add_table_with_header(doc, headers, rows, style=None, col_widths=None):
     """
     Add a table with headers to the document
@@ -263,6 +313,46 @@ def _parse_survey_correction_table(description):
     return pre_text, rows, post_text
 
 
+_ALLOC_ROW_RE = re.compile(
+    r"^\s*(?:\d+[\.\)]\s*)?(?P<name>.+?)\s+-\s+Survey No\.\s*(?P<survey>[^\s-]\S*)"
+    r"\s+-\s+(?P<area>\d+-\d+-\d+|\d+-\d+)\s*$"
+)
+
+
+def _parse_allocation_table(description):
+    """Detect partition / distribution allocation rows in an entry description.
+
+    The lawyer renders these as a table (Sr.no. | Name | Survey Number |
+    Area) rather than inline prose - she rebuilt it by hand on both the
+    Bodki 44 and 44/p1 reports (2026-07-28 review), so emit it directly.
+
+    Returns (pre_text, rows, post_text) or None. Requires at least TWO
+    contiguous allocation rows: a single-beneficiary distribution stays as
+    prose, matching the existing prompt rule.
+    """
+    lines = description.split("\n")
+    first = last = None
+    rows = []
+    for i, ln in enumerate(lines):
+        m = _ALLOC_ROW_RE.match(ln)
+        if m:
+            if first is None:
+                first = i
+            last = i
+            rows.append({
+                "name": m.group("name").strip().rstrip(","),
+                "survey": m.group("survey").strip(),
+                "area": m.group("area").strip(),
+            })
+        elif rows and ln.strip():
+            break          # allocation rows must be contiguous
+    if len(rows) < 2:
+        return None
+    pre_text = "\n".join(lines[:first]).strip()
+    post_text = "\n".join(lines[last + 1:]).strip()
+    return pre_text, rows, post_text
+
+
 def _add_nested_table_to_cell(cell, document, headers, rows_data):
     """Insert a small bordered table inside a table cell.
 
@@ -305,7 +395,8 @@ def _add_nested_table_to_cell(cell, document, headers, rows_data):
 def add_chain_of_title_section(document, entries, entry_table):
     """
     Add Chain of Title section with a two-column table format where:
-    - First column (0.42 inches): empty (manual versions leave this column empty)
+    - First column (0.42 inches): Word auto-number (renumbers when rows are
+      inserted/deleted in Word — no F9 or manual fix needed)
     - Second column (5.85 inches): Entry details including entry number, date, description, and certification
 
     Args:
@@ -318,7 +409,7 @@ def add_chain_of_title_section(document, entries, entry_table):
     """
     logger = logging.getLogger(__name__)
     logger.debug("Adding Chain of Title section with two-column format")
-    
+
     # Add section heading
     add_section_heading(document, "3.  Chain of Title", numbered=True)
 
@@ -330,7 +421,7 @@ def add_chain_of_title_section(document, entries, entry_table):
         paragraph = document.add_paragraph()
         paragraph.add_run("No entries found in the document.").italic = True
         return {}
-    
+
     # Fresh numbering definition so this table's row numbers restart at 1 and
     # auto-renumber when lawyers insert/delete rows in Word.
     num_id = _create_decimal_numbering(document)
@@ -408,11 +499,14 @@ def add_chain_of_title_section(document, entries, entry_table):
                 table.rows[-1].cells[j].width = Inches(width)
             
             # First column: Word renders the row number from numPr so it
-            # auto-renumbers if a lawyer inserts/deletes a row.
+            # auto-renumbers when a lawyer inserts/deletes a row.
             row_cells[0].vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.TOP
-            num_para = row_cells[0].paragraphs[0]
-            _apply_list_number(num_para, num_id)
-            
+            _apply_list_number(row_cells[0].paragraphs[0], num_id)
+            # Bookmark so the findings cross-reference can point at this
+            # row and follow Word's renumbering if rows are inserted.
+            _add_bookmark(row_cells[0].paragraphs[0],
+                          chain_bookmark_name(num), 1000 + row_index)
+
             # Second column: Entry details
             entry_para = row_cells[1].paragraphs[0]
             
@@ -437,8 +531,37 @@ def add_chain_of_title_section(document, entries, entry_table):
                     description = f"That {description}"
                 description = _number_names_after_follows(description)
 
-                parsed = _parse_survey_correction_table(description)
-                if parsed:
+                # Partition / distribution allocations render as a nested
+                # table (Sr.no. | Name | Survey Number | Area) - the lawyer
+                # rebuilt this by hand on both the Bodki 44 and 44/p1 reports.
+                alloc = _parse_allocation_table(description)
+                if alloc:
+                    a_pre, a_rows, a_post = alloc
+                    if a_pre:
+                        r = entry_para.add_run(a_pre)
+                        r.font.name = 'Times New Roman'
+                        r.font.size = Pt(12.5)
+                    entry_para.paragraph_format.alignment = WD_PARAGRAPH_ALIGNMENT.LEFT
+                    entry_para.paragraph_format.line_spacing = 1.15
+                    _add_nested_table_to_cell(
+                        row_cells[1], document,
+                        headers=['Sr.no.', 'Name', 'Survey Number', 'Area (Acre/Hectare)'],
+                        # Lawyer numbers these rows "1." "2." "3." (with the
+                        # period) - matches the nested tables she builds by hand.
+                        rows_data=[{'sr': f"{i}.", 'name': a['name'],
+                                    'survey': a['survey'], 'area': a['area']}
+                                   for i, a in enumerate(a_rows, 1)],
+                    )
+                    if a_post:
+                        pp = row_cells[1].add_paragraph()
+                        pr = pp.add_run(a_post)
+                        pr.font.name = 'Times New Roman'
+                        pr.font.size = Pt(12.5)
+                        pp.paragraph_format.line_spacing = 1.15
+                parsed = None if alloc else _parse_survey_correction_table(description)
+                if alloc:
+                    pass          # already rendered above
+                elif parsed:
                     pre_text, corr_rows, post_text = parsed
                     # Write pre-table text into entry_para
                     desc_run = entry_para.add_run(pre_text)
@@ -968,8 +1091,22 @@ def add_findings_table(doc, findings):
         # Add particular
         row_cells[1].text = finding['particular']
         row_cells[1].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
-        # Add observation
-        row_cells[2].text = finding['observation']
+        # Add observation. {{XREF:<entry>:<row>}} markers become Word REF
+        # fields pointing at the chain row's bookmark, so the number follows
+        # Word's renumbering instead of going stale on an insertion.
+        observation = finding['observation']
+        if "{{XREF:" in observation:
+            para = row_cells[2].paragraphs[0]
+            for piece in re.split(r'(\{\{XREF:[^:}]+:[^}]+\}\})', observation):
+                if not piece:
+                    continue
+                m = re.fullmatch(r'\{\{XREF:([^:}]+):([^}]+)\}\}', piece)
+                if m:
+                    _add_ref_field(para, chain_bookmark_name(m.group(1)), m.group(2))
+                else:
+                    para.add_run(piece)
+        else:
+            row_cells[2].text = observation
         row_cells[2].paragraphs[0].alignment = WD_PARAGRAPH_ALIGNMENT.JUSTIFY
         
         # Apply formatting to all cells

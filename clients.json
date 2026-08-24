@@ -1,0 +1,15 @@
+{
+ "default_client_id": "abrel_spv_2",
+ "clients": [
+  {
+   "id": "abrel_spv_2",
+   "display_name": "ABREL SPV 2 Limited (Aditya Birla)",
+   "client_name": "ABREL SPV 2 Limited",
+   "client_cin": "",
+   "client_address": "A-2, Aditya Birla Centre, S.K. Ahire Marg,\nWorli, Mumbai-400030.",
+   "kind_attn": "",
+   "ref_prefix": "ABREL",
+   "reference_email_date": ""
+  }
+ ]
+}

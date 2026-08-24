@@ -13,6 +13,7 @@ if _project_root not in sys.path:
 
 import streamlit as st
 from datetime import datetime
+from typing import Optional
 from core.models import LandRecordRequest as CoreLandRecordRequest
 from app.api_client import TSRAPIClient, APIResponse
 from utils.survey_utils import convert_survey_number, sanitize_filename
@@ -45,6 +46,13 @@ def single_record_form(api_client: TSRAPIClient) -> None:
         api_client: Initialized TSRAPIClient instance for making API calls.
     """
     st.subheader("Process Single Land Record")
+    active_client_id = st.session_state.get("active_client_id")
+    if active_client_id:
+        from core.clients import get_client_library
+        lib = get_client_library()
+        client = lib.clients.get(active_client_id)
+        if client:
+            st.caption(f"Generating TSR for: **{client.client_name}**")
     col1, col2 = st.columns(2)
     with col1:
         district = st.text_input("District", key="single_district", placeholder="e.g., Kutch")
@@ -62,7 +70,12 @@ def single_record_form(api_client: TSRAPIClient) -> None:
             # Normalize survey number
             normalized_survey = convert_survey_number(survey)
             result = process_single_record_api(
-                api_client, district, taluka, village, normalized_survey
+                api_client,
+                district,
+                taluka,
+                village,
+                normalized_survey,
+                client_id=st.session_state.get("active_client_id"),
             )
             duration = datetime.now() - start_time
             # Store result in session state for persistence (not in processing_results)
@@ -122,6 +135,7 @@ def process_single_record_api(
     taluka: str,
     village: str,
     survey: str,
+    client_id: Optional[str] = None,
 ) -> dict:
     """Helper to call the API and format the response.
 
@@ -133,6 +147,7 @@ def process_single_record_api(
             taluka=taluka,
             village=village,
             survey_number=survey,
+            client_id=client_id,
         )
         docx_path = None
         pdf_path = None

@@ -82,7 +82,35 @@ class AnyRoRScraper:
         survey_block_number = str(survey_block_number).strip()
         
         self.logger.debug(f"Fetching land record for {district_name}, {taluka_name}, {village_name}, {survey_block_number}")
-        
+
+        # Primary path: browser-free HTTP fetch. AnyRoR's WAF resets the
+        # Selenium/Chrome browser but lets plain HTTP through; this avoids it
+        # entirely. Falls through to the Selenium path below on any failure.
+        if os.getenv('ANYROR_HTTP_FETCH', 'true').strip().lower() in ('1', 'true', 'yes', 'on'):
+            try:
+                from .http_fetch import AnyRoRHttpFetcher
+                result = AnyRoRHttpFetcher(logger=self.logger).fetch_record_pdf(
+                    district_name, taluka_name, village_name,
+                    survey_block_number, output_path)
+                if result.get('success'):
+                    self.logger.info("Land record fetched via http_fetch (primary path)")
+                    return result
+                self.logger.warning(
+                    f"http_fetch primary failed ({result.get('error')}); "
+                    "falling back to Selenium")
+            except Exception as e:
+                self.logger.warning(
+                    f"http_fetch primary errored ({e}); falling back to Selenium")
+
+            # Selenium on AnyRoR draws a WAF Attack ID and burns the source IP
+            # (journal 2026-07-31). Set ANYROR_SELENIUM_FALLBACK=false to fail
+            # loudly instead of falling through. Default keeps prior behaviour.
+            if os.getenv('ANYROR_SELENIUM_FALLBACK', 'true').strip().lower() \
+                    not in ('1', 'true', 'yes', 'on'):
+                return {'success': False,
+                        'error': 'http_fetch failed and Selenium fallback is '
+                                 'disabled (ANYROR_SELENIUM_FALLBACK=false)'}
+
         try:
             # Create output directory if it doesn't exist
             output_dir = os.path.dirname(output_path)
