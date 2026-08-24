@@ -176,3 +176,83 @@ class TestFetchRecordPdfContract:
                                         str(tmp_path / "out.pdf"))
         assert res["success"] is False
         assert "error" in res
+
+
+# ------------------------------------------------------- nested paiki surveys
+class TestNestedPaikiSurveys:
+    """Miyani (Porbandar) 1300 is subdivided twice: the live dropdown spells the
+    options "1300/p૧/p૧", "1300/p૧/p૨", "1300/p૨" — Latin base, Latin 'p',
+    Gujarati paiki digits. The single-level paiki regex never matched these, so
+    the fetch failed and (pre-guard) fell through to Selenium (journal 2026-08-21).
+    """
+
+    def test_two_level_paiki(self):
+        cands = _fetcher._survey_candidate_texts("1300/p1/p1")
+        assert "1300/p૧/p૧" in cands
+
+    def test_two_level_paiki_second_part(self):
+        assert "1300/p૧/p૨" in _fetcher._survey_candidate_texts("1300/p1/p2")
+
+    def test_two_level_paiki_no_slash_variant(self):
+        # the slash before 'p' is inconsistent in AnyRoR's data, so offer both
+        assert "1300p૧p૧" in _fetcher._survey_candidate_texts("1300/p1/p1")
+
+    def test_single_level_paiki_still_works(self):
+        # regression guard: generalising to N levels must not break one level
+        assert "24p૧" in _fetcher._survey_candidate_texts("24/p1")
+        assert "48/p૪" in _fetcher._survey_candidate_texts("48/p4")
+
+
+# ------------------------------------------------------ ascii district lookup
+DISTRICT_OPTS = [("", "Select"), ("14", "ભાવનગર"), ("01", "કચ્છ")]
+
+
+class TestDistrictResolution:
+    """`ddlDistrict` carries Gujarati text only — unlike taluka/village there is
+    no ASCII fallback, so a direct caller passing "Bhavnagar" got
+    "district 'Bhavnagar' not found" (observed 2026-08-24).
+    """
+
+    def test_resolves_numeric_code(self):
+        assert _fetcher._resolve_district(DISTRICT_OPTS, "14") == "14"
+
+    def test_resolves_gujarati_name(self):
+        assert _fetcher._resolve_district(DISTRICT_OPTS, "ભાવનગર") == "14"
+
+    def test_resolves_ascii_name(self):
+        assert _fetcher._resolve_district(DISTRICT_OPTS, "Bhavnagar") == "14"
+
+    def test_resolves_ascii_name_case_insensitively(self):
+        assert _fetcher._resolve_district(DISTRICT_OPTS, "bhavnagar") == "14"
+
+    def test_unknown_district_returns_none(self):
+        assert _fetcher._resolve_district(DISTRICT_OPTS, "Nowhere") is None
+
+    def test_placeholder_option_never_matches(self):
+        # the blank "Select" option must never be chosen as a district
+        assert _fetcher._resolve_district(DISTRICT_OPTS, "") is None
+
+
+# --------------------------------------------------------- proxied timeouts
+class TestConnectTimeoutDefault:
+    """A proxied run pays for the CONNECT tunnel to the residential exit on top
+    of the request; that cold-starts past 6s (observed 2026-08-24), which failed
+    whole attempts. Direct runs keep the short 6s NAT64 fast-fail.
+    """
+
+    def test_direct_default_is_short(self):
+        from anyror.http_fetch import _default_connect_timeout
+        assert _default_connect_timeout({}) == 6.0
+
+    def test_proxied_default_is_long(self):
+        from anyror.http_fetch import _default_connect_timeout
+        assert _default_connect_timeout({"ANYROR_PROXY": "http://u:p@host:443"}) == 30.0
+
+    def test_explicit_env_wins_over_proxy_default(self):
+        from anyror.http_fetch import _default_connect_timeout
+        env = {"ANYROR_PROXY": "http://u:p@host:443", "ANYROR_CONNECT_TIMEOUT": "12"}
+        assert _default_connect_timeout(env) == 12.0
+
+    def test_blank_proxy_is_treated_as_absent(self):
+        from anyror.http_fetch import _default_connect_timeout
+        assert _default_connect_timeout({"ANYROR_PROXY": "   "}) == 6.0

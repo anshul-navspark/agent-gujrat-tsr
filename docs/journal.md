@@ -16,6 +16,197 @@
 <!-- Claude: append milestone bullets here during the session. The next session
      formalizes them into a dated entry below and clears this section. -->
 
+**2026-08-21 — Miyani (Porbandar) 1300 paiki batch: 1 of 3 delivered, IP burned on #2:**
+- Task from a WhatsApp note: Porbandar / Porbandar / Miyani (`મીયાણી - 015`), surveys
+  `1300/P1/P1`, `1300/P2`, `1300/P1/P2` — three NESTED-paiki surveys.
+- **`_survey_candidate_texts` (`http_fetch.py:117`) does not handle nested paiki.** Its regex
+  is `^(\d+)/?p(\d+)$` — single level only. So `1300/p1/p1` generated no correct candidate
+  and the fetch failed. Live dropdown (1731 options) spells them
+  **`1300/p૧/p૧`, `1300/p૧/p૨`, `1300/p૨`** — Latin base + Latin `p` + **Gujarati** paiki
+  digits, which is exactly the pattern the single-level branch builds but the nested case
+  never reaches. Passing the exact option text as `survey_number` works. **Candidate fix:
+  generalise the paiki regex to N levels.**
+- **Added `ANYROR_SELENIUM_FALLBACK` guard (`anyror/scraper.py`).** Default `true` (behaviour
+  unchanged); set `false` to make `fetch_land_record` return an error instead of falling
+  through to Selenium. Earned its keep immediately — the nested-paiki miss would otherwise
+  have launched Selenium and drawn a WAF Attack ID. Recommend making `false` the default.
+- **Probe technique worth reusing:** monkeypatch `hf._options` to capture the `ddlSurveyNo`
+  list, then call `fetch_record_html` with a deliberately unmatchable survey and `attempts=1`.
+  One walk, no captcha, no record generation — dumps all options for a village.
+- **Survey 1 delivered**: `~/Downloads/TSR_Miyani_1300_2026-08-21/survey_1300p1p1/` — 11 entries,
+  legacy layout (4 tables, 23×3 findings), 214s end-to-end on Opus 5 / high.
+- **Run stopped after survey 2 returned a TLS reset** (`SSL: UNEXPECTED_EOF_WHILE_READING`) on
+  the very first GET — WAF IP-block signature. Per standing rule, stopped rather than retried.
+  Total AnyRoR sessions before the block: 1 failed match + 1 probe + 1 successful fetch = 3,
+  paced 60s. **3 sessions in ~6 min was enough to trip it**, which is tighter than the pacing
+  memory assumes — worth revisiting the 60s figure.
+- **RESOLVED same session — Indian residential proxy defeats the WAF block.** Anshul supplied
+  a residential proxy; egress verified as **103.172.154.114, Surat, Gujarat, AS149249 Ruchi
+  Communication**. Added `ANYROR_PROXY` support to `http_fetch._session()` (AnyRoR traffic
+  only; Gemini captcha calls still go direct; credentials read from env, never the repo).
+  Surveys 2 and 3 then completed **first try, HTTP 200, ~210s each** on the same burned local
+  machine. This is the first proxy that has worked — the 2026-07 failures were free
+  *datacenter* proxies, which got the WAF page; a *residential* ISP IP passes.
+  **Now a standing instruction: route every AnyRoR fetch through it, not just after a block.**
+- **Proxy verification method matters:** a curl GET through a bad proxy returns a false 200.
+  Test against AnyRoR itself — good page ≈36KB with 34 populated district options; WAF page
+  ≈44KB with `selects=[]` / "Attack ID".
+- **All 3 TSRs delivered** to `~/Downloads/TSR_Miyani_1300_2026-08-21/`
+  (`survey_1300p1p1` 13 entry rows, `survey_1300p1p2` 11, `survey_1300p2` 11). All legacy
+  layout (4 tables, 23×3 findings), correct per-survey ref lines. **All three report a
+  subsisting charge** — 4888 for both 1300/p૧/* and 4907 for 1300/p૨ — which needs the usual
+  human check against the known single-`lender`-field false-positive bug.
+- **SECURITY (flagged, not actioned): `.env` is git-TRACKED** despite `.gitignore` line 23 —
+  it was committed before the rule existed. A live `GEMINI_API_KEY=AIza…` is in committed
+  history. Proxy credentials therefore kept OUT of `.env`. Needs key rotation + history
+  purge; Anshul's call.
+- **Cloud Run (`asia-south1`) is ALIVE again** — `/health` 200 (was 503 crash-on-boot in July).
+  A `/process-record` test returned `Captcha could not be solved`, which is
+  **`scraper.py:212` — the Selenium path**, so http_fetch failed there first for an unknown
+  reason (that deploy predates the guard). NOT yet evidence that a Mumbai GCP IP can reach
+  AnyRoR; needs Cloud Run logs to tell a WAF page from a dead `GEMINI_API_KEY`. **Open lead**
+  — if http_fetch works from asia-south1, it solves the IP-burn problem permanently.
+
+**2026-08-24 — Proxy path re-verified end-to-end; credentials finally persisted to disk:**
+- Anshul asked whether the AnyRoR issue is fixed and for a live test scrape, and challenged
+  whether past sessions were at fault for "not going to the VPS". **Journal check: there is
+  no VPS** — 2026-08-10 already confirmed it (no ssh config, Oracle Mumbai still unbuilt) and
+  the paid *residential proxy* only arrived 2026-08-21, i.e. after the two burned batches.
+  The 08-10 burn was genuinely our fault (4s spacing vs the journal's own 60s rule); 07-28
+  predates the lesson; 08-21 was correctly paced and the WAF simply bit at 3 sessions/6 min.
+- **Root cause of the "proxy keeps going unused" feeling: it was never stored anywhere.**
+  It lived only in chat + the memory file, so every session had to re-ask. Recovered the
+  credential from an old session transcript, confirmed it matches memory byte-for-byte, and
+  with Anshul's explicit permission wrote it to **`.env.local` (git-ignored)** — deliberately
+  NOT `.env`, which is git-tracked and already leaks a `GEMINI_API_KEY`.
+- **Proxy is alive and unblocked**: same sticky exit `103.172.154.114` (Surat). Landing page
+  36,115 bytes with **34 populated districts** = the known-good signature (WAF page ≈44KB /
+  Attack ID). Fetched **Bodkee/Talaja/Bhavnagar survey 44** in **83s**, single attempt, no
+  retry: 16-page PDF, 15,489 chars of clean Gujarati text, correct UPIN.
+- **Two proxy gotchas, both now in memory:** (1) only gateway **port 443** authenticates —
+  8080 and 12321 are open but return `407`, which reads like a dead subscription and isn't;
+  (2) the **HTTPS CONNECT tunnel cold-starts >10s** then settles at ~2s, so the module's 6s
+  `ANYROR_CONNECT_TIMEOUT` was failing whole attempts. Fixed: the default is now **30s
+  whenever `ANYROR_PROXY` is set**, 6s otherwise (the NAT64 fast-fail case still holds).
+- **New bug surfaced (not fixed):** `fetch_record_pdf` cannot resolve an **ASCII district
+  name** — `ddlDistrict` carries Gujarati only and, unlike taluka/village, has no ASCII
+  fallback, so "Bhavnagar" dies with "district not found". Pass code `14` or `ભાવનગર`.
+  Production is unaffected (the scraper passes translated Gujarati), but it is a trap for
+  any direct caller and the docstring claims ASCII works.
+- **Fixed all three, TDD (tests first, watched them fail, then implemented):** 13 new tests
+  in `tests/test_http_fetch.py` (28 in that file, **438 in the suite, all passing**).
+  1. **Nested paiki generalised to N levels** — regex is now
+     `^(\d+)((?:\s*/?\s*p(?:k)?\s*\d+)+)$`, and candidates are built by applying one
+     separator across every level. Verified it emits the exact live spellings
+     `1300/p૧/p૧`, `1300/p૧/p૨`, `1300/p૨`; the single-level cases (`24p૧`, `48/p૪`) have a
+     regression guard. Spelled-out forms (` પૈકી `) stay one-level-only.
+  2. **District resolution extracted to `_resolve_district(dopts, district)`** and given an
+     ASCII fallback via `translate_to_gujarati(..., context='district')`. Accepts code,
+     Gujarati, and ASCII (case-insensitive); returns None for unknown, and the blank
+     "Select" option can no longer be chosen (the old `wanted in text` test matched the
+     empty string against every option).
+  3. **`_default_connect_timeout(env)`** — 30s when `ANYROR_PROXY` is set, 6s direct, and an
+     explicit `ANYROR_CONNECT_TIMEOUT` always wins.
+- Writing the tests exposed a fragility worth keeping in mind: `_resolve_district` reached for
+  `self.log`, which does not exist on the `__new__`-constructed fixture the test file uses to
+  avoid a Gemini client. Now falls back to the module logger.
+- Committed to `feat/old-entry-chain-phase0` → **PR #10**. Deliberately left OUT of the commit:
+  `.env` (tracked + carries secrets) and `anyror_hierarchy.json` (auto-learned spelling
+  variations from earlier sessions, unrelated to this change).
+- **Note for whoever merges:** `anyror/http_fetch.py` does not exist on `main` at all — the
+  entire browser-free fetch is still unmerged (PR #9, open since 2026-07-22). Every scraper
+  fix since then is stacked on unmerged work. **Five PRs are open** (#6–#10); this is the
+  backlog to clear before the scraper story is really "fixed" on main.
+
+**2026-08-21 (later) — Old-entry chain for Miyani 1300: Mittali already appended it; verified:**
+- Task: add the pre-digital chain entries to the three 1300 TSRs from two handwritten photos
+  (`~/Downloads/WhatsApp Image 2026-08-21 at 13.04.12/13.04.37.jpeg`) covering **old S.No. 431**
+  (and 346/2P). Checked OneDrive first — **Mittali had already done all three** and uploaded
+  `1300_p1_p1 / 1300_p1_p2 / 1300_p2 - complete.docx` (15:34–15:58). No agent edit needed.
+- She prepended **7 old entries** — 260, 1396, 1901, 2130, 2461, 2875, 3159 — ahead of 3659.
+  The blocks are **byte-identical across all three files** (per-entry md5 match), so she wrote
+  them once and pasted. Chain length went 13→20 (p1p1), 11→18 (p1p2), 11→18 (p2).
+- **Verified entry-by-entry against the photos: 6 of 7 are faithful**, including the details
+  the extractor normally drops — death dates (Duda Rajshi 02/05/2007, Raja Rajshi 16/10/2008),
+  full heir lists (6 and 7 names), "– Widow" on Rupiben, and every certification date.
+- **Two things to check before this goes out:**
+  1. **Entry number 260 vs 207.** AnyRoR's own old-entry index on the Village Form 7 she
+     uploaded reads `નોંધ નંબરો: ૨૦૭,૧૩૯૬,૧૯૦૧,૨૧૩૦,૨૪૬૧,૨૮૭૫` + other-rights `૩૧૫૯` — i.e.
+     **207**, where the note and all three TSRs say **260**. Every other number matches the
+     index exactly. Unresolved: she replaced the Form 7 PDF with the finished DOCX, so the
+     source is gone from OneDrive *and* her PC; can't re-read it.
+  2. **Entry 2875 drops the area allocations.** The note gives Jeeva Duda 431p = 3-06-21 Hec
+     and Natha + Naga 431p = 1-53-11 Hec; her text names the 10 relinquishers and the 3
+     beneficiaries but omits the areas. Her own convention (18f352f) renders partition
+     allocations as a nested table — inconsistent here.
+- **Structural finding — the old-entry index is NOT in what we scrape.** `http_fetch` pulls
+  `RECORD_TYPE_VALUE = "8"` ("Integrated Survey No Details"); the `જૂના સર્વે નંબર ને લગત
+  નોંધ નંબરો` header block lives on **Village Form 7 (ગામ નમૂનો ૭)**, a different record type.
+  Confirmed: all 3 of our scraped `Original_*.pdf` lack the line; her Form 7 print has it.
+  **This is the missing input for the whole `feat/old-entry-chain-phase0` project** — fetching
+  Form 7 would give the authoritative old-entry number list for free, turning the handwritten
+  transcription into a verify-against-index step instead of a from-scratch one. Next action:
+  probe `drpLandRecord` for the Form 7 option value.
+- Also noted in her edits: `Jiva` → **`Jeeva`** throughout p1p1, and 4692/4834/4835/4841
+  trimmed (khata numbers in parens and "(market value Rs. …)" removed) — same trimming
+  convention seen in the Bodki batch.
+
+**2026-08-12 — Picked a demo survey for tomorrow; found the cache was hiding a fixed bug:**
+- Task: choose a khasra with full documents for a demo. Scored candidates with
+  `scripts/eval_chain_vs_truth.py` (chain vs AnyRoR's authoritative Entry Details index)
+  plus a table-level diff against the lawyer's delivered TSRs. Rebuilt the whole comparison
+  from banked cache PDFs — **no AnyRoR traffic at all**, so zero WAF/pacing risk.
+- **Bodki (Talaja, Bhavnagar) is the best-documented site** (Form 7, Form 12, EC Reports,
+  delivered TSRs in Word+PDF; 7 surveys banked locally). But none of the 7 is demo-clean:
+  44 / 44p1 / 45-4p2 emit a **false "charge subsisting"** (the known co-op-lender /
+  single-`lender`-field bug); 56p1/56p2 claim "clear" where the lawyer wrote **not clear**;
+  56p1 also has phantom 889 + 5 missing entries. Only 57p1/57p3 conclude correctly, and
+  57p1 renders 7 of 12 entries as boilerplate.
+- **User overrode the shortlist and picked Kutch/Abdasa/Trambo 150.** Two discoveries:
+  1. The cached record labelled survey `150` is actually **૧૫૦/પૈકી ૧ (150p1)** — a live
+     instance of `ISSUES.md` #1 (silent first-dropdown-option fallback). Lucky here, since
+     150p1 is one of the three Trambo surveys with a delivered TSR; it could as easily have
+     produced a confidently wrong report for a different survey. Worth fixing.
+  2. **The 2026-06-09 cached TSR was bad — current code is not.** Cached run fabricated
+     entries 105/160/223 (khata numbers lifted as entry numbers) and dropped **243**, the
+     1968 sale that is the root of title. Regenerating from the same banked PDF with today's
+     code gives **5/5 entries, 0 phantom, 0 missing** — exactly the lawyer's chain
+     (125, 243, 721, 905, 983), with 721/905/983 narratives near-verbatim and the same
+     "clear and marketable" conclusion. 150p1 has **no loan entries**, so the encumbrance
+     bug cannot fire.
+  - **Lesson: never judge extraction quality from the local cache.** TTL is ~never-expire,
+    so a cached DOCX can predate months of fixes and silently misrepresent current quality.
+    Regenerate with `skip_cache` before any eval or demo decision.
+- `python -m tsr_generator` is **broken** — `tsr_generator/__main__.py` imports
+  `tsr_generator.utils.logging_utils`, which does not exist. Used `generate_tsr_from_pdf` +
+  `_build_request_metadata_for_client` directly instead (same path as 07-31).
+- Built `~/Downloads/demo_trambo_150p1/` — a 20-page merged demo pack (source RoR →
+  agent-generated TSR → lawyer-delivered TSR, with section dividers).
+
+**2026-08-12 (later) — Regenerated 150p1 from the demo pack; found the phantom-entry root cause:**
+- Generated the TSR from `~/Downloads/demo/Gujarat/Trambo-150p1/AnyRoR_Trambo_150p1.pdf`
+  (byte-identical to banked cache `726c6a0c…/original.pdf` — verified with `cmp`). No AnyRoR
+  traffic. Delivered `~/Downloads/TSR_Kutch_Abdasa_Trambo_150p1_2026-08-12.docx`.
+- **First run came out defective**: chain 125 / **160** / **223** / 721 / 905 / 983 — the two
+  khata numbers promoted to entries and **243 (the 1968 sale, root of title) dropped**. Same
+  failure this morning's note attributed to the stale June cache. Second run from the identical
+  input was correct (125, 243, 721, 905, 983), so it is **intermittent, not fixed**.
+- **Root cause is `_identify_entry_numbers_fast` (`unified_extractor.py:503`), not the model.**
+  The hint it feeds the prompt for this record is `['125','૧૬૦','૨૨૩','721','905','983']` —
+  poisoned and incomplete, for two independent reasons:
+  1. `\d{3,4}` is Unicode-aware, so **Gujarati digits match**; ખાતા નંબર ૧૬૦/૨૨૩ become
+     candidate entry numbers. The context filter only looks for ASCII `khata`/`survey`/…,
+     which never appear in Gujarati text, so it never fires. Fix: `[0-9]{3,4}` / `re.ASCII`.
+  2. The pattern **consumes** its surrounding separator, and `finditer` cannot overlap, so in
+     the index run `125\n243\n721\n905\n983` every second number is skipped — 243 and 905
+     are both lost (905 is recovered later from its narrative row; 243 has no narrative in the
+     record, so it disappears). Fix: lookarounds `(?<![0-9])(\d{3,4})(?![0-9])`.
+- Direct extractor called 3× on the same text returned the correct 5 entries each time, so the
+  model usually overrides the bad hint — which is why this reads as flaky rather than broken.
+  **Verify the chain against the record's Entry Details index on every run until this is fixed.**
+- `demo/README.md` (the pack's, in `~/Downloads/demo`) lists Trambo as **Taluka Bhuj**; the
+  record says **Abdasa**. Pack text needs correcting before the demo.
+
 **2026-08-10 — Visavada (Porbandar) surveys 61-64; format drift traced to a doc profile:**
 - Anshul flagged that TSRs had been carrying "extra info" for ~15 days and supplied
   `~/Downloads/1772.docx` (Visavada survey 1772, delivered Dec 2025) as the target format,

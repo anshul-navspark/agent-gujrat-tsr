@@ -30,6 +30,29 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
 P = "ctl00$ContentPlaceHolder1$"
 RECORD_TYPE_VALUE = "8"  # Integrated Survey No Details
 
+# (connect, read). Short CONNECT so a dead IPv4-or-IPv6 family under NAT64 fails
+# fast instead of eating the whole budget (journal 2026-07-31); long READ because
+# AnyRoR's final "Get Detail" submit generates the record server-side and can sit
+# well past 45s on larger survey histories (Pandatirath 80/1 timed out 3x at 45s
+# while every dropdown postback succeeded -- slow record generation, not the WAF).
+def _default_connect_timeout(env):
+    """Connect timeout in seconds, given an environment mapping.
+
+    A proxied run also pays for the CONNECT tunnel to the residential exit,
+    which cold-starts well past 6s before settling (~2s thereafter), so the
+    short NAT64 fast-fail budget would kill whole attempts. An explicit
+    ANYROR_CONNECT_TIMEOUT always wins.
+    """
+    explicit = env.get("ANYROR_CONNECT_TIMEOUT", "").strip()
+    if explicit:
+        return float(explicit)
+    return 30.0 if env.get("ANYROR_PROXY", "").strip() else 6.0
+
+
+CONNECT_TIMEOUT = _default_connect_timeout(os.environ)
+STEP_TIMEOUT = (CONNECT_TIMEOUT, float(os.getenv("ANYROR_STEP_TIMEOUT", "45")))
+SUBMIT_TIMEOUT = (CONNECT_TIMEOUT, float(os.getenv("ANYROR_SUBMIT_TIMEOUT", "180")))
+
 GUJ_DIGITS = {'0': '૦', '1': '૧', '2': '૨', '3': '૩', '4': '૪',
               '5': '૫', '6': '૬', '7': '૭', '8': '૮', '9': '૯'}
 
@@ -84,6 +107,15 @@ class AnyRoRHttpFetcher:
         s = requests.Session()
         s.headers.update({'User-Agent': UA, 'Referer': URL,
                           'Origin': 'https://anyror.gujarat.gov.in'})
+        # Optional egress proxy. AnyRoR's WAF blocks by source IP, so routing the
+        # walk through an Indian *residential* proxy survives a local IP burn
+        # (journal 2026-08-21). Credentials live in the env, never in the repo.
+        # Applies to AnyRoR traffic only -- captcha calls to Gemini go direct.
+        proxy = os.getenv('ANYROR_PROXY', '').strip()
+        if proxy:
+            s.proxies.update({'http': proxy, 'https': proxy})
+            self.log.info("[http_fetch] routing via ANYROR_PROXY "
+                          f"({proxy.rsplit('@', 1)[-1]})")
         return s
 
     def _postback(self, s, html, target, fields):
@@ -91,7 +123,7 @@ class AnyRoRHttpFetcher:
         data['__EVENTTARGET'] = target
         data['__EVENTARGUMENT'] = ''
         data.update(fields)
-        r = s.post(URL, data=data, timeout=30,
+        r = s.post(URL, data=data, timeout=STEP_TIMEOUT,
                    headers={'Content-Type': 'application/x-www-form-urlencoded'})
         if 'Web Page Blocked' in r.text or 'Attack ID' in r.text:
             raise RuntimeError("WAF block page returned on postback")
@@ -125,17 +157,22 @@ class AnyRoRHttpFetcher:
         add(s)
         add(s.translate(G))
         add(s.translate(GP))
-        m = re.match(r'^(\d+)\s*/?\s*p(?:k)?\s*(\d+)$', s, re.I)  # paiki
+        # Paiki, one or more levels deep: Miyani 1300 is subdivided twice and
+        # the dropdown spells it "1300/p૧/p૧" (journal 2026-08-21). A one-level
+        # regex generated no correct candidate for those, so the fetch failed.
+        m = re.match(r'^(\d+)((?:\s*/?\s*p(?:k)?\s*\d+)+)$', s, re.I)
         if m:
-            base, part = m.group(1), m.group(2)
-            pg, pgp = part.translate(G), part.translate(GP)
+            base = m.group(1)
+            parts = re.findall(r'\d+', m.group(2))
             for sep in ['p', '/p']:                 # both slash + no-slash
-                add(f"{base}{sep}{pg}")
-                add(f"{base}{sep}{pgp}")
-                add(f"{base}{sep}{part}")
-            for sep in [' પૈકી ', ' પેકી ', ' paiki ', '/']:
-                add(f"{base}{sep}{pg}")
-                add(f"{base}{sep}{part}")
+                for tr in (G, GP, None):            # ૧ / પ / plain-ASCII digits
+                    add(base + ''.join(
+                        f"{sep}{p.translate(tr) if tr else p}" for p in parts))
+            if len(parts) == 1:                     # spelled-out forms, 1 level
+                part = parts[0]
+                for sep in [' પૈકી ', ' પેકી ', ' paiki ', '/']:
+                    add(f"{base}{sep}{part.translate(G)}")
+                    add(f"{base}{sep}{part}")
         m2 = re.match(r'^(\d+)\s*/\s*(\d+)$', s)     # plain N/M subdivision
         if m2:
             b, p = m2.group(1), m2.group(2)
@@ -143,27 +180,53 @@ class AnyRoRHttpFetcher:
             add(f"{b}/{p.translate(GP)}")
         return cands
 
+    def _resolve_district(self, dopts, district):
+        """District code for an AnyRoR code, Gujarati name, or ASCII name.
+
+        `ddlDistrict` carries Gujarati text only. Taluka and village get their
+        ASCII fallback from the caller passing both spellings, but the district
+        has no such pair, so an ASCII name is translated via the hierarchy.
+        Returns None when nothing matches.
+        """
+        wanted = str(district or '').strip()
+        if not wanted:
+            return None
+        live = [(v, t) for v, t in (dopts or []) if v not in ('', '0', '-1')]
+        for value, text in live:
+            if value == wanted or wanted in text:
+                return value
+        try:
+            from utils.json_translations import translate_to_gujarati
+            guj = translate_to_gujarati(wanted, context='district')
+        except Exception as e:
+            log = getattr(self, 'log', None) or logging.getLogger(__name__)
+            log.debug(f"[http_fetch] district translate failed: {e}")
+            return None
+        for value, text in live:
+            if guj and guj in text:
+                return value
+        return None
+
     def fetch_record_html(self, district, taluka_ascii, taluka_guj,
-                          village_ascii, village_guj, survey_ascii, attempts=10):
+                          village_ascii, village_guj, survey_ascii, attempts=None):
         """`district` may be the numeric AnyRoR code (e.g. "14") or a district
         name (ASCII or Gujarati, e.g. "ભાવનગર"); it is resolved against the live
         dropdown. taluka/village accept ASCII and/or Gujarati names."""
+        # Default 3, not 10: each attempt is a full 7-request walk, so the old
+        # default could fire ~70 requests at 2s spacing and trip AnyRoR's WAF
+        # (journal 2026-07-28 and 2026-08-10 both lost an IP that way).
+        if attempts is None:
+            attempts = int(os.getenv("ANYROR_FETCH_ATTEMPTS", "3"))
         last_err = None
         for attempt in range(1, attempts + 1):
             try:
                 self.log.info(f"[http_fetch] attempt {attempt}: "
                               f"{taluka_ascii}/{village_ascii}/{survey_ascii}")
                 s = self._session()
-                html = s.get(URL, timeout=30).text
+                html = s.get(URL, timeout=STEP_TIMEOUT).text
                 # resolve district -> code (accept code or ASCII/Gujarati name)
                 dopts = _options(html, 'ddlDistrict') or []
-                district_code = None
-                for value, text in dopts:
-                    if value in ('', '0', '-1'):
-                        continue
-                    if value == str(district).strip() or str(district).strip() in text:
-                        district_code = value
-                        break
+                district_code = self._resolve_district(dopts, district)
                 if not district_code:
                     raise RuntimeError(f"district '{district}' not found")
                 # 1. record type
@@ -236,7 +299,7 @@ class AnyRoRHttpFetcher:
                     data[btn.group(1)] = btn.group(2)
                 else:
                     data[P + 'btnGo'] = 'Get Detail'
-                r = s.post(URL, data=data, timeout=45,
+                r = s.post(URL, data=data, timeout=SUBMIT_TIMEOUT,
                            headers={'Content-Type': 'application/x-www-form-urlencoded'})
                 out = r.text
                 if 'Web Page Blocked' in out or 'Attack ID' in out:
