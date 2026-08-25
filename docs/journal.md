@@ -79,6 +79,22 @@
     (no mutation text, ~6-months stale) — complementary siting/screening at best.
   - **Recommendation put to Anshul: private vendor (Landeed) is the realistic buy path;
     API Setu account is free and worth having but does not feed the TSR pipeline.**
+- Follow-up 5 — dug into **RBIH ULI's Land Records Service** (docs.rbihub.in, via the now-live
+  Firecrawl tools; Rishabh linked the required-documents page). **LRS covers Gujarat** (12
+  states) with exactly the right API shape: POST state/district/village/identifier → poll →
+  normalised owners, parcel (ULPIN/khasra), area, crop, and `risk_legal` (is_mortgaged +
+  mortgage_details), 2–8s typical. **Two blockers:** (1) it is lender-only infrastructure —
+  "Lender service integration", lender-onboarding@rbihub.in, MSA to go live, sample client id
+  `lender-bank-001`; no path shown for non-lender data consumers, and the security package
+  (CERT-IN-empanelled VAPT <6mo with all criticals closed + anti-malware evidence + network
+  architecture diagram, per the page Rishabh linked) is the *post-eligibility* step, not the
+  gate. (2) Even with access, LRS returns **current-state summary, not the VF6 mutation
+  chain** — it could not build a TSR's 30-year chain; at best a cross-check for current
+  owner + subsisting mortgages (directly relevant to the single-`lender`-field
+  false-positive bug). **Key signal though: Gujarat revenue's backend demonstrably has a
+  live machine rail** — the thing API Setu lacks — it's just only exposed to RBI-regulated
+  lenders today. Doesn't change the recommendation (Landeed buy path); worth watching for
+  the same rail surfacing via API Setu/Entity Locker.
 
 **2026-08-21 — Miyani (Porbandar) 1300 paiki batch: 1 of 3 delivered, IP burned on #2:**
 - Task from a WhatsApp note: Porbandar / Porbandar / Miyani (`મીયાણી - 015`), surveys
