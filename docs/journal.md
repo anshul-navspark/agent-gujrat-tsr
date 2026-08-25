@@ -30,6 +30,16 @@
   services; the one paid-service category that works here is an Indian *residential* proxy,
   which we already run. Real levers remain: proxy hardening, pacing, flipping
   `ANYROR_SELENIUM_FALLBACK` default to `false`, the Cloud Run asia-south1 http_fetch probe.
+- Follow-up: **"Kitesurf + our residential proxy" also ruled out.** (1) No plumbing —
+  Browser Run has no documented custom-egress/upstream-proxy support and community reports
+  say `proxyServer` fails in Workers (`ERR_PROXY_CONNECTION_FAILED`); (2) even with plumbing,
+  the IP is only half the block — Selenium drew an Attack ID from a *fresh working* IP
+  (2026-07-31), and Kitesurf's docs say it cannot negotiate bot-challenge handshakes with
+  real TLS fingerprints nor hold persistent-state sessions (the ASP.NET cookie+VIEWSTATE walk
+  is exactly that); (3) experimenting would risk burning the single sticky residential exit,
+  the one asset that works, and ship its credentials to a third party. The sound version of
+  the idea is *our http_fetch + `ANYROR_PROXY` hosted anywhere durable* (Cloud Run probe /
+  cheap VPS) — the proxy makes the host IP irrelevant; no browser needed.
 
 **2026-08-21 — Miyani (Porbandar) 1300 paiki batch: 1 of 3 delivered, IP burned on #2:**
 - Task from a WhatsApp note: Porbandar / Porbandar / Miyani (`મીયાણી - 015`), surveys
