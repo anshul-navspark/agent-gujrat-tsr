@@ -51,6 +51,34 @@
   Document Fetch API — our differentiation is TSR extraction + lawyer conventions, not the
   fetch, so buying the AnyRoR PDF from an aggregator and keeping our generation pipeline is
   a rational fallback if WAF cat-and-mouse keeps burning time.
+- Follow-up 3 — **Firecrawl MCP added to project config and tested** (`claude mcp add`; tools
+  load next session). Unauthenticated tier works (Search/Scrape/Parse, usage-limited; test
+  scrape OK) but **cannot reach AnyRoR**: basic proxy → "all scraping engines failed";
+  stealth + `location:{country:"IN"}` → `ERR_TUNNEL_CONNECTION_FAILED` twice (plus one 3-min
+  hang). Joins Kitesurf in the ruled-out column for AnyRoR; useful for research scraping only.
+- Follow-up 4 — two-agent research on **buying the data instead of scraping** (API Setu vs
+  private vendors), per Rishabh:
+  - **API Setu CANNOT replace AnyRoR for third-party title search.** All 149 Gujarat
+    publishers enumerated: the only land-records API is the Settlement Commissioner's urban
+    "Property Certificate" (city-survey card, `prcer`) — no VF7/12 / rural RoR publisher
+    exists (0 hits for anyror/satbara/bhulekh). State land-record APIs there are DigiLocker
+    *consent-based verification* endpoints (consent artifact needs the HOLDER's id/mobile/
+    email; Requester ToU demands informed owner consent) plus a mandatory publisher
+    authorisation letter — structurally unusable for due diligence on land we don't own.
+    Registration is free though; worth an account for (a) the urban `prcer` complement in
+    owner-cooperating deals, (b) monitoring: **J&K publishes a true parcel-lookup API via
+    UMANG** (village+khasra → jamabandi, API-key only) — the channel exists; watch the
+    directory (`directory.apisetu.gov.in` backend `/api/list` is queryable) for a Gujarat
+    equivalent.
+  - **Private vendors: Landeed is the standout** — only vendor verified to procure Gujarat
+    7/12, 8A, **and 6A Ferfar + Old Ferfar (full mutation entries)**; YC-backed; API is
+    sales-gated (customers@landeed.com) but the consumer app is a zero-commitment way to
+    validate document quality against banked ground truth (e.g. Bodkee 44) first.
+    Surepass has a Gujarat-specific endpoint (easy sandbox) but likely owner-fields-only;
+    Meon returns an owner-verification stub; Terrastack sells bi-annual RoR snapshots
+    (no mutation text, ~6-months stale) — complementary siting/screening at best.
+  - **Recommendation put to Anshul: private vendor (Landeed) is the realistic buy path;
+    API Setu account is free and worth having but does not feed the TSR pipeline.**
 
 **2026-08-21 — Miyani (Porbandar) 1300 paiki batch: 1 of 3 delivered, IP burned on #2:**
 - Task from a WhatsApp note: Porbandar / Porbandar / Miyani (`મીયાણી - 015`), surveys
