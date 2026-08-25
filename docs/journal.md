@@ -16,6 +16,21 @@
 <!-- Claude: append milestone bullets here during the session. The next session
      formalizes them into a dated entry below and clears this section. -->
 
+**2026-08-25 — Evaluated Cloudflare Kitesurf (and managed browser services) for scraping: NO:**
+- Question from Rishabh: would Kitesurf (Cloudflare's agent-first browser on Workers,
+  launched 2026-08-06) or similar improve the scraping process. **Verdict: no — it solves
+  the opposite problem.** Our bottleneck is egress-IP reputation + captcha + the ASP.NET
+  postback walk; the primary path is already browser-free, and the only remaining browser
+  step (HTML→PDF) is local and never touches AnyRoR.
+- Three disqualifiers: (1) Kitesurf egresses from Cloudflare datacenter IPs — the exact
+  class this WAF already blocks (WARP `104.28.x` tested blocked 2026-07-22; GCP + free DC
+  proxies likewise); (2) browser-shaped clients are the WAF *trigger* (2026-07-31 Selenium
+  test); (3) Cloudflare's own docs list bot challenges / TLS-fingerprinting scenarios and
+  long-duration sessions as unsupported. Same logic rules out Browserbase/Firecrawl-class
+  services; the one paid-service category that works here is an Indian *residential* proxy,
+  which we already run. Real levers remain: proxy hardening, pacing, flipping
+  `ANYROR_SELENIUM_FALLBACK` default to `false`, the Cloud Run asia-south1 http_fetch probe.
+
 **2026-08-21 — Miyani (Porbandar) 1300 paiki batch: 1 of 3 delivered, IP burned on #2:**
 - Task from a WhatsApp note: Porbandar / Porbandar / Miyani (`મીયાણી - 015`), surveys
   `1300/P1/P1`, `1300/P2`, `1300/P1/P2` — three NESTED-paiki surveys.
