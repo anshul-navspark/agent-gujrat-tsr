@@ -105,6 +105,25 @@
   authorisation-letter requests early — that's the slow gate at the subscription step.
   Reminder recorded: Maharashtra `ror1b` needs the owner-obtained BarcodeNo; no Gujarat
   rural RoR exists on API Setu, so this account does not feed the Gujarat TSR pipeline.
+- Follow-up 7 — **ULI onboarding route for us EXISTS: the DSP (Data Service Provider) role.**
+  Rishabh wants to register (we're empanelled with banks; our DD reports go to RE IPPs'
+  lenders). Corrected earlier "lender-only" finding: docs.rbihub.in home + onboarding pages
+  show ULI onboards **lenders AND DSPs** ("offer data on-demand on potential borrowers to
+  lenders"). Route: (1) **Fintech Repository registration** (free, voluntary, 5–7 day human
+  review; needs MCA-exact legal name + CIN/LLPIN, working website consistent with the
+  declared category, official-domain email — personal gmail is an explicit rejection
+  ground). FR category should be **fintech/techfin company**, NOT "ecosystem enabler"
+  (that's incubators/consultants; category mismatch = ineligibility ground #6). FR alone
+  grants no DPI access. (2) **ULI DSP application** (separate, ~1–2 week review, then
+  production keys). DSP KYC framework: 1-yr vintage, **3+ RE relationships + top-5 list +
+  recommendation letters from 2 REs** (our empanelments are exactly this), lending-relevance
+  of data services, DPDP consent journeys, litigation disclosure; documents incl. CoI/PAN/
+  GST, **ISO 27001 cert, VAPT <6mo, BCP <12mo, DR drill report, data privacy policy,
+  CISO/IT-head certificate** — the security/compliance stack is the real gap for a firm our
+  size. Note: DSP = *supplying* our reports through ULI (distribution to every lender on the
+  platform); consuming LRS is not automatic — raise it with the RBIH platform team during
+  onboarding. Entity choice matters (one FR account per legal entity; name/website/email
+  domain consistency is checked): register whichever entity actually issues the DD reports.
 
 **2026-08-21 — Miyani (Porbandar) 1300 paiki batch: 1 of 3 delivered, IP burned on #2:**
 - Task from a WhatsApp note: Porbandar / Porbandar / Miyani (`મીયાણી - 015`), surveys
