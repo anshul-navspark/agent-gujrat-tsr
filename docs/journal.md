@@ -95,6 +95,16 @@
   live machine rail** — the thing API Setu lacks — it's just only exposed to RBI-regulated
   lenders today. Doesn't change the recommendation (Landeed buy path); worth watching for
   the same rail surfacing via API Setu/Entity Locker.
+- Follow-up 6 — **API Setu consumer registration STARTED** (same day, under Navspark
+  Renewable Development Pvt Ltd, Rajasthan/Maharashtra solar + PM-KUSUM use case — not the
+  Gujarat TSR entity/pipeline). Reviewed the use-case text: rescoped the consent clause to
+  explicitly cover the RoR fetches with the landowner framed as a willing counterparty to
+  the lease/sale (pre-empts the third-party-due-diligence objection), added volume/retention/
+  purpose-limitation commitments per the DigiLocker Requester ToU. Advised supporting docs
+  (CoI + company PAN + signed letterhead cover letter) and starting the per-publisher
+  authorisation-letter requests early — that's the slow gate at the subscription step.
+  Reminder recorded: Maharashtra `ror1b` needs the owner-obtained BarcodeNo; no Gujarat
+  rural RoR exists on API Setu, so this account does not feed the Gujarat TSR pipeline.
 
 **2026-08-21 — Miyani (Porbandar) 1300 paiki batch: 1 of 3 delivered, IP burned on #2:**
 - Task from a WhatsApp note: Porbandar / Porbandar / Miyani (`મીયાણી - 015`), surveys
