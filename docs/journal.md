@@ -40,6 +40,17 @@
   the one asset that works, and ship its credentials to a third party. The sound version of
   the idea is *our http_fetch + `ANYROR_PROXY` hosted anywhere durable* (Cloud Run probe /
   cheap VPS) — the proxy makes the host IP irrelevant; no browser needed.
+- Follow-up 2 — analysed how Landeed-type competitors likely operate (no internals public;
+  inference from constraints). Their "2-second" results imply a **pre-crawled record
+  database**, not live scraping per query; per-portal protocol drivers (their http_fetch
+  equivalents); Indian residential/mobile egress pools; cheap captcha OCR; **official B2B
+  channels where states offer them**; human runners for offline docs. Three leads worth
+  Anshul's consideration: (1) **pre-crawl/warm the cache** for known working villages during
+  idle time instead of on-demand bursts; (2) investigate whether Gujarat offers any
+  sanctioned B2B/bulk channel for RoR data; (3) **make-vs-buy hedge**: Landeed sells a
+  Document Fetch API — our differentiation is TSR extraction + lawyer conventions, not the
+  fetch, so buying the AnyRoR PDF from an aggregator and keeping our generation pipeline is
+  a rational fallback if WAF cat-and-mouse keeps burning time.
 
 **2026-08-21 — Miyani (Porbandar) 1300 paiki batch: 1 of 3 delivered, IP burned on #2:**
 - Task from a WhatsApp note: Porbandar / Porbandar / Miyani (`મીયાણી - 015`), surveys
