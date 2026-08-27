@@ -26,72 +26,79 @@ from ..extractors.findings import generate_findings_table
 from ..document.tsr_document import create_tsr_document
 
 
-def generate_tsr_from_pdf_optimized(
-    pdf_path: str,
-    output_path: str,
-    logger: Optional[logging.Logger] = None,
-    log_tokens: bool = True,
-    request_metadata: Optional[Dict[str, str]] = None
-) -> Dict[str, Any]:
-    """
-    Generate a TSR document from a PDF land record using OPTIMIZED extraction.
+def _ensure_logger(logger: Optional[logging.Logger]) -> logging.Logger:
+    """Return the caller's logger, or a module logger that prints to stderr."""
+    if logger is not None:
+        return logger
+    logger = logging.getLogger(__name__)
+    logger.setLevel(logging.INFO)
+    if not logger.handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        logger.addHandler(handler)
+    return logger
 
-    This function reduces token usage by ~50-70% compared to the original
-    by consolidating 3 separate LLM calls into 1.
+
+def render_tsr_from_extraction(
+    extraction: Dict[str, Any],
+    output_path: str,
+    request_metadata: Optional[Dict[str, str]] = None,
+    logger: Optional[logging.Logger] = None,
+) -> Dict[str, Any]:
+    """Render a TSR .docx from an already-extracted land record.
+
+    This is the deterministic half of the pipeline — steps 3-5 of
+    :func:`generate_tsr_from_pdf_optimized`:
+
+      3. ``process_entry_details``   raw entry dicts -> typed entry objects
+      4. ``generate_findings_table`` encumbrance / rejected-entry analysis
+      5. ``create_tsr_document``     the .docx, including the findings
+         regeneration pass that rewires the live Word REF cross-references
+         from the entry -> chain-of-title-row map
+
+    No model call, no network. A caller that already HAS the extraction JSON
+    (a QM agent, a cache hit, a re-run of a reviewed extraction) renders the
+    firm's document through exactly the same code the CLI uses, so the drafting
+    logic cannot drift between the two paths.
 
     Args:
-        pdf_path: Path to the PDF file
-        output_path: Path to save the output DOCX file
-        logger: Logger object (optional)
-        log_tokens: Whether to log token usage statistics
+        extraction: the JSON produced by the unified extractor, i.e. the shape
+            ``build_unified_prompt`` asks the model for::
+
+                {"land_details": {...},
+                 "entry_numbers": ["3", "44", ...],
+                 "mutation_entries": [{"entry_number": ..., "date": ...,
+                                       "type": ..., "description": ...,
+                                       "entry_status": ...,
+                                       "certification_status": ...,
+                                       "certification_official": ...,
+                                       "certification_date": ...}, ...]}
+
+            ``land_details`` and ``mutation_entries`` are mutated in place when
+            ``request_metadata`` overrides them — the caller gets the merged
+            values back in ``result['land_details']``.
+        output_path: where to write the .docx. Parent directories are created.
+        request_metadata: optional overrides. ``survey_number`` / ``village`` /
+            ``taluka`` / ``district`` replace what the model read off the PDF;
+            ``client_name`` / ``client_cin`` / ``client_address`` / ``kind_attn``
+            / ``ref_prefix`` / ``reference_email_date`` / ``tsr_profile`` are
+            injected into ``land_details`` for the letterhead and layout.
+        logger: optional logger.
 
     Returns:
-        dict: Result dictionary with success/failure information and token stats
+        ``{'success': True, 'tsr_path', 'land_details', 'entries_count',
+        'entry_types'}`` or ``{'success': False, 'error'}``. Never raises for a
+        failure inside the render.
     """
-    # Set up logger if not provided
-    if logger is None:
-        logger = logging.getLogger(__name__)
-        logger.setLevel(logging.INFO)
-
-        if not logger.handlers:
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-            handler.setFormatter(formatter)
-            logger.addHandler(handler)
+    logger = _ensure_logger(logger)
 
     try:
-        # Extract text from PDF
-        logger.debug(f"Extracting text from PDF: {pdf_path}")
-        pdf_text = extract_text_from_pdf(pdf_path)
-
-        if pdf_text is None:
-            logger.error("Failed to extract text from PDF")
-            return {
-                'success': False,
-                'error': "Failed to extract text from PDF"
-            }
-
-        # Log token savings estimate
-        if log_tokens:
-            token_stats = estimate_token_savings(pdf_text)
-            logger.info(f"Token optimization: ~{token_stats['savings']['percentage']}% reduction "
-                       f"({token_stats['savings']['tokens_saved']} tokens saved, "
-                       f"{token_stats['savings']['api_calls_saved']} fewer API calls)")
-
-        # ============================================
-        # OPTIMIZED: Single unified extraction call
-        # ============================================
-        logger.debug("Running unified extraction (single LLM call)")
-        unified_result = extract_all_unified(pdf_text)
-
-        if not unified_result.success:
-            logger.warning(f"Unified extraction failed: {unified_result.error}")
-            # Fall back to individual calls if unified fails
-            return _fallback_generation(pdf_path, output_path, pdf_text, logger)
-
-        # Use results from unified extraction
-        land_details = unified_result.land_details
-        entry_table = sorted([int(n) for n in unified_result.entry_numbers if n.isdigit()])
+        land_details = extraction.get('land_details') or {}
+        mutation_entries = extraction.get('mutation_entries') or []
+        entry_table = sorted([int(n) for n in
+                              (str(x) for x in (extraction.get('entry_numbers') or []))
+                              if n.isdigit()])
 
         # Override land details with request metadata if provided
         old_survey = None
@@ -129,7 +136,7 @@ def generate_tsr_from_pdf_optimized(
         if old_survey and old_survey != land_details.get('survey_number'):
             import re as _re_survey
             new_survey = land_details['survey_number']
-            for me in unified_result.mutation_entries:
+            for me in mutation_entries:
                 if isinstance(me, dict) and me.get('description'):
                     me['description'] = _re_survey.sub(
                         r'Survey\s+No\.\s*' + _re_survey.escape(old_survey),
@@ -140,17 +147,17 @@ def generate_tsr_from_pdf_optimized(
         # Process mutation entries into structured objects
         from ..extractors.entry_details import process_entry_details
         entries = []
-        if unified_result.mutation_entries:
-            entries = process_entry_details(unified_result.mutation_entries)
+        if mutation_entries:
+            entries = process_entry_details(mutation_entries)
             # Filter empty entries
             entries = [e for e in entries if getattr(e, 'formatted_description', '').strip()]
 
-        logger.debug(f"Extracted: land_details, {len(entry_table)} entry numbers, {len(entries)} detailed entries")
+        logger.debug(f"Rendering: land_details, {len(entry_table)} entry numbers, {len(entries)} detailed entries")
 
         # Generate placeholder findings — will be regenerated with cross-references
         # inside create_tsr_document after chain of title table is built
         logger.debug("Generating findings with encumbrance analysis")
-        findings = generate_findings_table("", unified_result.mutation_entries, land_details)
+        findings = generate_findings_table("", mutation_entries, land_details)
 
         # Ensure output directory exists
         output_dir = os.path.dirname(output_path)
@@ -158,9 +165,13 @@ def generate_tsr_from_pdf_optimized(
             os.makedirs(output_dir)
             logger.debug(f"Created output directory: {output_dir}")
 
-        # Create DOCX report
+        # Create DOCX report. Passing mutation_entries is what triggers the
+        # findings regeneration pass inside create_tsr_document — it rebuilds
+        # the findings once the chain-of-title rows exist so the "Entry No. X"
+        # references become live Word REF fields. Drop it and the delivered
+        # report stops being navigable.
         logger.debug(f"Creating DOCX report: {output_path}")
-        output_file = create_tsr_document(entry_table, entries, land_details, findings, output_path, mutation_entries=unified_result.mutation_entries)
+        output_file = create_tsr_document(entry_table, entries, land_details, findings, output_path, mutation_entries=mutation_entries)
         logger.debug(f"Report generated successfully: {output_file}")
 
         # Build entry type statistics
@@ -169,14 +180,96 @@ def generate_tsr_from_pdf_optimized(
             entry_type = entry.type.value if hasattr(entry.type, 'value') else str(entry.type)
             entry_types[entry_type] = entry_types.get(entry_type, 0) + 1
 
-        result = {
+        return {
             'success': True,
             'tsr_path': output_file,
             'land_details': land_details,
             'entries_count': len(entries),
             'entry_types': entry_types,
-            'optimized': True
         }
+
+    except Exception as e:
+        logger.error(f"An error occurred while rendering the TSR: {str(e)}")
+        logger.error(traceback.format_exc())
+        return {
+            'success': False,
+            'error': str(e)
+        }
+
+
+def generate_tsr_from_pdf_optimized(
+    pdf_path: str,
+    output_path: str,
+    logger: Optional[logging.Logger] = None,
+    log_tokens: bool = True,
+    request_metadata: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """
+    Generate a TSR document from a PDF land record using OPTIMIZED extraction.
+
+    This function reduces token usage by ~50-70% compared to the original
+    by consolidating 3 separate LLM calls into 1.
+
+    Args:
+        pdf_path: Path to the PDF file
+        output_path: Path to save the output DOCX file
+        logger: Logger object (optional)
+        log_tokens: Whether to log token usage statistics
+
+    Returns:
+        dict: Result dictionary with success/failure information and token stats
+    """
+    logger = _ensure_logger(logger)
+
+    try:
+        # Extract text from PDF
+        logger.debug(f"Extracting text from PDF: {pdf_path}")
+        pdf_text = extract_text_from_pdf(pdf_path)
+
+        if pdf_text is None:
+            logger.error("Failed to extract text from PDF")
+            return {
+                'success': False,
+                'error': "Failed to extract text from PDF"
+            }
+
+        # Log token savings estimate
+        if log_tokens:
+            token_stats = estimate_token_savings(pdf_text)
+            logger.info(f"Token optimization: ~{token_stats['savings']['percentage']}% reduction "
+                       f"({token_stats['savings']['tokens_saved']} tokens saved, "
+                       f"{token_stats['savings']['api_calls_saved']} fewer API calls)")
+
+        # ============================================
+        # OPTIMIZED: Single unified extraction call
+        # ============================================
+        logger.debug("Running unified extraction (single LLM call)")
+        unified_result = extract_all_unified(pdf_text)
+
+        if not unified_result.success:
+            logger.warning(f"Unified extraction failed: {unified_result.error}")
+            # Fall back to individual calls if unified fails
+            return _fallback_generation(pdf_path, output_path, pdf_text, logger)
+
+        # ============================================
+        # Steps 3-5: deterministic render. ONE implementation, shared with
+        # gujtsr.render / any caller that already holds the extraction JSON.
+        # ============================================
+        render_result = render_tsr_from_extraction(
+            {
+                'land_details': unified_result.land_details,
+                'entry_numbers': unified_result.entry_numbers,
+                'mutation_entries': unified_result.mutation_entries,
+            },
+            output_path,
+            request_metadata=request_metadata,
+            logger=logger,
+        )
+        if not render_result.get('success'):
+            return render_result
+
+        result = dict(render_result)
+        result['optimized'] = True
 
         # Add token statistics if available
         if log_tokens:
