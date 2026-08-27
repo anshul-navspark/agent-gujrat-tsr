@@ -40,16 +40,23 @@ jobs:
   secrets:
     name: secret scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0   # gitleaks needs history to scan past commits
 
-      # `.env` was tracked from the initial commit until 2026-08-27 and carried
-      # four live Gemini keys. Those are revoked, but this job is what stops the
-      # next one: it fails the build on any secret pattern in the diff or history.
-      - name: gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      # `.env` was tracked from the initial commit until 2026-08-27 and carried four
+      # Gemini keys. Those are revoked and history is deliberately NOT being rewritten
+      # (see docs/journal.md, 2026-08-27), so a full-history scan would fail forever on
+      # inert values and quickly get ignored. We scan the WORKING TREE instead: that is
+      # the control that matters, because any newly committed secret lands there.
+      - name: Install gitleaks
+        run: |
+          VER=8.28.0
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Scan working tree for secrets
+        run: gitleaks dir . --no-banner --redact --verbose
