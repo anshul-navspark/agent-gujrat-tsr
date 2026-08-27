@@ -20,9 +20,6 @@ uvicorn api.server:app --host 0.0.0.0 --port 8080
 # Run Streamlit UI
 streamlit run app/streamlit_app_cloud.py
 
-# Run CLI (TSR generation from PDF)
-python -m tsr_generator path/to/input.pdf --output output.docx
-
 # Docker
 docker build -t agent-gujrat-tsr .
 docker run -e GEMINI_API_KEY=xxx -p 8080:8080 agent-gujrat-tsr
@@ -47,13 +44,11 @@ PDF → `extract_text_from_pdf()` → `extract_all_unified()` (1 LLM call — Cl
 **Scraping Pipeline:**
 Request → TranslationService (English→Gujarati, deterministic-first) → AnyRoR fetch → PDF → Cache (GCS or local)
 
-`AnyRoRScraper.fetch_land_record()` has two paths. **Primary (default): browser-free HTTP fetch** (`anyror/http_fetch.py`) — AnyRoR's WAF resets the Selenium/Chrome browser but lets plain `requests` through, so it walks the ASP.NET cascading postbacks with `requests`, solves the inline base64 captcha with the Gemini `CaptchaSolver`, and renders the record HTML to PDF with a **local** headless Chrome (loading a local file only — never navigating to AnyRoR). **Fallback: the original Selenium scraper.** Toggle the primary off with `ANYROR_HTTP_FETCH=false` (then it's Selenium-only). Gotcha baked into the code: the captcha input field is `txt_captcha_1` (underscore before the `1`), NOT the stale `CONFIG['CAPTCHA_INPUT_ID']` value `txt_captcha1` — posting to the wrong name silently yields "Capcha is not matched". PDF rendering needs a Chrome binary (`CHROME_BIN`, else auto-detected).
+`AnyRoRScraper.fetch_land_record()` has exactly one path: the **browser-free HTTP fetch** (`anyror/http_fetch.py`). It walks AnyRoR's ASP.NET cascading postbacks with `requests`, solves the inline base64 captcha with the Gemini `CaptchaSolver`, and renders the record HTML to PDF with a **local** headless Chrome (loading a local file only — never navigating to AnyRoR). On failure it returns `{'success': False, 'error': ...}` and stops. **There is deliberately no Selenium fallback** — browser-shaped clients are the WAF *trigger*, and driving the portal with Chrome drew an Attack ID that burned the source IP (journal 2026-07-31), so the whole Selenium stack (`form_filler.py`, `webdriver_manager.py`, the `ANYROR_SELENIUM_FALLBACK` toggle) was deleted. Gotcha baked into the code: the captcha input field is `txt_captcha_1` (underscore before the `1`), NOT the stale `CONFIG['CAPTCHA_INPUT_ID']` value `txt_captcha1` — posting to the wrong name silently yields "Capcha is not matched". PDF rendering needs a Chrome binary (`CHROME_BIN`, else auto-detected).
 
 ### Extraction Modes & Backends
 
-Mode is controlled by `USE_OPTIMIZED_EXTRACTION` (default: `true`), switched in `tsr_generator/__init__.py`:
-- **Optimized** (1 LLM call): `tsr_generator/extractors/unified_extractor.py` — 60-70% token savings
-- **Original** (3 LLM calls): `tsr_generator/api/tsr_generator.py` — Gemini-only
+Extraction always runs the unified single-call path (`tsr_generator/extractors/unified_extractor.py`, 60-70% token savings), wired unconditionally in `tsr_generator/__init__.py`. The old 3-call Gemini pipeline (`tsr_generator/api/tsr_generator.py`) is no longer selectable and survives only because `mcp_server/tools/generate_tsr.py` still imports it; `USE_OPTIMIZED_EXTRACTION` is now inert.
 
 The optimized path additionally has a backend switch, `EXTRACTION_BACKEND` (default: `claude`):
 - **claude** — shells out to `claude -p` using the local Claude Code subscription login (no API key). Requires an authenticated `claude` CLI on PATH, so it only works locally — Docker/Streamlit Cloud deploys must set `EXTRACTION_BACKEND=gemini`. The invocation (`_invoke_claude_cli`) passes `--strict-mcp-config` plus a `--settings` override (no plugins, no auto-memory, effort from `CLAUDE_EXTRACTION_EFFORT`); the **no-plugins** flag is what prevents the >300s headless hang — keep it if you touch this. Effort defaults to `high` (was a hardcoded `low`); high effort with plugins-off is safe and, on Opus, was faster *and* more accurate than Sonnet in the 2026-06-11 eval. Timeout auto-bumps to 900s for high/xhigh effort.
@@ -73,21 +68,25 @@ The **local** cache defaults to ~never-expire (`LOCAL_CACHE_TTL_DAYS`, default 3
 
 ## Key Environment Variables
 
-- `GEMINI_API_KEY` — required at startup (`core/config.py` validation); used for CAPTCHA solving, translation, and extraction when `EXTRACTION_BACKEND=gemini`
+- `GEMINI_API_KEY` — **optional.** Only needed for `EXTRACTION_BACKEND=gemini` and the opt-in
+  `TRANSLATION_USE_LLM` path. Captcha no longer uses it, and the deterministic translation layer
+  needs no model, so the app boots and scrapes without it (verified: full suite green with no key)
 - `EXTRACTION_BACKEND` — `claude` (default) or `gemini`; see Extraction Modes & Backends
 - `CLAUDE_EXTRACTION_MODEL` — model alias passed to the `claude` CLI, default: `opus` (Opus 4.8; was `sonnet`)
 - `CLAUDE_EXTRACTION_EFFORT` — effort level for the `claude` CLI extraction, default: `high` (was hardcoded `low`); `high`/`xhigh` auto-raise the subprocess timeout to `CLAUDE_EXTRACTION_TIMEOUT` (default 900s)
 - `GEMINI_MODEL_NAME` — Gemini extraction model (only used when `EXTRACTION_BACKEND=gemini`), default: `gemini-3.1-pro-preview`
 - `GEMINI_THINKING_LEVEL` — thinking level for Gemini extraction, default: `low`
-- `CAPTCHA_MODEL_NAME` — captcha solver model, default: `gemini-3-flash-preview`
+- `CAPTCHA_MODEL` / `CAPTCHA_EFFORT` / `CAPTCHA_TIMEOUT` — captcha solver via the local `claude`
+  CLI, defaults `claude-opus-5` / `high` / `120`. Opus at high effort scored 15/15 on a live
+  bake-off vs 12/15 for Sonnet; a miss costs a whole AnyRoR session, so accuracy is worth the
+  ~10s. No fallback chain by design — see `anyror/captcha_solver.py`
 - `GEMINI_TRANSLATION_MODEL` — translation lookup model, default: `gemini-3.1-flash-lite-preview`
 - `TRANSLATION_USE_LLM` — enable the LLM fallback for village matching, default: `false` (deterministic exact + scoped matching only)
-- `USE_OPTIMIZED_EXTRACTION` — default: `true`
+- `USE_OPTIMIZED_EXTRACTION` — **inert**, kept only so existing deploy configs do not break
 - `GCS_CACHE_BUCKET` — optional, enables GCS caching
 - `LOCAL_CACHE_TTL_DAYS` — local cache TTL in days when no GCS bucket; default `36500` (≈never expire)
 - `HEADLESS` — browser headless mode for scraping
 - `MAX_WORKERS` — parallel processing thread count
-- `ANYROR_HTTP_FETCH` — `true` (default): use the browser-free HTTP fetch as the primary scrape path, Selenium as fallback; `false`: Selenium only. See Scraping Pipeline
 - `CHROME_BIN` — Chrome/Chromium binary used by the HTTP-fetch path to render the record HTML to PDF; auto-detected (system Chrome / Playwright chromium) if unset
 
 ## Domain Concepts

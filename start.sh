@@ -15,7 +15,6 @@ sys.dont_write_bytecode = True
 try:
     import langchain_google_genai
     import langchain_core
-    import selenium
     import pypdf
     print('Pre-warming complete')
 except Exception as e:

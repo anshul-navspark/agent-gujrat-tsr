@@ -61,3 +61,30 @@ deprecated
 .worktrees
 .gstack/
 .env.local
+
+# machine-local Claude Code permissions (absolute paths)
+.claude/settings.local.json
+
+# env variants, but keep the template
+.env.*
+!.env.example
+
+# Scratch / working directories (local experiment output, never shipped)
+gujrat-new/
+Z1/
+tsr_record/
+output_test/
+scraped_pdfs/
+test_folder/
+Final TSR Sample/
+Final AI TSR Sample/
+Final handwritten Sample/
+
+# Tooling workspaces
+.conductor/
+adk_agent/
+
+# Untracked-but-kept local working files
+changes.MD
+processing_output.json
+.test-commit

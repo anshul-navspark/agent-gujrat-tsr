@@ -13,10 +13,6 @@ jobs:
   test:
     name: pytest
     runs-on: ubuntu-latest
-    env:
-      # The suite is fully mocked (no real network/LLM calls), but core/config.py
-      # requires GEMINI_API_KEY to be present. A dummy value satisfies that check.
-      GEMINI_API_KEY: ci-dummy-key-not-real
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,3 +32,27 @@ jobs:
         # Integration tests need external services (AnyRoR, real LLMs) and are
         # excluded here; everything else runs on every push/PR.
         run: pytest -m "not integration" -q
+
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # `.env` was tracked from the initial commit until 2026-08-27 and carried four
+      # Gemini keys. Those are revoked and history is deliberately NOT being rewritten
+      # (see docs/journal.md, 2026-08-27), so a full-history scan would fail forever on
+      # inert values and quickly get ignored. We scan the WORKING TREE instead: that is
+      # the control that matters, because any newly committed secret lands there.
+      - name: Install gitleaks
+        run: |
+          VER=8.28.0
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${VER}/gitleaks_${VER}_linux_x64.tar.gz" \
+            | tar -xz -C /usr/local/bin gitleaks
+          gitleaks version
+
+      - name: Scan working tree for secrets
+        run: gitleaks dir . --no-banner --redact --verbose

@@ -17,7 +17,6 @@ from typing import Dict, Any, Optional, List
 import pandas as pd
 
 from anyror import AnyRoRScraper
-from selenium.common.exceptions import InvalidSessionIdException, TimeoutException, WebDriverException
 from tsr_generator import generate_tsr_from_pdf
 from services.translation_service import get_translation_service
 from core.exceptions import TranslationException
@@ -80,44 +79,32 @@ class LandRecordProcessor:
             def _new_scraper() -> AnyRoRScraper:
                 return AnyRoRScraper(headless=self.headless, logger=self.logger)
 
-            # Fetch PDF with at most one retry on InvalidSessionIdException
+            # Fetch PDF. The old retry-once loop existed solely to recreate a
+            # dead Selenium session; with the browser-free fetch there is no
+            # session to lose, so a single attempt is all there ever was.
             if regenerate_pdf or not os.path.exists(paths["pdf"]):
-                attempts = 0
-                while attempts < 2:
-                    try:
-                        if scraper is None:
-                            scraper = _new_scraper()
-                        self.logger.debug(
-                            f"Fetching land record for {district_guj}, {taluka_guj}, {village_guj}, {survey_number_guj}"
-                        )
-                        result = scraper.fetch_land_record(
-                            district_name=district_guj,
-                            taluka_name=taluka_guj,
-                            village_name=village_guj,
-                            survey_block_number=survey_number_guj,
-                            output_path=paths["pdf"],
-                        )
-                        if not result.get("success"):
-                            return ProcessResult(success=False, error=result.get("error") or "Unknown scrape error")
-                        break
-                    except (InvalidSessionIdException, TimeoutException, WebDriverException) as e:
-                        # Recreate session once on WebDriver issues
-                        self.logger.warning(f"WebDriver issue ({type(e).__name__}); recreating browser and retrying once: {e}")
-                        if scraper:
-                            try:
-                                scraper.cleanup()
-                            except Exception:
-                                pass
-                        scraper = None
-                        attempts += 1
-                    except Exception as exc:
-                        # Clean up scraper on any other exception
-                        if scraper:
-                            try:
-                                scraper.cleanup()
-                            except Exception:
-                                pass
-                        raise exc
+                try:
+                    if scraper is None:
+                        scraper = _new_scraper()
+                    self.logger.debug(
+                        f"Fetching land record for {district_guj}, {taluka_guj}, {village_guj}, {survey_number_guj}"
+                    )
+                    result = scraper.fetch_land_record(
+                        district_name=district_guj,
+                        taluka_name=taluka_guj,
+                        village_name=village_guj,
+                        survey_block_number=survey_number_guj,
+                        output_path=paths["pdf"],
+                    )
+                    if not result.get("success"):
+                        return ProcessResult(success=False, error=result.get("error") or "Unknown scrape error")
+                except Exception as exc:
+                    if scraper:
+                        try:
+                            scraper.cleanup()
+                        except Exception:
+                            pass
+                    raise exc
 
             # Generate TSR
             tsr_path = None
@@ -133,10 +120,9 @@ class LandRecordProcessor:
             self.logger.debug(traceback.format_exc())
             return ProcessResult(success=False, error=str(exc))
         finally:
-            # Ensure browser is closed after each fetch to avoid stale sessions
             try:
-                if scraper and getattr(scraper, "driver", None):
-                    scraper.driver.quit()
+                if scraper:
+                    scraper.cleanup()
             except Exception:
                 pass
 
