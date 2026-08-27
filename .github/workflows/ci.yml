@@ -36,3 +36,20 @@ jobs:
         # Integration tests need external services (AnyRoR, real LLMs) and are
         # excluded here; everything else runs on every push/PR.
         run: pytest -m "not integration" -q
+
+  secrets:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # gitleaks needs history to scan past commits
+
+      # `.env` was tracked from the initial commit until 2026-08-27 and carried
+      # four live Gemini keys. Those are revoked, but this job is what stops the
+      # next one: it fails the build on any secret pattern in the diff or history.
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

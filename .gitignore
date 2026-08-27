@@ -61,3 +61,10 @@ deprecated
 .worktrees
 .gstack/
 .env.local
+
+# machine-local Claude Code permissions (absolute paths)
+.claude/settings.local.json
+
+# env variants, but keep the template
+.env.*
+!.env.example
