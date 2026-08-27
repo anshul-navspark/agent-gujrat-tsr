@@ -14,8 +14,15 @@ jobs:
     name: pytest
     runs-on: ubuntu-latest
     env:
-      # The suite is fully mocked (no real network/LLM calls), but core/config.py
-      # requires GEMINI_API_KEY to be present. A dummy value satisfies that check.
+      # The suite is fully mocked (no real network/LLM calls). core/config.py no
+      # longer requires this key (2026-08-27: it was a hard startup dependency on
+      # a key nobody has), but a dummy value is still needed: JSONTranslationSystem
+      # (utils/json_translations.py) builds a ChatGoogleGenerativeAI eagerly in its
+      # __init__, and pydantic rejects an empty api_key -- so TranslationService
+      # cannot even be constructed without one. That breaks 8 tests + 2 errors in
+      # test_services / test_api / test_http_fetch / test_spelling_equivalence,
+      # none of which actually call an LLM. Drop this block once that client is
+      # made lazy.
       GEMINI_API_KEY: ci-dummy-key-not-real
     steps:
       - name: Checkout
