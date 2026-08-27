@@ -60,7 +60,7 @@ class ParallelProcessingService:
         self,
         output_base_dir: str = "output",
         headless: bool = True,
-        max_pdf_workers: int = 2,  # Limited by Selenium stability
+        max_pdf_workers: int = 2,  # Limited by AnyRoR rate-limiting
         max_tsr_workers: int = 4,  # Can be higher since it's CPU/AI bound
         pdf_queue_size: int = 10,
         tsr_queue_size: int = 20,

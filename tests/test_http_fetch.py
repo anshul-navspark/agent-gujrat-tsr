@@ -1,10 +1,11 @@
 """Tests for the browser-free AnyRoR fetch (anyror/http_fetch.py).
 
 AnyRoR's WAF resets Selenium/Chrome but allows plain HTTP, so http_fetch walks
-the ASP.NET form with `requests`. These tests cover the pure parsing/matching
-logic against static HTML fixtures (no network) and guard the exact captcha
-field-name bug (`txt_captcha_1`, with underscore) that silently rejected every
-submit.
+the ASP.NET form with `requests`. It is now the ONLY fetch path — the Selenium
+scraper was removed because driving the portal with a browser is what drew the
+WAF Attack ID. These tests cover the pure parsing/matching logic against static
+HTML fixtures (no network) and guard the exact captcha field-name bug
+(`txt_captcha_1`, with underscore) that silently rejected every submit.
 """
 
 import inspect
@@ -98,21 +99,20 @@ class TestCaptchaFieldRegression:
 
 
 class TestScraperWiring:
-    """AnyRoRScraper.fetch_land_record uses http_fetch as PRIMARY and only
-    falls back to Selenium when it fails."""
+    """AnyRoRScraper.fetch_land_record delegates to http_fetch and nothing else.
+    There is no browser fallback: driving AnyRoR with Selenium is what drew the
+    WAF Attack ID that burned the source IP (journal 2026-07-31)."""
 
     def _bare_scraper(self):
         import logging
         from anyror.scraper import AnyRoRScraper
         s = AnyRoRScraper.__new__(AnyRoRScraper)  # skip __init__ (no Gemini key)
         s.logger = logging.getLogger("test")
-        s.driver = None
-        s.form_filler = None
         s.captcha_solver = None
         s.headless = True
         return s
 
-    def test_http_primary_short_circuits_selenium(self, monkeypatch, tmp_path):
+    def test_http_fetch_success_is_returned(self, monkeypatch, tmp_path):
         class FakeFetcher:
             def __init__(self, logger=None):
                 pass
@@ -120,15 +120,13 @@ class TestScraperWiring:
                 return {"success": True, "output_path": out, "message": "ok"}
         monkeypatch.setattr("anyror.http_fetch.AnyRoRHttpFetcher", FakeFetcher)
         s = self._bare_scraper()
-        # web_driver_manager left unset: if Selenium were touched it would raise
         out = str(tmp_path / "x.pdf")
         res = s.fetch_land_record("ભાવનગર", "તળાજા", "બેલડા", "24/p1", out)
         assert res["success"] is True
         assert res["output_path"] == out
-        assert s.driver is None  # Selenium never initialized
 
-    def test_falls_back_to_selenium_when_http_fails(self, monkeypatch, tmp_path):
-        from unittest.mock import MagicMock
+    def test_fails_loudly_when_http_fails(self, monkeypatch, tmp_path):
+        """No silent browser retry — the http_fetch error is surfaced as-is."""
         class FailFetcher:
             def __init__(self, logger=None):
                 pass
@@ -136,33 +134,48 @@ class TestScraperWiring:
                 return {"success": False, "error": "boom"}
         monkeypatch.setattr("anyror.http_fetch.AnyRoRHttpFetcher", FailFetcher)
         s = self._bare_scraper()
-        # make the Selenium path enter and then bail in a controlled way
-        s.web_driver_manager = MagicMock()
-        s.web_driver_manager.initialize_webdriver.side_effect = RuntimeError("stop-here")
         res = s.fetch_land_record("ભાવનગર", "તળાજા", "બેલડા", "24/p1",
                                   str(tmp_path / "x.pdf"))
-        # http failed -> Selenium path entered (initialize_webdriver called) -> its
-        # error is surfaced as the failure
         assert res["success"] is False
-        s.web_driver_manager.initialize_webdriver.assert_called_once()
+        assert "boom" in res["error"]
 
-    def test_env_flag_disables_http_primary(self, monkeypatch, tmp_path):
-        from unittest.mock import MagicMock
-        called = {"http": False}
-        class SpyFetcher:
+    def test_raising_fetcher_returns_error_dict(self, monkeypatch, tmp_path):
+        """fetch_land_record never raises; a fetcher blow-up becomes a dict."""
+        class BoomFetcher:
             def __init__(self, logger=None):
-                pass
-            def fetch_record_pdf(self, *a):
-                called["http"] = True
-                return {"success": True, "output_path": a[-1]}
-        monkeypatch.setattr("anyror.http_fetch.AnyRoRHttpFetcher", SpyFetcher)
-        monkeypatch.setenv("ANYROR_HTTP_FETCH", "false")
+                raise RuntimeError("kaboom")
+        monkeypatch.setattr("anyror.http_fetch.AnyRoRHttpFetcher", BoomFetcher)
         s = self._bare_scraper()
-        s.web_driver_manager = MagicMock()
-        s.web_driver_manager.initialize_webdriver.side_effect = RuntimeError("stop-here")
-        s.fetch_land_record("ભાવનગર", "તળાજા", "બેલડા", "24/p1",
-                            str(tmp_path / "x.pdf"))
-        assert called["http"] is False  # primary skipped, went straight to Selenium
+        res = s.fetch_land_record("ભાવનગર", "તળાજા", "બેલડા", "24/p1",
+                                  str(tmp_path / "x.pdf"))
+        assert res["success"] is False
+        assert "kaboom" in res["error"]
+
+    def test_scraper_imports_no_browser_driver(self):
+        """Regression guard: the scraper must stay browser-free on AnyRoR.
+
+        Checks imports via the AST rather than raw text, so the module
+        docstring may keep explaining why Selenium was removed.
+        """
+        import ast
+        import anyror.scraper as scraper_mod
+        tree = ast.parse(inspect.getsource(scraper_mod))
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(a.name for a in node.names)
+            elif isinstance(node, ast.ImportFrom):
+                imported.add(node.module or "")
+                imported.update(a.name for a in node.names)
+        for banned in ("selenium", "webdriver_manager", "WebDriverManager",
+                       "form_filler", "FormFiller"):
+            assert not any(banned in name for name in imported), (
+                f"{banned} is imported again by anyror/scraper.py")
+
+    def test_selenium_fallback_env_var_is_gone(self):
+        """ANYROR_SELENIUM_FALLBACK was retired; nothing may read it."""
+        import anyror.scraper as scraper_mod
+        assert "ANYROR_SELENIUM_FALLBACK" not in inspect.getsource(scraper_mod)
 
 
 class TestFetchRecordPdfContract:

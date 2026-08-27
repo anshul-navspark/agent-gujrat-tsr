@@ -53,7 +53,6 @@ gujrat_tsr_agent/
 │
 ├── anyror/                    # AnyRoR scraping module
 │   ├── captcha_solver.py      # AI CAPTCHA solving
-│   ├── webdriver_manager.py   # Selenium WebDriver management
 │   └── scraper.py             # Main scraping logic
 │
 ├── tsr_generator/             # TSR document generation
