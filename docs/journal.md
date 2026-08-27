@@ -16,6 +16,84 @@
 <!-- Claude: append milestone bullets here during the session. The next session
      formalizes them into a dated entry below and clears this section. -->
 
+**2026-08-27 — Repo cleanup + captcha model bake-off; QM skill plan agreed:**
+- **Context.** Rishabh wants Nav Law lawyers to run fetch + TSR from Slack via **QM
+  (Quartermaster)**, YC's open-source multiplayer agent harness (MIT, released 2026-07-31).
+  QM imports skill packs from a git repo URL+ref. Two constraints found by reading its
+  source: `src/skills/ingest.ts` `collectAssets()` materialises **only the directory
+  containing each SKILL.md** (the engine does NOT ride along — the skill must clone it),
+  and **any binary file under a skill dir silently drops the whole skill**
+  (`if (f.binary) return null`). Pack fetch caps are 5000 files / 32 MB.
+- **Every credit balance is zero** — GCP, Cloud Run, Gemini, and Anthropic API. This is now
+  the governing design constraint: the only free path to a model is a **Claude Code
+  subscription on the host**, invoked as `claude -p`. Target state needs **no API keys at
+  all** — just that subscription, the asocks proxy, and a GitHub read token.
+- **SECURITY, finally actioned (flagged 2026-08-21, open since the first commit).** `.env`
+  had been git-tracked since `572460a` (2025-02-18) despite `.gitignore:24` — gitignore does
+  not untrack an already-tracked file. Four distinct Gemini keys accumulated across three
+  rotations, each re-committed. Now: `git rm --cached .env`, a tracked `.env.example` with
+  names only, `.env.*` + `!.env.example` in `.gitignore`, and a **gitleaks job in CI over
+  full history**. Deliberately **not** rewriting history — keys are revoked and the repo is
+  private, so filter-repo would rewrite 106+ commits to remove inert values.
+  **Gotcha worth remembering:** `git rm --cached .env` records a file *deletion* in the
+  commit, so the next checkout/rebase **removes `.env` from disk**. Restore from
+  `.env.example`; it will not come with a clone.
+- **Branches: 9 -> 1.** Verified with `git cherry` rather than trusting the audit. Deleted 9
+  (3 had zero unique patches; the `cursor/*` and `st-cloud-run` ones were 106 behind and 6
+  months stale), each archived first as `archive/<branch>` and pushed. Closed **PR #6**
+  (superseded — cache clearing already on main) and **PR #7** (Google ADK / Vertex AI, i.e.
+  entirely GCP, which is at zero credits; also collided with the dead-code removal). Landed
+  the 7 docs-only research commits (API Setu / RBIH ULI / Firecrawl) onto main.
+- **Dead code: 8,229 lines deleted across 42 files**, 240 tests green (was 438; 200 of those
+  covered only the deleted code). Removed the orphaned two-pass extraction subsystem
+  (pass1/pass2/template_renderer/type_configs + `extract_all_structured`), the root scratch
+  scripts, `ai_batch_service`, and **the whole Selenium stack** — which also kills ISSUES.md
+  #1, the silent `select_by_index(1)` that returned the WRONG land record on a survey
+  partial-match miss. `ANYROR_SELENIUM_FALLBACK` and `ANYROR_HTTP_FETCH` both retired; the
+  HTTP path is unconditional.
+- **The audit was WRONG about `land_details.py`.** It is NOT dead: `_fallback_generation()`
+  is called at `tsr_generator_optimized.py:90` whenever unified extraction fails and imports
+  `extract_land_details` at :214. Deleting it would have planted a landmine that only fires
+  on the error path. Kept. Same for `_compute_survey_aliases` /
+  `_filter_description_to_subject_survey`, both live at `unified_extractor.py:404,412`.
+- **CAPTCHA BAKE-OFF — the headline result.** Gemini is unusable (no credits), so the solver
+  moves to `claude -p`. **`claude -p --allowedTools Read` reads a local PNG fine** (~8-10s),
+  so no session-persistence redesign is needed. Harvested **15 unique live captchas** from
+  the AnyRoR landing page through the proxy (the captcha IS on the landing page — one GET
+  each, no postbacks needed, far cheaper than a full fetch). Ground truth read by hand.
+
+  | variant | correct | accuracy |
+  |---|---|---|
+  | Sonnet 5, low effort, raw | 12/15 | 80.0% |
+  | Sonnet 5, low effort, preprocessed | 12/15 | 80.0% |
+  | Opus 5, low effort, raw | 14/15 | 93.3% |
+  | Opus 5, low effort, preprocessed | 14/15 | 93.3% |
+  | **Opus 5, HIGH effort, raw** | **15/15** | **100.0%** |
+
+  **Decision: Opus 5 at high effort, raw image, single attempt. No fallback chain.**
+  Rishabh's instinct that Sonnet is weak at vision held here too — its misses were all
+  adjacent-digit substitutions (8->9, 1->9/0, transposition 772->728), exactly the silent
+  failure mode the no-Sonnet-for-vision rule exists for. **Accuracy converts directly into
+  WAF budget**: a miss costs a whole fresh AnyRoR session, so 80% would burn ~3x the
+  sessions of 100%. High effort costs ~10.1s mean (max 12s) vs ~7.6s — negligible against an
+  83-210s fetch.
+- **PIL preprocessing is dead weight.** Raw and preprocessed scored *identically* for both
+  models (12/12 and 14/14). The upscale/contrast/sharpen block was tuned for Gemini; drop it.
+- **Also drop the solver's 3-attempt loop.** It re-reads the *same* image at temperature 0,
+  so it reproduces the same wrong answer. Real retries belong to `ANYROR_FETCH_ATTEMPTS`,
+  where a fresh session means a genuinely fresh captcha.
+- **Proxy notes.** asocks has rotated the sticky exit to `89.39.105.78:443` (was
+  `103.172.154.114`, Surat). Good-page signature held all session: ~36-38 KB with 35 district
+  options; never saw an Attack ID page across ~30 requests. But the proxy is **flaky** —
+  2 transient `ProxyError`/`ReadTimeout` drops in ~15 requests, distinct from a WAF block.
+  The fetcher needs retry-on-transient handled separately from retry-on-WAF; rebuilding the
+  session and continuing recovers cleanly.
+- **Latent risk:** `anyror/http_fetch.py` is now the ONLY scrape path and depends on
+  `requests`, which is **not declared in `requirements.txt`** — it arrives transitively via
+  google-cloud-storage/langchain/streamlit. Declare it explicitly before a dependency prune
+  breaks scraping silently.
+
+
 **2026-08-25 — Evaluated Cloudflare Kitesurf (and managed browser services) for scraping: NO:**
 - Question from Rishabh: would Kitesurf (Cloudflare's agent-first browser on Workers,
   launched 2026-08-06) or similar improve the scraping process. **Verdict: no — it solves
