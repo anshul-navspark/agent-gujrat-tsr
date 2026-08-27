@@ -3,8 +3,8 @@
 AnyRoR's WAF resets the Selenium/Chrome browser (it serves a JS challenge) but
 lets plain HTTP requests through. This module walks the ASP.NET WebForms
 cascading-postback flow with `requests`, solves the inline base64 captcha with
-the existing Gemini CaptchaSolver, and returns the record HTML. No Chrome, so
-the WAF never triggers.
+CaptchaSolver (the local `claude` CLI — no API key), and returns the record
+HTML. No Chrome, so the WAF never triggers.
 
 The record HTML is rendered to a PDF with a local headless Chrome (loading a
 local file only — never navigating to AnyRoR), so the WAF never triggers there
@@ -110,7 +110,8 @@ class AnyRoRHttpFetcher:
         # Optional egress proxy. AnyRoR's WAF blocks by source IP, so routing the
         # walk through an Indian *residential* proxy survives a local IP burn
         # (journal 2026-08-21). Credentials live in the env, never in the repo.
-        # Applies to AnyRoR traffic only -- captcha calls to Gemini go direct.
+        # Applies to AnyRoR traffic only -- the captcha solver shells out to a
+        # local CLI and makes no HTTP request of its own.
         proxy = os.getenv('ANYROR_PROXY', '').strip()
         if proxy:
             s.proxies.update({'http': proxy, 'https': proxy})
@@ -281,7 +282,10 @@ class AnyRoRHttpFetcher:
                     html = self._postback(s, html, P + 'ddlSurveyNo', dict(base))
                 self.log.info(f"[http_fetch] selected taluka={ttext} village={vtext} "
                               f"survey={stext}")
-                # 6. captcha (inline) -> Gemini
+                # 6. captcha (inline) -> claude CLI. solve() RAISES on a bad
+                # read (one shot, no internal retry) -- that lands in the
+                # except below and retries the whole walk with a fresh
+                # session, i.e. a genuinely fresh captcha image.
                 cap = self._captcha_from(html)
                 if not cap:
                     raise RuntimeError("captcha image not found on final page")
