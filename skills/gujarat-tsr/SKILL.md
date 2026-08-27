@@ -1,6 +1,6 @@
 ---
-name: tsr
-description: Use when someone asks for a Title Search Report, TSR, or land title report for a village and survey number in Gujarat — "TSR for survey 44 in Bodki", "title report for Talaja", "pull the land record and draft the report". Goes from village + survey number to a draft TSR .docx in one request: fetches the record from AnyRoR, reads it, and renders the firm's report. Also use when someone gives a khasra or khata number and a village and expects a title report — those are the Rajasthan words for the same thing, but say that Gujarat records are addressed by survey number and ask for that. For the PDF alone use fetch-land-record; for a report from a PDF you already have use generate-tsr.
+name: gujarat-tsr
+description: Use for a Title Search Report on land in GUJARAT, given a village and survey number — "TSR for survey 44 in Bodki", "title report for Talaja", "pull the land record and draft the report". Goes from district, taluka, village and survey number to a draft TSR .docx in one request: fetches the record from AnyRoR, reads it, and renders the firm's report. This is the usual path; for the PDF alone use gujarat-land-record, and for a report from a PDF you already have use gujarat-tsr-from-pdf. NOT for Rajasthan — land there is addressed by khasra/khata and lives on a different portal. If someone gives a khasra or khata number, or names a Rajasthan tehsil, say so and ask rather than guessing; if they use those words about Gujarat land, ask for the survey number instead.
 ---
 
 # Gujarat Title Search Report

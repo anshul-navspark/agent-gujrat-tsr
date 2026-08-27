@@ -1,6 +1,6 @@
 ---
-name: fetch-land-record
-description: Use when someone wants the raw Gujarat land record PDF itself and not a report — "get me the 7/12 for survey 44 in Bodki", "pull the AnyRoR record", "download the land record", "I need the original document". Fetches the Integrated Survey No. Details record (7/12 + 8-A + entry details) from AnyRoR for a district, taluka, village and survey number, and saves it as a PDF. If they want a Title Search Report drafted from it, use the tsr skill instead, which does this and then writes the report.
+name: gujarat-land-record
+description: Use to get the raw GUJARAT land record PDF itself rather than a report — "get me the 7/12 for survey 44 in Bodki", "pull the AnyRoR record", "download the land record", "I need the original document". Fetches the Integrated Survey No. Details record (7/12 + 8-A + entry details) from AnyRoR for a district, taluka, village and survey number and saves it as a PDF. If they want a Title Search Report drafted from it, use gujarat-tsr instead. NOT for Rajasthan records, which come from a different portal.
 ---
 
 # Fetch a Gujarat land record

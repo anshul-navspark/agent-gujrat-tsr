@@ -5,9 +5,28 @@ Three skills for Nav Law staff to run Gujarat land work from Slack via
 
 | Skill | Input | Output |
 |---|---|---|
-| `tsr` | district, taluka, village, survey no. | draft TSR `.docx` — **the normal path** |
-| `fetch-land-record` | same | the AnyRoR record PDF only |
-| `generate-tsr` | a land-record PDF | draft TSR `.docx` |
+| `gujarat-tsr` | district, taluka, village, survey no. | draft TSR `.docx` — **the normal path** |
+| `gujarat-land-record` | same | the AnyRoR record PDF only |
+| `gujarat-tsr-from-pdf` | a land-record PDF | draft TSR `.docx` |
+
+## Why every name starts with `gujarat-`
+
+QM's skill list is global across packs. Rajasthan lives in its own repo
+(`agent-raj-tsr`) and will register as its own pack, so a bare `tsr` or
+`land-record` here would collide with its equivalent the day it lands — and a
+lawyer in Slack would get whichever matched first, silently.
+
+The two states share almost nothing worth abstracting: different portal, different
+language, different identifiers (survey number vs khasra/khata), different
+extraction rules. They are deliberately separate repos and separate packs. What
+they *do* share is the deliverable — same letterhead, same four-table skeleton —
+but the overlap is a few hundred lines of Word plumbing, not enough to justify
+merging two working codebases.
+
+One thing worth knowing if you touch Rajasthan next: its output currently has **no
+Word auto-numbering and no cross-references**. Gujarat gained both after the lawyer
+found that deleting a chain-of-title row broke the numbering. Porting them is a
+small, high-value job.
 
 ## How QM loads these
 

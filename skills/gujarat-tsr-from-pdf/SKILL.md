@@ -1,6 +1,6 @@
 ---
-name: generate-tsr
-description: Use when someone already has a Gujarat land record PDF and wants the Title Search Report drafted from it — "draft the TSR from this PDF", "turn this land record into a report", "I've got the 7/12, write it up". Reads the PDF, extracts the mutation entries and land details following the firm's drafting rules, and renders a draft TSR .docx on the firm letterhead. If they do not have the PDF yet, use the tsr skill, which fetches it first.
+name: gujarat-tsr-from-pdf
+description: Use when someone already has a GUJARAT land record PDF and wants the Title Search Report drafted from it — "draft the TSR from this PDF", "turn this land record into a report", "I've got the 7/12, write it up". Reads the PDF, extracts the mutation entries and land details following the firm's drafting rules, and renders a draft TSR .docx on the firm letterhead. No portal access needed. If they do not have the PDF yet, use gujarat-tsr, which fetches it first. NOT for Rajasthan Jamabandi documents.
 ---
 
 # Draft a TSR from a land record PDF
