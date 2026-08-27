@@ -27,7 +27,10 @@ if [ ! -d "$REPO_DIR/.venv" ]; then
   python3 -m venv "$REPO_DIR/.venv"
 fi
 "$REPO_DIR/.venv/bin/pip" install --quiet --upgrade pip
-"$REPO_DIR/.venv/bin/pip" install --quiet -r "$REPO_DIR/requirements.txt"
+# The lean set: 13 packages / ~111 MB, versus ~623 MB for the full
+# requirements.txt (streamlit, fastapi, langchain, google-cloud-storage).
+# A skill sandbox needs none of that.
+"$REPO_DIR/.venv/bin/pip" install --quiet -r "$REPO_DIR/requirements-skill.txt"
 
 command -v pdftotext >/dev/null || echo "WARNING: pdftotext (poppler-utils) not found — PDF text extraction will fall back to PyMuPDF, which is worse on Gujarati." >&2
 

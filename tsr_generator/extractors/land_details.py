@@ -3,7 +3,8 @@ import json
 import re
 import logging
 import traceback
-from langchain_google_genai import ChatGoogleGenerativeAI
+# Imported lazily where used — only the Gemini extraction backend needs it,
+# and the default backend is the local `claude` CLI.
 from dotenv import load_dotenv
 
 from tsr_generator.utils.text_utils import convert_gujarati_to_english_numerals, translate_gujarati_text
@@ -26,7 +27,7 @@ def extract_land_records_ai(pdf_text):
     try:
         # Initialize Gemini client
         load_dotenv()
-        llm = ChatGoogleGenerativeAI(
+        llm = _chat_google(
             model=os.getenv('GEMINI_MODEL_NAME', 'gemini-3.1-pro-preview'),
             google_api_key=os.getenv('GEMINI_API_KEY', ''),
             temperature=0.0,
@@ -225,3 +226,8 @@ def extract_land_details(pdf_text):
             'nature_of_land': 'Old Tenure Agricultural',
             'owner': 'Not Available'
         } 
+
+def _chat_google(**kwargs):
+    """Construct the Gemini chat client, importing langchain only when needed."""
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    return ChatGoogleGenerativeAI(**kwargs)

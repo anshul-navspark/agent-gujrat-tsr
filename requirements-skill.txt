@@ -1,0 +1,24 @@
+# Minimal dependency set for the `gujtsr` core — what a QM skill sandbox needs.
+#
+# Deliberately NOT requirements.txt. That file also carries streamlit, fastapi,
+# uvicorn, langchain and google-cloud-storage for the web app and the (currently
+# dormant, zero-credit) cloud deploy. A skill sandbox needs none of it, and
+# installing the lot into every scope wastes disk and install time.
+#
+# Verified by installing ONLY this list into a clean venv and running
+# `python -m gujtsr fetch/text/render` end to end.
+
+requests>=2.28.0        # the only AnyRoR scrape path (anyror/http_fetch.py)
+python-dotenv>=1.0.0    # .env.local carries ANYROR_PROXY
+python-docx>=1.1.0      # renders the TSR
+pymupdf>=1.24.0         # PDF text layer, preferred over pypdf for Gujarati
+pypdf>=4.0.0            # last-resort text fallback
+
+# NOT here, on purpose:
+#   langchain-google-genai — imported lazily; only the opt-in Gemini backends use it
+#   selenium / webdriver-manager — the Selenium scrape path was deleted 2026-08-27
+#   pandas — only the Excel batch path, which skills do not use
+#   google-cloud-storage — GCS cache is opt-in and off at zero credits
+#
+# System binaries (not pip): poppler-utils for `pdftotext`, and a Chrome/Chromium
+# binary to render fetched HTML to PDF locally. It never touches AnyRoR.

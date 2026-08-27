@@ -9,7 +9,10 @@ import logging
 import re
 from functools import lru_cache
 from typing import Optional, Dict, List, Tuple
-from langchain_google_genai import ChatGoogleGenerativeAI
+# langchain_google_genai is imported lazily inside the `llm` property below.
+# Only the opt-in TRANSLATION_USE_LLM path needs it, and keeping it out of the
+# module import lets a QM skill sandbox install five small packages instead of
+# the whole langchain stack.
 import os
 from dotenv import load_dotenv
 from difflib import SequenceMatcher
@@ -117,6 +120,7 @@ class JSONTranslationSystem:
                     "Either set the key or leave TRANSLATION_USE_LLM unset — the "
                     "deterministic exact/scoped matching needs no model."
                 )
+            from langchain_google_genai import ChatGoogleGenerativeAI
             model = os.getenv('GEMINI_TRANSLATION_MODEL', 'gemini-3.1-flash-lite-preview')
             self._llm = ChatGoogleGenerativeAI(
                 model=model, google_api_key=api_key, temperature=0.0

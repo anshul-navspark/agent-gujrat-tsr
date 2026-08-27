@@ -4,7 +4,8 @@ import re
 import logging
 import traceback
 from datetime import datetime
-from langchain_google_genai import ChatGoogleGenerativeAI
+# Imported lazily where used — only the Gemini extraction backend needs it,
+# and the default backend is the local `claude` CLI.
 from dotenv import load_dotenv
 
 from tsr_generator.extractors.entry_schema import (
@@ -15,7 +16,7 @@ from tsr_generator.extractors.entry_schema import (
 model_name = os.getenv('GEMINI_MODEL_NAME', 'gemini-3.1-pro-preview')
 
 def extract_entry_table(pdf_text):
-    llm = ChatGoogleGenerativeAI(
+    llm = _chat_google(
         model=model_name,
         google_api_key=os.getenv('GEMINI_API_KEY', ''),
         temperature=0.0,
@@ -109,7 +110,7 @@ def extract_entry_details_ai(pdf_text):
         
         # Initialize Gemini client with the specified model
         load_dotenv()
-        llm = ChatGoogleGenerativeAI(
+        llm = _chat_google(
             model=model_name,
             google_api_key=os.getenv('GEMINI_API_KEY', ''),
             temperature=0.0,
@@ -326,7 +327,7 @@ def extract_entry_details_fallback(entry_section):
     try:
         # Initialize Gemini client
         load_dotenv()
-        llm = ChatGoogleGenerativeAI(
+        llm = _chat_google(
             model=model_name,
             google_api_key=os.getenv('GEMINI_API_KEY', ''),
             temperature=0.0,
@@ -1145,3 +1146,8 @@ def translate_entry_content(entries):
     logger = logging.getLogger(__name__)
     logger.debug("Translation already handled within extraction process")
     return entries 
+
+def _chat_google(**kwargs):
+    """Construct the Gemini chat client, importing langchain only when needed."""
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    return ChatGoogleGenerativeAI(**kwargs)
