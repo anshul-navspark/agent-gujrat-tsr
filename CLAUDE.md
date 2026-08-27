@@ -20,9 +20,6 @@ uvicorn api.server:app --host 0.0.0.0 --port 8080
 # Run Streamlit UI
 streamlit run app/streamlit_app_cloud.py
 
-# Run CLI (TSR generation from PDF)
-python -m tsr_generator path/to/input.pdf --output output.docx
-
 # Docker
 docker build -t agent-gujrat-tsr .
 docker run -e GEMINI_API_KEY=xxx -p 8080:8080 agent-gujrat-tsr
@@ -51,9 +48,7 @@ Request → TranslationService (English→Gujarati, deterministic-first) → Any
 
 ### Extraction Modes & Backends
 
-Mode is controlled by `USE_OPTIMIZED_EXTRACTION` (default: `true`), switched in `tsr_generator/__init__.py`:
-- **Optimized** (1 LLM call): `tsr_generator/extractors/unified_extractor.py` — 60-70% token savings
-- **Original** (3 LLM calls): `tsr_generator/api/tsr_generator.py` — Gemini-only
+Extraction always runs the unified single-call path (`tsr_generator/extractors/unified_extractor.py`, 60-70% token savings), wired unconditionally in `tsr_generator/__init__.py`. The old 3-call Gemini pipeline (`tsr_generator/api/tsr_generator.py`) is no longer selectable and survives only because `mcp_server/tools/generate_tsr.py` still imports it; `USE_OPTIMIZED_EXTRACTION` is now inert.
 
 The optimized path additionally has a backend switch, `EXTRACTION_BACKEND` (default: `claude`):
 - **claude** — shells out to `claude -p` using the local Claude Code subscription login (no API key). Requires an authenticated `claude` CLI on PATH, so it only works locally — Docker/Streamlit Cloud deploys must set `EXTRACTION_BACKEND=gemini`. The invocation (`_invoke_claude_cli`) passes `--strict-mcp-config` plus a `--settings` override (no plugins, no auto-memory, effort from `CLAUDE_EXTRACTION_EFFORT`); the **no-plugins** flag is what prevents the >300s headless hang — keep it if you touch this. Effort defaults to `high` (was a hardcoded `low`); high effort with plugins-off is safe and, on Opus, was faster *and* more accurate than Sonnet in the 2026-06-11 eval. Timeout auto-bumps to 900s for high/xhigh effort.
@@ -82,7 +77,7 @@ The **local** cache defaults to ~never-expire (`LOCAL_CACHE_TTL_DAYS`, default 3
 - `CAPTCHA_MODEL_NAME` — captcha solver model, default: `gemini-3-flash-preview`
 - `GEMINI_TRANSLATION_MODEL` — translation lookup model, default: `gemini-3.1-flash-lite-preview`
 - `TRANSLATION_USE_LLM` — enable the LLM fallback for village matching, default: `false` (deterministic exact + scoped matching only)
-- `USE_OPTIMIZED_EXTRACTION` — default: `true`
+- `USE_OPTIMIZED_EXTRACTION` — **inert**, kept only so existing deploy configs do not break
 - `GCS_CACHE_BUCKET` — optional, enables GCS caching
 - `LOCAL_CACHE_TTL_DAYS` — local cache TTL in days when no GCS bucket; default `36500` (≈never expire)
 - `HEADLESS` — browser headless mode for scraping
