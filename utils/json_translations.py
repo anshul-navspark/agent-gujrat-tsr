@@ -64,16 +64,22 @@ class JSONTranslationSystem:
     
     def __init__(self, json_path='anyror_hierarchy.json'):
         self.json_path = json_path
+        # Assigned before _load_json(), which logs on a missing/bad file. It used
+        # to be set further down, so a missing hierarchy raised AttributeError on
+        # self.logger instead of reporting the real problem.
+        self.logger = logging.getLogger(__name__)
         self.hierarchy = self._load_json()
         # Use a cheaper/faster model for simple translation matching tasks
         # Falls back to the main model if not set
-        translation_model = os.getenv('GEMINI_TRANSLATION_MODEL', 'gemini-3.1-flash-lite-preview')
-        self.llm = ChatGoogleGenerativeAI(
-            model=translation_model,
-            google_api_key=os.getenv('GEMINI_API_KEY'),
-            temperature=0.0  # Deterministic for matching
-        )
-        self.logger = logging.getLogger(__name__)
+        # NOT constructed here. Translation is deterministic by default
+        # (TRANSLATION_USE_LLM defaults to false), so the LLM client is used only
+        # by the optional AI-scoring path at `_ai_assisted_match`. Building it
+        # eagerly made a Gemini key a hard requirement for *every* caller —
+        # pydantic rejects an empty api_key, so with credits at zero this raised
+        # before any translation happened, and took `_resolve_district` (and
+        # therefore any English district name) down with it. See the `llm`
+        # property below.
+        self._llm = None
         
         # Build context-aware reverse lookup caches for fast English → Gujarati.
         # Separate caches per context prevent collisions where a village and a
@@ -94,6 +100,29 @@ class JSONTranslationSystem:
             f"villages={len(self._village_cache)})"
         )
     
+
+    @property
+    def llm(self):
+        """The translation LLM, built on first use.
+
+        Only the opt-in `TRANSLATION_USE_LLM` path reaches this. Raises a clear,
+        actionable error rather than a pydantic validation failure when no key is
+        configured.
+        """
+        if self._llm is None:
+            api_key = os.getenv('GEMINI_API_KEY', '').strip()
+            if not api_key:
+                raise RuntimeError(
+                    "TRANSLATION_USE_LLM is on but GEMINI_API_KEY is not set. "
+                    "Either set the key or leave TRANSLATION_USE_LLM unset — the "
+                    "deterministic exact/scoped matching needs no model."
+                )
+            model = os.getenv('GEMINI_TRANSLATION_MODEL', 'gemini-3.1-flash-lite-preview')
+            self._llm = ChatGoogleGenerativeAI(
+                model=model, google_api_key=api_key, temperature=0.0
+            )
+        return self._llm
+
     def _load_json(self) -> Dict:
         """Load the hierarchy JSON"""
         try:

@@ -68,13 +68,18 @@ The **local** cache defaults to ~never-expire (`LOCAL_CACHE_TTL_DAYS`, default 3
 
 ## Key Environment Variables
 
-- `GEMINI_API_KEY` — required at startup (`core/config.py` validation); used for CAPTCHA solving, translation, and extraction when `EXTRACTION_BACKEND=gemini`
+- `GEMINI_API_KEY` — **optional.** Only needed for `EXTRACTION_BACKEND=gemini` and the opt-in
+  `TRANSLATION_USE_LLM` path. Captcha no longer uses it, and the deterministic translation layer
+  needs no model, so the app boots and scrapes without it (verified: full suite green with no key)
 - `EXTRACTION_BACKEND` — `claude` (default) or `gemini`; see Extraction Modes & Backends
 - `CLAUDE_EXTRACTION_MODEL` — model alias passed to the `claude` CLI, default: `opus` (Opus 4.8; was `sonnet`)
 - `CLAUDE_EXTRACTION_EFFORT` — effort level for the `claude` CLI extraction, default: `high` (was hardcoded `low`); `high`/`xhigh` auto-raise the subprocess timeout to `CLAUDE_EXTRACTION_TIMEOUT` (default 900s)
 - `GEMINI_MODEL_NAME` — Gemini extraction model (only used when `EXTRACTION_BACKEND=gemini`), default: `gemini-3.1-pro-preview`
 - `GEMINI_THINKING_LEVEL` — thinking level for Gemini extraction, default: `low`
-- `CAPTCHA_MODEL_NAME` — captcha solver model, default: `gemini-3-flash-preview`
+- `CAPTCHA_MODEL` / `CAPTCHA_EFFORT` / `CAPTCHA_TIMEOUT` — captcha solver via the local `claude`
+  CLI, defaults `claude-opus-5` / `high` / `120`. Opus at high effort scored 15/15 on a live
+  bake-off vs 12/15 for Sonnet; a miss costs a whole AnyRoR session, so accuracy is worth the
+  ~10s. No fallback chain by design — see `anyror/captcha_solver.py`
 - `GEMINI_TRANSLATION_MODEL` — translation lookup model, default: `gemini-3.1-flash-lite-preview`
 - `TRANSLATION_USE_LLM` — enable the LLM fallback for village matching, default: `false` (deterministic exact + scoped matching only)
 - `USE_OPTIMIZED_EXTRACTION` — **inert**, kept only so existing deploy configs do not break
