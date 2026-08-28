@@ -526,12 +526,21 @@ class TestPacingAndBlocks:
         assert slept == []
 
     def test_a_block_page_stops_the_walk_instead_of_retrying(self):
-        """One office IP serves the whole firm. A retry loop loses it for everyone."""
+        """One office IP serves the whole firm. A retry loop loses it for everyone.
+
+        The message has to name the block, not just say something went wrong:
+        the structural 'not the form' check below would also stop this page, and
+        a human deciding whether to wait or to switch connections needs to know
+        which of the two happened.
+        """
         blocked = "<html><body>Web Page Blocked. Attack ID: 100000</body></html>"
         s = _session([LIVE_HTML, blocked, PAGE_AFTER_DISTRICT])
         s.open()
-        with pytest.raises(GarviBlocked):
+        with pytest.raises(GarviBlocked) as e:
             s.offices("12")
+        assert "block page" in str(e.value)
+        assert "web page blocked" in str(e.value).lower(), \
+            "the message must name the marker it matched"
         assert len(s.transport.posts) == 1, "it retried a block page"
 
     def test_a_response_that_is_not_the_form_is_treated_as_a_block(self):
@@ -552,10 +561,16 @@ class TestPacingAndBlocks:
         assert len(s.transport.posts) == 1
 
     def test_an_http_block_status_is_a_block_too(self):
-        s = _session([LIVE_HTML, FakeResponse("<html>nope</html>", status_code=403)])
+        """A perfectly good-looking form body behind a 403 is still a block.
+
+        The page here is the real one, VIEWSTATE and all, so neither the wording
+        check nor the structural check can account for this — only the status.
+        """
+        s = _session([LIVE_HTML, FakeResponse(LIVE_HTML, status_code=403)])
         s.open()
-        with pytest.raises(GarviBlocked):
+        with pytest.raises(GarviBlocked) as e:
             s.offices("12")
+        assert "403" in str(e.value)
 
 
 # --------------------------------------------------------------------------
