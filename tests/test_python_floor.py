@@ -221,8 +221,32 @@ def test_selection_fails_loudly_naming_what_it_found_instead(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("bash") is None, reason="bash not available")
-def test_selection_takes_the_newest_interpreter_not_merely_an_adequate_one(tmp_path):
-    """Both clear the floor; the versioned-newest name must still win."""
+def test_selection_prefers_the_pinned_311_over_anything_newer(tmp_path):
+    """3.11 wins over 3.14 when both are present.
+
+    Taking the newest available would reintroduce the drift this floor exists to
+    remove: a dev machine with 3.14 installed would build a 3.14 venv while
+    Docker (python:3.11-slim), CI and the QM sandbox (3.11.2) all run 3.11, and
+    nothing would say so. 3.11 is the version every layer agrees on.
+    """
+    bindir = _fake_bin(tmp_path, {
+        "python3": ("3.9.6", 0),
+        "python3.11": ("3.11.15", 0),
+        "python3.14": ("3.14.1", 0),   # newer, and deliberately not chosen
+    })
+    result = subprocess.run(
+        [BASH, "-c", FAIL_STUB + _selection_block(ENSURE_ENV_SCRIPTS[0])
+         + '\necho "SELECTED=$PYTHON_BIN"'],
+        capture_output=True, text=True, env={"PATH": str(bindir)})
+    assert result.returncode == 0, result.stderr
+    assert f"SELECTED={bindir}/python3.11" in result.stdout, (
+        f"selection drifted off the pinned version:\n{result.stdout}")
+
+
+def test_selection_falls_back_to_the_newest_when_311_is_absent(tmp_path):
+    """Fallback, not failure: a hard stop would take every skill down the day
+    QM's base image moves off Debian 12. Newest-above-the-floor is the right
+    fallback; it is only wrong as a *preference*."""
     bindir = _fake_bin(tmp_path, {
         "python3": ("3.11.15", 0),     # adequate ...
         "python3.14": ("3.14.1", 0),   # ... but this one is newer

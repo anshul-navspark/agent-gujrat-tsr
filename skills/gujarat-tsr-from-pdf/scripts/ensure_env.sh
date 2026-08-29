@@ -25,7 +25,12 @@ py_version() { "$1" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])' 2>
 
 PYTHON_BIN=""
 PY_REJECTED=""
-for candidate in python3.16 python3.15 python3.14 python3.13 python3.12 python3.11 python3 python; do
+# python3.11 FIRST, deliberately. Taking the newest available would
+# reintroduce the drift this floor removes: a dev machine with 3.13 would
+# build a 3.13 venv while Docker, CI and the QM sandbox all run 3.11. Newer
+# versions remain as a fallback so a future QM base bump does not take every
+# skill down; the chosen interpreter is echoed when the venv is built.
+for candidate in python3.11 python3.16 python3.15 python3.14 python3.13 python3.12 python3 python; do
   command -v "$candidate" >/dev/null 2>&1 || continue
   if py_meets_floor "$candidate"; then
     PYTHON_BIN="$(command -v "$candidate")"
