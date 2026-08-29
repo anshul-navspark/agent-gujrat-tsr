@@ -1,4 +1,14 @@
-"""CAPTCHA solver for AnyRoR, backed by the local `claude` CLI.
+r"""CAPTCHA solver for Gujarat's land portals, backed by the local `claude` CLI.
+
+Two portals, two captcha shapes, one solver:
+
+    NUMERIC_6  AnyRoR — 6 numeric digits          (the default; unchanged)
+    ALNUM_5    Garvi  — 5 alphanumeric characters
+
+`CaptchaSolver()` with no arguments is still exactly the AnyRoR solver: same
+prompt wording, same flags, same errors. Pass `shape=ALNUM_5` for Garvi, whose
+answer contains letters — which is why extraction is per-shape rather than the
+old `re.sub(r"\D", "", raw)` for everyone (see `_extract_alnum`).
 
 AnyRoR's captcha is 6 numeric digits that vary in colour, size and vertical
 position. This module reads it by shelling out to the `claude` CLI in print
@@ -36,6 +46,9 @@ Three consequences are baked in on purpose. Please do not "optimise" them away:
    `ANYROR_FETCH_ATTEMPTS` in anyror/http_fetch.py, where a fresh session means
    a genuinely fresh captcha image. `solve()` therefore raises on failure and
    lets that loop decide.
+
+The `runner` argument exists only so tests can inject a fake `subprocess.run`
+and never spend a real model call; production leaves it at the default.
 """
 
 import logging
@@ -43,19 +56,64 @@ import os
 import re
 import subprocess
 import tempfile
+from dataclasses import dataclass
 
 # Defaults are the bake-off winner. Overridable by env for experiments only.
 DEFAULT_MODEL = "claude-opus-5"
 DEFAULT_EFFORT = "high"
 DEFAULT_TIMEOUT = 120  # seconds; observed max was ~12s, so this is pure headroom
 
-SYSTEM_PROMPT = "You are a CAPTCHA reader. Output ONLY the digits, nothing else."
+DIGITS = "digits"
+ALNUM = "alnum"
 
-PROMPT_TEMPLATE = (
-    "Read the image at {path} . It is a 6-digit numeric CAPTCHA. The digits "
-    "vary in colour, size and vertical position. Output exactly the 6 digits, "
+
+@dataclass(frozen=True)
+class CaptchaShape:
+    """What a portal's captcha looks like."""
+
+    length: int
+    alphabet: str
+
+    def __post_init__(self):
+        if self.length < 1:
+            raise ValueError(f"captcha length must be positive, got {self.length}")
+        if self.alphabet not in (DIGITS, ALNUM):
+            raise ValueError(
+                f"unknown alphabet {self.alphabet!r}; expected {DIGITS!r} or {ALNUM!r}")
+
+
+NUMERIC_6 = CaptchaShape(length=6, alphabet=DIGITS)
+ALNUM_5 = CaptchaShape(length=5, alphabet=ALNUM)
+
+# The `runner` default, captured at import so `solve()` can tell "nobody
+# injected one" from a real injection — see the late binding there.
+_DEFAULT_RUNNER = subprocess.run
+
+# One system prompt serves both shapes, so it must not promise digits: on Garvi
+# the answer contains letters.
+SYSTEM_PROMPT = "You are a CAPTCHA reader. Output ONLY the characters, nothing else."
+
+# For NUMERIC_6 this renders the exact prompt the 15/15 bake-off measured.
+NUMERIC_PROMPT_TEMPLATE = (
+    "Read the image at {path} . It is a {length}-digit numeric CAPTCHA. The digits "
+    "vary in colour, size and vertical position. Output exactly the {length} digits, "
     "left to right, no spaces and no other text."
 )
+
+# Garvi's captcha mixes letters and digits. Uppercase is asked for explicitly:
+# it is what the portal shows, and it is what makes prose replies parseable
+# (see _extract_alnum).
+ALNUM_PROMPT_TEMPLATE = (
+    "Read the image at {path} . It is a {length}-character alphanumeric CAPTCHA "
+    "(letters and digits). The characters vary in colour, size and vertical "
+    "position. Output exactly the {length} characters, left to right, in "
+    "UPPERCASE, no spaces and no other text."
+)
+
+PROMPT_TEMPLATES = {
+    DIGITS: NUMERIC_PROMPT_TEMPLATE,
+    ALNUM: ALNUM_PROMPT_TEMPLATE,
+}
 
 
 class CaptchaError(RuntimeError):
@@ -63,14 +121,22 @@ class CaptchaError(RuntimeError):
 
 
 class CaptchaSolver:
-    """Reads a 6-digit AnyRoR captcha via the local `claude` CLI."""
+    """Reads a portal captcha via the local `claude` CLI.
 
-    def __init__(self, logger=None):
+    Defaults to AnyRoR's 6 digits (`NUMERIC_6`); pass `shape=ALNUM_5` for
+    Garvi's 5 alphanumeric characters.
+    """
+
+    def __init__(self, logger=None, shape=NUMERIC_6, runner=subprocess.run):
         """
         Args:
             logger: Logger instance for logging.
+            shape: Which captcha this portal shows.
+            runner: `subprocess.run`-compatible callable (injected by tests).
         """
         self.logger = logger or logging.getLogger(__name__)
+        self.shape = shape
+        self.runner = runner
         self.model = os.getenv("CAPTCHA_MODEL", "").strip() or DEFAULT_MODEL
         self.effort = os.getenv("CAPTCHA_EFFORT", "").strip() or DEFAULT_EFFORT
         try:
@@ -107,23 +173,95 @@ class CaptchaSolver:
              % self.effort),
             "--allowedTools", "Read",
             "--system-prompt", SYSTEM_PROMPT,
-            PROMPT_TEMPLATE.format(path=image_path),
+            self._prompt(image_path),
         ]
+
+    def _prompt(self, image_path):
+        """The user prompt, worded for this solver's shape."""
+        return PROMPT_TEMPLATES[self.shape.alphabet].format(
+            path=image_path, length=self.shape.length)
+
+    def _extract(self, raw):
+        """Pull the reading out of `raw`, or raise. Never guesses."""
+        if self.shape.alphabet == DIGITS:
+            return self._extract_digits(raw)
+        return self._extract_alnum(raw)
+
+    def _extract_digits(self, raw):
+        """Digits-only: strip everything else and demand the exact count.
+
+        Safe here precisely because the alphabet has no letters — see
+        _extract_alnum for the shape where this would destroy the answer.
+        """
+        n = self.shape.length
+        digits = re.sub(r"\D", "", raw)
+        if len(digits) != n:
+            raise CaptchaError(
+                f"captcha read returned {len(digits)} digits, expected {n}; "
+                f"raw output: {raw.strip()[:200]!r}")
+        return digits
+
+    def _extract_alnum(self, raw):
+        r"""Alphanumeric: parse the reply, never strip it.
+
+        `re.sub(r"\D", "", raw)` would turn K7Q2M into "72", so the digit path
+        cannot be reused. Ported from mp_fetch/captcha_reader.py::_extract in
+        the sibling agent-mp repo, where it was written after a real `claude -p`
+        call answered with a paragraph instead of bare characters:
+
+        * an exact full-match reply is the answer;
+        * an answer the model emphasised (**ABC12** or `ABC12`) is the model
+          pointing at its own conclusion, and counts when it is unambiguous;
+        * otherwise, standalone UPPERCASE-or-digit runs of the right length.
+          Uppercase-only matters: the prompt asks for uppercase, and ordinary
+          lowercase words of the right length ("reads", "image") would
+          otherwise look like candidates and make every prose reply ambiguous.
+
+        More than one distinct candidate raises rather than picking. A guess is
+        not free: it costs a portal request against a shared office exit IP,
+        and on AnyRoR a whole fresh session.
+        """
+        n = self.shape.length
+        reply = (raw or "").strip()
+
+        if re.fullmatch(r"[A-Za-z0-9]{%d}" % n, reply):
+            return reply
+
+        for pattern in (r"\*\*([A-Za-z0-9]{%d})\*\*" % n,
+                        r"`([A-Za-z0-9]{%d})`" % n):
+            marked = re.findall(pattern, reply)
+            if len(set(marked)) == 1:
+                return marked[0]
+
+        standalone = re.findall(
+            r"(?<![A-Za-z0-9])([A-Z0-9]{%d})(?![A-Za-z0-9])" % n, reply)
+        unique = list(dict.fromkeys(standalone))
+        if not unique:
+            raise CaptchaError(
+                f"no {n}-character candidate in the captcha read: "
+                f"{reply[:200]!r}")
+        if len(unique) > 1:
+            raise CaptchaError(
+                f"ambiguous captcha read — {len(unique)} candidates "
+                f"{unique[:5]} in {reply[:200]!r}; re-read a fresh image "
+                f"rather than submitting one of them")
+        return unique[0]
 
     def solve(self, image_data):
         """Recognize the CAPTCHA in `image_data`.
 
         Args:
-            image_data: Raw bytes of the captcha image (PNG from AnyRoR's
-                inline base64 data URI). Sent as-is — no preprocessing.
+            image_data: Raw bytes of the captcha image (e.g. the PNG from
+                AnyRoR's inline base64 data URI). Sent as-is — no preprocessing.
 
         Returns:
-            The 6-digit captcha string.
+            The captcha string, `self.shape.length` characters long.
 
         Raises:
-            CaptchaError: CLI missing, timed out, non-zero exit, or output that
-                is not exactly 6 digits. One shot only — the caller retries with
-                a fresh session (and therefore a fresh captcha).
+            CaptchaError: CLI missing, timed out, non-zero exit, or a read that
+                does not yield exactly one candidate of the right shape. One
+                shot only — the caller retries with a fresh session (and
+                therefore a fresh captcha).
         """
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
             tmp.write(image_data)
@@ -134,9 +272,15 @@ class CaptchaSolver:
             self.logger.debug(
                 "Solving captcha via claude CLI (model=%s, effort=%s, timeout=%ss)",
                 self.model, self.effort, self.timeout)
+            runner = self.runner
+            if runner is _DEFAULT_RUNNER:
+                # Late-bound on purpose: an un-injected runner resolves
+                # `subprocess.run` at call time, so patching it on this
+                # module (as the pre-existing tests do) still takes effect.
+                runner = subprocess.run
             try:
-                res = subprocess.run(cmd, capture_output=True, text=True,
-                                     timeout=self.timeout)
+                res = runner(cmd, capture_output=True, text=True,
+                             timeout=self.timeout)
             except FileNotFoundError:
                 raise CaptchaError(
                     "`claude` CLI not on PATH; the captcha solver needs a local "
@@ -150,15 +294,9 @@ class CaptchaSolver:
                     f"`claude` CLI failed (rc={res.returncode}): "
                     f"{(res.stderr or '')[:500]}")
 
-            raw = res.stdout or ""
-            digits = re.sub(r"\D", "", raw)
-            if len(digits) != 6:
-                raise CaptchaError(
-                    f"captcha read returned {len(digits)} digits, expected 6; "
-                    f"raw output: {raw.strip()[:200]!r}")
-
-            self.logger.debug("Captcha solved: %s", digits)
-            return digits
+            answer = self._extract(res.stdout or "")
+            self.logger.debug("Captcha solved: %s", answer)
+            return answer
         finally:
             try:
                 os.unlink(image_path)

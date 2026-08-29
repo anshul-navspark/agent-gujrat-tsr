@@ -22,6 +22,13 @@ assembles the complete request body and hands it back *unsent*, marked
 `i_have_the_handset=True`, which only a person standing at that phone can
 truthfully do. The defaults make the unattended path impossible, on purpose.
 
+**The captcha is read by the model, never by a person.** `solve_captcha`
+fetches the image on this same transport and hands the bytes to
+`anyror.captcha_solver.CaptchaSolver`, which reads it with Opus. Nobody is
+asked to squint at a picture. What the model must never do is guess: a wrong
+answer is a wasted request against the one office IP, so a `CaptchaError` is
+allowed to propagate rather than being caught and papered over.
+
 **One office IP serves the whole firm.** Requests are serial and paced (>=2s),
 and a block page raises `GarviBlocked` instead of being retried — a retry loop
 against a WAF that bans by source address takes the portal away from every
@@ -82,6 +89,13 @@ _BLOCK_MARKERS = ("web page blocked", "attack id", "access denied",
                   "request rejected")
 _BLOCK_STATUSES = frozenset({403, 406, 429, 503})
 
+# Leading bytes of the formats a captcha endpoint plausibly returns. Used only
+# to answer "is this an image at all?" before scanning a body for block wording:
+# a real PNG is random bytes, and random bytes should not be searched for
+# English phrases.
+_IMAGE_MAGIC = (b"\x89PNG\r\n\x1a\n", b"\xff\xd8\xff", b"GIF87a",
+                b"GIF89a", b"BM")
+
 SURVEY_NUMBER_WARNING = (
     "Garvi's index is keyed on the survey number AS WRITTEN ON THE DEED AT "
     "REGISTRATION, not the number the parcel carries today. A renumbered or "
@@ -108,6 +122,17 @@ class GarviBlocked(RuntimeError):
     because a retry loop costs everyone in the office their access, not just this
     run. The dict-returning entry points (`prepare_search`, `send_otp`) catch it
     and turn it into a `{"success": False, ...}` a lawyer can read.
+    """
+
+
+class GarviCaptchaUnavailable(RuntimeError):
+    """The page in hand carries no captcha image to read.
+
+    Deliberately not a `GarviBlocked`: the remedy is different. A block means
+    stop and wait, this means the page being held is not the search page it was
+    taken for — an expired session, a redirect, a response whose image never
+    arrived. Raised rather than returned as None so nothing can hand `None` to
+    the solver and get a confident guess back.
     """
 
 
@@ -251,13 +276,19 @@ class GarviSession:
 
     `sleep` is injected for the same reason: pacing is real in production and
     free in tests.
+
+    `captcha_solver` is injected for a third reason on top of those two: the
+    real one shells out to the `claude` CLI, so a test that built one would run
+    a model. It stays None until something actually needs to read a captcha.
     """
 
     def __init__(self, transport: Any = None, base_url: str = BASE_URL,
                  min_interval: float = MIN_INTERVAL_SECONDS,
                  sleep: Callable[[float], Any] = time.sleep,
-                 timeout: Any = DEFAULT_TIMEOUT) -> None:
+                 timeout: Any = DEFAULT_TIMEOUT,
+                 captcha_solver: Any = None) -> None:
         self.transport = transport if transport is not None else _requests_session(base_url)
+        self.captcha_solver = captcha_solver
         self.base_url = base_url
         self.min_interval = float(min_interval)
         self.timeout = timeout
@@ -340,6 +371,95 @@ class GarviSession:
         """The captcha image on the page currently held, resolved absolute."""
         return captcha_url(self._page(), self.base_url)
 
+    def captcha_image(self) -> bytes:
+        """Download the captcha belonging to the page currently in hand.
+
+        The guid is read off the page on every call and never remembered. It is
+        bound to the server-side session and ASP.NET reissues it on every
+        postback, so an image fetched against the previous page answers a
+        question Garvi has stopped asking — and the answer to that is not an
+        error, it is a rejected search and one more request spent.
+
+        It goes out on `self.transport` for the same reason: that is where the
+        session cookie lives. A captcha pulled down on any other connection
+        belongs to a different session and cannot be answered correctly, however
+        well it is read.
+        """
+        url = self.captcha_url()
+        if not url:
+            raise GarviCaptchaUnavailable(
+                "The page in hand has no captcha image (no CaptchaImage.aspx), "
+                "so there is nothing to read. That is what an expired session or "
+                "a page that is not the search form looks like. Re-open the "
+                "search page and drive the cascade again; nothing was fetched "
+                "and nothing was guessed.")
+        self._pace()
+        r = self.transport.get(url, timeout=self.timeout)
+        return self._image_bytes(r)
+
+    def _image_bytes(self, response: Any) -> bytes:
+        """The response body as bytes, having refused anything that is not one.
+
+        A WAF page served where an image was asked for is still a block, and
+        handing it to the model gets five confident characters of nonsense back
+        plus a wasted request. Status is checked before content, because a block
+        can come back wrapped around a perfectly valid-looking body.
+        """
+        status = getattr(response, "status_code", 200)
+        if status in _BLOCK_STATUSES:
+            raise GarviBlocked(
+                f"Garvi answered HTTP {status} for the captcha image. This office "
+                "IP looks rate-limited or blocked. Stop — do not retry — and try "
+                "again later or from another connection.")
+        data = getattr(response, "content", None)
+        if data is None:                      # a transport that only exposes text
+            data = (getattr(response, "text", "") or "").encode("utf-8", "replace")
+        data = bytes(data)
+        if data.startswith(_IMAGE_MAGIC):
+            return data
+        low = data.decode("latin-1", "ignore").lower()
+        for marker in _BLOCK_MARKERS:
+            if marker in low:
+                raise GarviBlocked(
+                    f"Garvi returned a block page instead of the captcha image "
+                    f"(matched {marker!r}). The firm reaches this portal from one "
+                    "office IP, so retrying would lose it for everyone. Stopped.")
+        if not data:
+            raise GarviCaptchaUnavailable(
+                "Garvi returned an empty body for the captcha image. There is "
+                "nothing to read, and an empty image is not something to guess "
+                "at — stopped without calling the model.")
+        log.warning("[garvi] captcha body does not look like a known image "
+                    "format (%d bytes); passing it to the solver anyway", len(data))
+        return data
+
+    def _solver(self) -> Any:
+        """The injected solver, or the real one built on first use.
+
+        Lazy on purpose, twice over: the import reaches outside `gujtsr`, and
+        constructing it is a promise to run the `claude` CLI. Making a session
+        must cost neither.
+        """
+        if self.captcha_solver is None:
+            from anyror.captcha_solver import CaptchaSolver, ALNUM_5
+
+            self.captcha_solver = CaptchaSolver(shape=ALNUM_5)
+        return self.captcha_solver
+
+    def solve_captcha(self) -> str:
+        """Fetch the current captcha and read it with the model.
+
+        Returns the five characters as read. A `CaptchaError` from the solver is
+        deliberately NOT caught: the only alternative to stopping is submitting a
+        guess, and a wrong guess is a request spent against the single office IP
+        that serves the whole firm — plus a rejected search that looks nothing
+        like an explanation by the time it reaches a lawyer. Let it raise; the
+        caller can re-open the page for a fresh image.
+        """
+        image = self.captcha_image()
+        reading = self._solver().solve(image)
+        return (reading or "").strip()
+
     # -- the cascade ------------------------------------------------------
 
     def districts(self) -> List[Tuple[str, str]]:
@@ -411,7 +531,7 @@ class GarviSession:
 
     def prepare_search(self, district: str, office: str, village: str,
                        property_type: str, search_type: str, search_number: str,
-                       captcha_text: str, applicant_name: str = "",
+                       captcha_text: Optional[str] = None, applicant_name: str = "",
                        mobile: str = "") -> Dict[str, Any]:
         """Assemble the complete property-search POST body — and stop, unsent.
 
@@ -424,6 +544,12 @@ class GarviSession:
 
         Every dropdown code is checked against the page in hand before the body
         is built; an unoffered code is refused rather than submitted.
+
+        `captcha_text` is optional. Left out (or None) the captcha is fetched and
+        read by the model — see `solve_captcha`. Passed explicitly it is used
+        exactly as given and nothing is fetched. Either way the read happens
+        AFTER the dropdown checks, so a refused search never spends a request on
+        an image it is not going to use.
 
         WARNING, and it is the one that matters most in a title opinion:
         Garvi's index is keyed on the survey number **as written on the deed at
@@ -448,13 +574,19 @@ class GarviSession:
                 "input", "No survey / property number was given, so there is "
                          "nothing to search for.")
 
+        if captcha_text is None:
+            # Nothing to hand-hold here: read it with the model, on this same
+            # session, so the guid and the cookie belong to each other.
+            captcha_text = self.solve_captcha()
+
         if not str(captcha_text).strip():
             return self._refused(
                 "captcha",
                 "No captcha answer was supplied. Garvi rejects the search without "
-                "the code shown in the image; read the image from captcha_url() on "
-                "this same session — the guid is tied to the server-side session, "
-                "so an answer fetched anywhere else will not match.")
+                "the code shown in the image; leave captcha_text out entirely to "
+                "have solve_captcha() read it on this same session — the guid is "
+                "tied to the server-side session, so an answer fetched anywhere "
+                "else will not match.")
 
         fields = dict(self.fields)
         fields["__EVENTTARGET"] = ""

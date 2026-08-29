@@ -31,6 +31,7 @@ from gujtsr.garvi import (
     SURVEY_NUMBER_WARNING,
     BASE_URL,
     GarviBlocked,
+    GarviCaptchaUnavailable,
     GarviSession,
     OTP_CONTROL,
     P,
@@ -74,6 +75,19 @@ def _with_viewstate(html: str, value: str) -> str:
     return new
 
 
+def _with_captcha_guid(html: str, guid: str) -> str:
+    """Return `html` with a different captcha guid, the way a postback does.
+
+    ASP.NET reissues the guid on every postback and binds it to the server-side
+    session, so this is not cosmetic: it is the difference between reading the
+    captcha Garvi is currently asking and reading a stale one.
+    """
+    pat = re.compile(r'(<img src="CaptchaImage\.aspx\?guid=)[^"]*(")')
+    new, n = pat.subn(lambda m: m.group(1) + guid + m.group(2), html)
+    assert n == 1, "could not find the captcha image in the fixture"
+    return new
+
+
 OFFICES = [("1", "AHMEDABAD-1"), ("2", "AHMEDABAD-2")]
 VILLAGES = [("101", "VASTRAPUR"), ("102", "BODAKDEV")]
 
@@ -85,11 +99,62 @@ PAGE_AFTER_OFFICE = _with_viewstate(
     _with_options(PAGE_AFTER_DISTRICT, "ddlindex2village", VILLAGES),
     "VIEWSTATE-AFTER-OFFICE")
 
+# Page 2', identical to page 2 but for the captcha: the guid the server hands
+# back after a postback is a NEW one. Nothing that caches the first guid can
+# pass the re-read test below.
+SECOND_CAPTCHA_GUID = "0a4e77bd-2c19-4d38-9f5b-77ce41a6d902"
+PAGE_AFTER_DISTRICT_NEW_CAPTCHA = _with_captcha_guid(PAGE_AFTER_DISTRICT,
+                                                     SECOND_CAPTCHA_GUID)
+
+# Two distinguishable image bodies. Real PNG magic, so a magic-byte check sees
+# an image; different payloads, so "which one came back" is answerable.
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+CAPTCHA_PNG = PNG_MAGIC + b"first-captcha-pixels"
+SECOND_CAPTCHA_PNG = PNG_MAGIC + b"second-captcha-pixels"
+
 
 class FakeResponse:
     def __init__(self, text, status_code=200):
         self.text = text
         self.status_code = status_code
+
+
+class FakeImageResponse(FakeResponse):
+    """A binary body, the way requests exposes one: bytes on `.content`.
+
+    Subclasses FakeResponse so FakeTransport hands it back untouched.
+    """
+
+    def __init__(self, content, status_code=200):
+        super().__init__(content.decode("latin-1"), status_code)
+        self.content = content
+
+
+class FakeCaptchaError(RuntimeError):
+    """Stands in for anyror.captcha_solver.CaptchaError.
+
+    A local class on purpose: no test in this file may import the real solver,
+    which shells out to the `claude` CLI.
+    """
+
+
+class FakeSolver:
+    """Stands in for CaptchaSolver(shape=ALNUM_5). Reads nothing, records all.
+
+    The default reading is deliberately not a string this module could produce
+    by accident — not the fixture's captcha answer, not a substring of any page.
+    """
+
+    def __init__(self, reading="Q7ZK4", error=None):
+        self.reading = reading
+        self.error = error
+        self.seen = []          # every image body handed to it
+
+    def solve(self, image_data):
+        self.seen.append(image_data)
+        if self.error is not None:
+            raise self.error
+        return self.reading
 
 
 class FakeTransport:
@@ -356,6 +421,130 @@ class TestCaptchaUrl:
         assert LIVE_CAPTCHA_GUID in s.captcha_url()
 
 
+class TestCaptchaImage:
+    """Fetching the image itself — on this session, for the page in hand."""
+
+    def test_it_fetches_the_guid_on_the_page_currently_held(self):
+        s = _session([LIVE_HTML, FakeImageResponse(CAPTCHA_PNG)])
+        s.open()
+        assert s.captcha_image() == CAPTCHA_PNG
+        gets = [url for method, url, _ in s.transport.calls if method == "GET"]
+        assert len(gets) == 2, "one GET for the page, one for its captcha"
+        assert gets[1] == ("https://garvi.gujarat.gov.in/CaptchaImage.aspx?guid="
+                           + LIVE_CAPTCHA_GUID), "the URL must be absolute"
+
+    def test_it_re_reads_the_guid_after_a_postback(self):
+        """The guid is session-bound and ASP.NET reissues it on every postback.
+
+        Cache it and you fetch the image for a question Garvi has stopped
+        asking; the answer is then wrong, and a wrong answer costs a request
+        against the one office IP the whole firm shares.
+        """
+        assert SECOND_CAPTCHA_GUID != LIVE_CAPTCHA_GUID
+        assert SECOND_CAPTCHA_GUID in PAGE_AFTER_DISTRICT_NEW_CAPTCHA
+        assert LIVE_CAPTCHA_GUID not in PAGE_AFTER_DISTRICT_NEW_CAPTCHA
+
+        s = _session([LIVE_HTML, FakeImageResponse(CAPTCHA_PNG),
+                      PAGE_AFTER_DISTRICT_NEW_CAPTCHA,
+                      FakeImageResponse(SECOND_CAPTCHA_PNG)])
+        s.open()
+        first = s.captcha_image()
+        s.offices("12")
+        second = s.captcha_image()
+
+        gets = [url for method, url, _ in s.transport.calls if method == "GET"]
+        assert LIVE_CAPTCHA_GUID in gets[1]
+        assert SECOND_CAPTCHA_GUID in gets[2], "it re-used a stale guid"
+        assert LIVE_CAPTCHA_GUID not in gets[2]
+        assert (first, second) == (CAPTCHA_PNG, SECOND_CAPTCHA_PNG)
+
+    def test_it_goes_through_the_injected_transport(self):
+        """Cookies live on the transport. A captcha fetched on another
+        connection belongs to another session and cannot be answered."""
+        s = _session([LIVE_HTML, FakeImageResponse(CAPTCHA_PNG)])
+        s.open()
+        s.captcha_image()
+        assert len(s.transport.calls) == 2, "the image was not fetched on this transport"
+
+    def test_the_captcha_fetch_is_paced_like_every_other_request(self):
+        slept = []
+        s = GarviSession(
+            transport=FakeTransport([LIVE_HTML, FakeImageResponse(CAPTCHA_PNG)]),
+            sleep=slept.append)
+        s.open()
+        s.captcha_image()
+        assert slept, "the captcha fetch skipped the pacing"
+        assert min(slept) >= 2.0
+
+    def test_a_block_page_in_place_of_the_image_raises(self):
+        """A WAF page is not an image. Handing it to the model gets a
+        confident five characters of nonsense and burns a request."""
+        blocked = FakeResponse("<html><body>Web Page Blocked. Attack ID: 1</body></html>")
+        s = _session([LIVE_HTML, blocked])
+        s.open()
+        with pytest.raises(GarviBlocked):
+            s.captcha_image()
+
+    def test_a_block_status_raises_even_when_the_body_looks_like_a_png(self):
+        """Status first: neither the wording check nor the magic bytes can see this."""
+        s = _session([LIVE_HTML, FakeImageResponse(CAPTCHA_PNG, status_code=403)])
+        s.open()
+        with pytest.raises(GarviBlocked) as e:
+            s.captcha_image()
+        assert "403" in str(e.value)
+
+    def test_a_page_with_no_captcha_raises_instead_of_passing_none(self):
+        stripped = re.sub(r'<img src="CaptchaImage\.aspx[^>]*>', "", LIVE_HTML)
+        assert "CaptchaImage.aspx" not in stripped
+        assert "__VIEWSTATE" in stripped, "still the search form, just no captcha"
+        s = _session([stripped])
+        s.open()
+        before = len(s.transport.calls)
+        with pytest.raises(GarviCaptchaUnavailable) as e:
+            s.captcha_image()
+        assert "captcha" in str(e.value).lower()
+        assert len(s.transport.calls) == before, "it fetched something anyway"
+
+    def test_an_empty_body_is_not_handed_to_the_model(self):
+        s = _session([LIVE_HTML, FakeImageResponse(b"")])
+        s.open()
+        with pytest.raises(GarviCaptchaUnavailable):
+            s.captcha_image()
+
+
+class TestSolveCaptcha:
+    """Reading it with the model — the only reader this module has."""
+
+    def test_it_returns_the_solver_reading_for_the_fetched_image(self):
+        solver = FakeSolver("Q7ZK4")
+        s = _session([LIVE_HTML, FakeImageResponse(CAPTCHA_PNG)],
+                     captcha_solver=solver)
+        s.open()
+        assert s.solve_captcha() == "Q7ZK4"
+        assert solver.seen == [CAPTCHA_PNG], \
+            "the solver must be given the bytes this session just fetched"
+
+    def test_a_captcha_error_propagates_and_is_never_guessed_around(self):
+        """A wrong answer burns a request against the firm's single office IP.
+
+        Swallowing the error and submitting something is worse than stopping.
+        """
+        solver = FakeSolver(error=FakeCaptchaError("could not read it"))
+        s = _session([LIVE_HTML, FakeImageResponse(CAPTCHA_PNG)],
+                     captcha_solver=solver)
+        s.open()
+        with pytest.raises(FakeCaptchaError):
+            s.solve_captcha()
+
+    def test_the_solver_is_injectable_and_never_built_until_it_is_needed(self):
+        """Constructing the real one imports a module that shells out to the
+        `claude` CLI. Nothing may build it just by making a session."""
+        s = GarviSession(transport=FakeTransport([]), sleep=lambda seconds: None)
+        assert s.captcha_solver is None
+        s2 = _session([LIVE_HTML], captcha_solver=FakeSolver())
+        assert isinstance(s2.captcha_solver, FakeSolver)
+
+
 # --------------------------------------------------------------------------
 # The search builder — prepared, unsent, stopped at the OTP
 # --------------------------------------------------------------------------
@@ -458,6 +647,57 @@ class TestPrepareSearch:
         assert out["success"] is False
         assert out["blocked_on"] != "otp"
         assert "captcha" in out["error"].lower()
+
+
+class TestPrepareSearchReadsTheCaptchaItself:
+    def test_no_captcha_text_means_the_model_reads_the_image(self):
+        solver = FakeSolver("Q7ZK4")
+        s = _session([LIVE_HTML, PAGE_AFTER_DISTRICT, PAGE_AFTER_OFFICE,
+                      FakeImageResponse(CAPTCHA_PNG)], captcha_solver=solver)
+        s.open()
+        s.villages("12", "1")
+        out = _prepare(s, captcha_text=None)
+        assert out["blocked_on"] == "otp", out["error"]
+        assert out["fields"][P + "CaptchaControl1"] == "Q7ZK4"
+        assert solver.seen == [CAPTCHA_PNG]
+
+    def test_an_explicit_answer_is_used_unchanged_and_the_solver_is_left_alone(self):
+        solver = FakeSolver("Q7ZK4")
+        s = _session([LIVE_HTML, PAGE_AFTER_DISTRICT, PAGE_AFTER_OFFICE],
+                     captcha_solver=solver)
+        s.open()
+        s.villages("12", "1")
+        before = len(s.transport.calls)
+        out = _prepare(s, captcha_text="AB12X")
+        assert out["fields"][P + "CaptchaControl1"] == "AB12X"
+        assert solver.seen == [], "it re-read a captcha the caller had already given"
+        assert len(s.transport.calls) == before, "an explicit answer must cost no request"
+
+    def test_a_refused_search_never_burns_a_captcha_read(self):
+        """The dropdown checks come first. A refusal must not cost a request."""
+        solver = FakeSolver("Q7ZK4")
+        s = _session([LIVE_HTML, PAGE_AFTER_DISTRICT, PAGE_AFTER_OFFICE],
+                     captcha_solver=solver)
+        s.open()
+        s.villages("12", "1")
+        before = len(s.transport.calls)
+        out = _prepare(s, district="999", captcha_text=None)
+        assert out["success"] is False
+        assert out["blocked_on"] != "otp"
+        assert solver.seen == []
+        assert len(s.transport.calls) == before
+
+    def test_an_empty_string_is_still_refused_not_solved(self):
+        """None means 'read it for me'. "" means the caller sent nothing."""
+        solver = FakeSolver("Q7ZK4")
+        s = _session([LIVE_HTML, PAGE_AFTER_DISTRICT, PAGE_AFTER_OFFICE],
+                     captcha_solver=solver)
+        s.open()
+        s.villages("12", "1")
+        out = _prepare(s, captcha_text="")
+        assert out["success"] is False
+        assert "captcha" in out["error"].lower()
+        assert solver.seen == []
 
 
 # --------------------------------------------------------------------------

@@ -48,28 +48,46 @@ things to work around.
 It holds the page contract, the block discipline, and the tagging that tells you
 which claims have actually been checked and which are still recon.
 
-## The command surface is landing separately
+## Run it
 
-The Garvi client lives in `gujtsr.garvi` — an injectable transport plus an OTP
-seam that **refuses unless you tell it a human is at the handset**. It is landing
-separately from this skill, so this skill deliberately documents **no commands**:
-any invented here would fail. Run `python -m gujtsr --help` and use the
-subcommands that actually exist. Until one appears, describe the steps to the
-lawyer and do the portal work by hand if it is urgent.
+```bash
+cd $GUJTSR
+.venv/bin/python -m gujtsr garvi \
+    --district 12 --office 1 --village 7 \
+    --property-type 1 --search-type 3 --number "44" \
+    --applicant-name "Nav Law Associates LLP" --mobile "9XXXXXXXXX"
+```
 
-What the run looks like, in steps:
+These are **Garvi's own numeric codes**, not names and not AnyRoR's — Garvi's second
+level is the Sub-Registrar Office, AnyRoR's is the taluka, and `anyror_hierarchy.json`
+cannot fill these dropdowns. Read the codes off the page's own dropdowns
+(`gujtsr.garvi.districts()`, `.offices(d)`, `.villages(d, o)`); `--property-type 1` is
+agriculture and `--search-type 3` is survey number.
 
-1. Fetch the search page, keep `__VIEWSTATE` and `__VIEWSTATEGENERATOR`.
-2. Select the **district** — a postback that populates the Sub-Registrar office
-   list.
-3. Select the **Sub-Registrar office** — a postback that populates the Index2
-   village list. Note this is an *SRO*, not a taluka: `anyror_hierarchy.json`
-   cannot fill these dropdowns.
-4. Select the **village**, the property/land type (AGRICULTURE for farm land),
-   search type **Survey Number**, and enter the number.
-5. Solve the 5-character captcha.
-6. **Stop.** Ask a person before the OTP.
-7. With the code, submit and read the result grid.
+**You do not pass a captcha.** The image is fetched from the page in hand and read by
+Opus through the `claude` CLI on this machine's subscription — the same zero-credit
+path the other skills use. There is no flag to type one in, and none to send an OTP.
+
+The command prints JSON and **exits 1**, because no search ran:
+
+```json
+{"prepared": true, "sent": false, "blocked_on": "otp",
+ "error": "The search request is fully prepared but has NOT been sent...",
+ "warning": "Garvi's index is keyed on the survey number AS WRITTEN ON THE DEED..."}
+```
+
+`blocked_on` tells you where it stopped and what to do. Every value the tool can
+return is here — if you see one that is not, the tool changed and this list did not:
+
+| `blocked_on` | Meaning, and what to do |
+|---|---|
+| `otp` | **Everything worked.** Garvi needs an SMS code; a person at the handset finishes it. |
+| `cascade` | A dropdown is still empty — the cascade was not driven. Select district, then office, then village, in that order. |
+| `selection` | A district / office / village code is **not offered by the page in hand**. It refuses to guess. Re-read the dropdowns; do not retype a code from memory. |
+| `input` | No survey number was given. |
+| `captcha` | No captcha answer, or the model could not read the image / refused an ambiguous read. Re-run for a fresh image — **never invent an answer**, a wrong one spends a request against the firm's single office IP. |
+| `portal` | A block. **Stop.** Do not retry — retrying deepens it for everyone. |
+| `validation` | Internal: an OTP was offered with no prepared search behind it. |
 
 ## What you need from the lawyer
 

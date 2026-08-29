@@ -211,6 +211,14 @@ The healthy landing page is ~75 KB with `cmbDistrict` carrying 35 options.
 
 ## Still unsettled, and both matter
 
+**Is the captcha field case-sensitive?** `CaptchaControl1` is `maxlength=5`, and the
+model is prompted for uppercase, but nothing here has submitted one — the search
+cannot complete without an OTP, so this cannot be settled yet. The reading is passed
+through **exactly as read**, not upper-cased, deliberately: if Garvi ignores case the
+choice is free; if it is case-sensitive and the image is genuinely mixed-case, forcing
+uppercase would break a correct read. Faithful is never worse than normalised here.
+Cost of being wrong is one wasted request, not a bad report. **UNVERIFIED.**
+
 - **How far back does the online index reach?** Reported as 2001, never reproduced;
   the initial page ships no year control at all. If 2001 really is the floor, the
   1960s–90s Kutch deeds this firm works with are unverifiable online and much of
