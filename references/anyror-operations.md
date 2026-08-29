@@ -1,5 +1,9 @@
 # Operating AnyRoR without getting blocked
 
+> **Runtime:** this repo requires **Python >= 3.11** — see `references/runtime.md`.
+> Bare `python3` on the office Mac is 3.9.6; run tests with an explicit 3.11 path.
+
+
 Everything here was learned by losing access. AnyRoR blocks by **source IP**, the
 firm has **one** residential proxy exit, and a block affects everyone at once.
 Read this before changing anything about how requests are made.

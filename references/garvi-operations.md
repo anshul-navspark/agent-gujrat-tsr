@@ -1,5 +1,9 @@
 # Operating Garvi without paying, and without ringing someone's phone
 
+> **Runtime:** this repo requires **Python >= 3.11** — see `references/runtime.md`.
+> Bare `python3` on the office Mac is 3.9.6; run tests with an explicit 3.11 path.
+
+
 This is about the **free** public property search on `garvi.gujarat.gov.in`
 (`frmPropertySearch_New.aspx`) — the Sub-Registrar side, registered deeds. It is
 the companion to `anyror-operations.md`, which covers the revenue side. Read this

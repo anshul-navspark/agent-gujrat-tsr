@@ -12,6 +12,29 @@ fail() { echo "SETUP FAILED: $*" >&2; exit 1; }
 
 [ -n "${GITHUB_TOKEN:-}" ] || fail "GITHUB_TOKEN is not set. The engine repo is private; ask an admin to add a GitHub read credential to this scope's keychain."
 
+# Choose the interpreter — never inherit it. A script gets no interactive shell
+# alias, and an unversioned `python3` is /usr/bin/python3 == 3.9.6 on a stock
+# macOS. Docker (`FROM python:3.11-slim`) and CI (`python-version: "3.11"`) are
+# both on 3.11, so an older sandbox installs a different resolved dependency set
+# and behaves differently — and 3.9 went end-of-life in October 2025. Newest
+# first, explicit names before the unversioned fallbacks.
+MIN_PY="3.11"
+
+py_meets_floor() { "$1" -c 'import sys; sys.exit(0 if sys.version_info[:2] >= (3, 11) else 1)' >/dev/null 2>&1; }
+py_version() { "$1" -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])' 2>/dev/null || echo "unusable"; }
+
+PYTHON_BIN=""
+PY_REJECTED=""
+for candidate in python3.16 python3.15 python3.14 python3.13 python3.12 python3.11 python3 python; do
+  command -v "$candidate" >/dev/null 2>&1 || continue
+  if py_meets_floor "$candidate"; then
+    PYTHON_BIN="$(command -v "$candidate")"
+    break
+  fi
+  PY_REJECTED="${PY_REJECTED}${PY_REJECTED:+, }$candidate is $(py_version "$candidate")"
+done
+[ -n "$PYTHON_BIN" ] || fail "no Python >= $MIN_PY found on PATH (${PY_REJECTED:-nothing named python3.11+, python3 or python is installed}). Python >= $MIN_PY is required: Docker (python:3.11-slim) and CI already build on 3.11, and 3.9 is end-of-life. Install it (\`brew install python@3.11\` / \`apt-get install -y python3.11\`) and re-run."
+
 if [ -d "$REPO_DIR/.git" ]; then
   git -C "$REPO_DIR" fetch --quiet origin main && git -C "$REPO_DIR" reset --quiet --hard origin/main
 else
@@ -23,8 +46,16 @@ fi
 # in the zero-credit path needs it, but the app expects the file to be absent
 # rather than empty, so we do not create one.
 
+# A sandbox is durable, so a .venv already built below the floor would stay broken
+# forever. Detect it and rebuild rather than silently reusing it.
+if [ -d "$REPO_DIR/.venv" ] && ! py_meets_floor "$REPO_DIR/.venv/bin/python"; then
+  echo "REBUILDING $REPO_DIR/.venv: its interpreter is $(py_version "$REPO_DIR/.venv/bin/python"), below the required $MIN_PY."
+  rm -rf "$REPO_DIR/.venv"
+fi
+
 if [ ! -d "$REPO_DIR/.venv" ]; then
-  python3 -m venv "$REPO_DIR/.venv"
+  echo "Creating $REPO_DIR/.venv with $PYTHON_BIN ($(py_version "$PYTHON_BIN"))."
+  "$PYTHON_BIN" -m venv "$REPO_DIR/.venv"
 fi
 "$REPO_DIR/.venv/bin/pip" install --quiet --upgrade pip
 # The lean set: 13 packages / ~111 MB, versus ~623 MB for the full

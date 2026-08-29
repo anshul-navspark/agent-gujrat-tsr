@@ -9,10 +9,10 @@ Gujarat TSR Agent automates Title Search Report generation from Gujarat AnyRoR (
 ## Commands
 
 ```bash
-# Run tests
-pytest
-pytest --cov=. --cov-report=html
-pytest -m integration            # integration tests only
+# Run tests (Python >= 3.11 — use the absolute path, see Python Version below)
+/opt/homebrew/bin/python3.11 -m pytest -q -m "not integration"
+/opt/homebrew/bin/python3.11 -m pytest --cov=. --cov-report=html
+/opt/homebrew/bin/python3.11 -m pytest -m integration            # integration tests only
 
 # Run API server
 uvicorn api.server:app --host 0.0.0.0 --port 8080
@@ -24,6 +24,23 @@ streamlit run app/streamlit_app_cloud.py
 docker build -t agent-gujrat-tsr .
 docker run -e GEMINI_API_KEY=xxx -p 8080:8080 agent-gujrat-tsr
 ```
+
+## Python Version
+
+**The floor is Python 3.11.** `Dockerfile` is `FROM python:3.11-slim`, CI pins
+`python-version: "3.11"`, and 3.9 reached end of life in October 2025 — a 3.9 sandbox
+installs a different resolved dependency set from the one that is actually tested, and
+silently blocks any 3.10+ syntax. Enforced in two places: `gujtsr/__init__.py` raises a
+`RuntimeError` below the floor, and `skills/*/scripts/ensure_env.sh` *selects* the newest
+interpreter >= 3.11 instead of inheriting one (it also rebuilds a `.venv` already built
+below the floor, because QM sandboxes are durable and would otherwise stay broken
+forever). The four `ensure_env.sh` are byte-identical on purpose — fix one, fix all four.
+
+**The trap that costs the time:** bare `python3` on this Mac is `/usr/bin/python3` ==
+**3.9.6**. 3.11 is only reachable as `/opt/homebrew/bin/python3.11` or through an
+interactive shell *alias*, and neither a script nor a command prefixed with `timeout`,
+`env` or `PATH=...` inherits that alias. So `timeout python3 -m pytest` runs the suite on
+3.9 while looking identical to a 3.11 run. Always spell out the absolute path.
 
 ## Architecture
 
