@@ -26,6 +26,7 @@ import subprocess
 import pytest
 
 from anyror.captcha_solver import (
+    ALNUM_PROMPT_TEMPLATE,
     ALNUM_5,
     DEFAULT_EFFORT,
     DEFAULT_MODEL,
@@ -89,6 +90,12 @@ def never_shell_out(monkeypatch):
             "runner=FakeRun(...) or patch anyror.captcha_solver.subprocess.run")
 
     monkeypatch.setattr("anyror.captcha_solver.subprocess.run", forbidden)
+
+
+@pytest.fixture
+def solver_alnum():
+    """An alnum solver for extraction-only tests; never invokes a runner."""
+    return CaptchaSolver(shape=ALNUM_5, runner=FakeRun(stdout="unused"))
 
 
 @pytest.fixture
@@ -293,6 +300,7 @@ class TestTempFile:
 # =====================================================================
 
 ALNUM_ANSWER = "K7Q2M"  # letters AND digits: digit-stripping would mangle it
+MIXED_CASE_ANSWER = "k7Qm2"  # the SAME reading, as the portal actually shows it
 
 
 def _solver(shape, runner):
@@ -333,12 +341,47 @@ class TestAlnumExtraction:
 
     def test_lowercase_exact_reply_is_returned_verbatim(self):
         """An exact full-match reply IS the answer, whitespace aside — and it
-        is returned as read, not case-normalised (ported behaviour; the
-        uppercase-only rule applies to prose candidates, not to a reply that is
-        nothing but the answer). Only the surrounding whitespace is stripped:
-        without that strip this reply has no uppercase run to fall back on."""
+        is returned as read, never case-normalised. Only the surrounding
+        whitespace is stripped."""
         fake = FakeRun(stdout="\n ab12x \n")
         assert _solver(ALNUM_5, fake).solve(IMAGE) == "ab12x"
+
+    def test_mixed_case_exact_reply_is_returned_verbatim(self):
+        """HEADLINE REQUIREMENT: the captcha is CASE SENSITIVE.
+
+        `k7Qm2` and `K7QM2` are different answers as far as the portal is
+        concerned. An exact full-match reply must come back byte-for-byte as
+        the model read it — no `.upper()`, no `.lower()`, no normalisation of
+        any kind. If this test ever goes red, every mixed-case Garvi captcha
+        is being submitted wrong.
+        """
+        fake = FakeRun(stdout=MIXED_CASE_ANSWER)
+        got = _solver(ALNUM_5, fake).solve(IMAGE)
+        assert got == MIXED_CASE_ANSWER
+        # Spelled out so a case-folding regression cannot hide behind `==`.
+        assert got == "k7Qm2"
+        assert got != MIXED_CASE_ANSWER.upper()   # "K7QM2"
+        assert got != MIXED_CASE_ANSWER.lower()   # "k7qm2"
+
+    @pytest.mark.parametrize("func", [CaptchaSolver._extract,
+                                      CaptchaSolver._extract_alnum])
+    def test_reading_path_contains_no_case_folding(self, func):
+        """Belt and braces for the headline requirement: a `.upper()` or
+        `.lower()` anywhere on the path from CLI output to returned answer
+        destroys a case-sensitive reading, so no case-folding call may appear
+        there at all.
+
+        Checked over the AST rather than the raw text, so the extractor's own
+        docstring is free to name `.upper()` in order to forbid it."""
+        import ast
+        import textwrap
+
+        tree = ast.parse(textwrap.dedent(inspect.getsource(func)))
+        folding = {"upper", "lower", "casefold", "swapcase", "title",
+                   "capitalize"}
+        found = [n.attr for n in ast.walk(tree)
+                 if isinstance(n, ast.Attribute) and n.attr in folding]
+        assert found == [], f"case-folding call(s) {found} in {func.__name__}"
 
     def test_letters_are_not_stripped_out(self):
         """THE regression this change exists for: the AnyRoR path runs
@@ -348,21 +391,73 @@ class TestAlnumExtraction:
         fake = FakeRun(stdout=ALNUM_ANSWER)
         assert _solver(ALNUM_5, fake).solve(IMAGE) == ALNUM_ANSWER
 
-    def test_prose_with_one_candidate_is_read(self):
+    def test_prose_with_one_candidate_is_refused(self):
+        """A prose reply is refused even when its only 5-character run IS the answer.
+
+        SECOND REQUIREMENT CHANGE, 2026-08-29. This briefly asserted the
+        opposite: the standalone rule was widened to mixed case so a reply like
+        this could be read. That widening turned the model's own REFUSAL into
+        an answer — "I cannot read the image." returned 'image' — so the
+        standalone rule is gone. Prose is only read when the model MARKS the
+        answer. The old behaviour is preserved below as a comment, not silently
+        dropped.
+
+        Superseded docstring:
+
+        REQUIREMENT CHANGE. This test used to carry a fixture whose answer was
+        uppercase (`K7Q2M`) surrounded by ordinary English words, and asserted
+        that the uppercase-only standalone rule picked it out. Now that case is
+        significant, the answer here is MIXED CASE and the standalone rule
+        spans `[A-Za-z0-9]` — which is exactly what the widening buys: before
+        it, this reply had NO candidate at all and the reader raised on an
+        answer it had in fact read correctly. The old fixture moved to
+        `test_prose_ambiguous_only_because_of_the_widening_raises`.
+        """
+        reply = ("Looking at it closely, the captcha is k7Qm2 and nothing "
+                 "else.")
+        with pytest.raises(CaptchaError, match="backticks"):
+            _solver(ALNUM_5, FakeRun(stdout=reply)).solve(IMAGE)
+
+    def test_prose_ambiguous_only_because_of_the_widening_raises(self):
+        """Widening the standalone rule to mixed case brings ordinary English
+        words back into contention, and this reply must RAISE, not pick.
+
+        "image", "shown", "which", "reads" and "right" are all 5-character
+        runs, so alongside `K7Q2M` the reader genuinely cannot tell which run
+        is the captcha without guessing. It should NOT guess: refusing costs
+        one re-read of a fresh image, while guessing costs a portal request
+        from the firm's single office exit IP and can push a wrong reading
+        into a search. A cheap failure beats an expensive wrong answer, so
+        raising is the right call even though the answer is sitting there in
+        the text.
+
+        This is the very reply `test_prose_with_one_candidate_is_read` used to
+        assert was readable, under the old uppercase-only rule.
+        """
         reply = ("I read the image carefully. The characters shown are K7Q2M, "
                  "which\nreads left to right. Tell me if you want another look.")
-        # The fixture must be able to fail: case-insensitively there are
-        # several 5-character runs ("image", "reads", "which", ...), so only
-        # the uppercase-or-digit rule makes this unambiguous.
-        loose = set(re.findall(r"(?<![A-Za-z0-9])([A-Za-z0-9]{5})(?![A-Za-z0-9])",
-                               reply))
-        assert len(loose) > 1
-        assert _solver(ALNUM_5, FakeRun(stdout=reply)).solve(IMAGE) == ALNUM_ANSWER
+        # Fixture fight: under the OLD rule this had exactly one candidate and
+        # was read successfully; the widening is what makes it ambiguous.
+        assert re.findall(
+            r"(?<![A-Za-z0-9])([A-Z0-9]{5})(?![A-Za-z0-9])",
+            reply) == [ALNUM_ANSWER]
+        with pytest.raises(CaptchaError, match="backticks"):
+            _solver(ALNUM_5, FakeRun(stdout=reply)).solve(IMAGE)
+
+    def test_emphasised_mixed_case_answer_is_returned_verbatim(self):
+        """Emphasis is the model pointing at its own conclusion, and the case
+        it pointed at is part of that conclusion — bold and backticks both."""
+        bold = "Squinting at the middle glyph, I make it **k7Qm2**."
+        assert (_solver(ALNUM_5, FakeRun(stdout=bold)).solve(IMAGE)
+                == MIXED_CASE_ANSWER)
+        ticked = "Squinting at the middle glyph, I make it `k7Qm2`."
+        assert (_solver(ALNUM_5, FakeRun(stdout=ticked)).solve(IMAGE)
+                == MIXED_CASE_ANSWER)
 
     def test_prose_with_two_candidates_raises_instead_of_picking(self):
         """A guess costs a portal request on a shared office exit IP."""
         reply = "It is either K7Q2M or K7Q2N — the third glyph is smudged."
-        with pytest.raises(CaptchaError, match="ambiguous"):
+        with pytest.raises(CaptchaError, match="backticks"):
             _solver(ALNUM_5, FakeRun(stdout=reply)).solve(IMAGE)
 
     def test_bold_answer_wins_over_other_uppercase_runs(self):
@@ -380,24 +475,61 @@ class TestAlnumExtraction:
 
     def test_two_different_bold_answers_raise(self):
         reply = "Could be **K7Q2M**, could be **K7Q2N**."
-        with pytest.raises(CaptchaError, match="ambiguous"):
+        with pytest.raises(CaptchaError, match="backticks"):
             _solver(ALNUM_5, FakeRun(stdout=reply)).solve(IMAGE)
 
     def test_same_candidate_twice_is_not_ambiguous(self):
-        """Repetition is the model agreeing with itself, not two readings."""
-        reply = "The captcha reads K7Q2M. To be clear: K7Q2M."
+        """Repetition is the model agreeing with itself, not two readings.
+
+        FIXTURE CHANGE (intent unchanged). The old reply was "The captcha
+        reads K7Q2M. To be clear: K7Q2M." — under the widened standalone rule
+        "reads" and "clear" are candidates too, so that reply now tests
+        ambiguity rather than deduplication and would have passed for the
+        wrong reason had it stayed green. The wording below carries no other
+        5-character run, so the only thing that can make this pass is the
+        `dict.fromkeys` dedupe.
+        """
+        reply = "Answer: `K7Q2M`. Repeating that for certainty: `K7Q2M`."
         assert reply.count(ALNUM_ANSWER) == 2
+        # Fixture fight: the answer is the ONLY 5-character run, twice over.
+        assert re.findall(
+            r"(?<![A-Za-z0-9])([A-Za-z0-9]{5})(?![A-Za-z0-9])",
+            reply) == [ALNUM_ANSWER, ALNUM_ANSWER]
         assert _solver(ALNUM_5, FakeRun(stdout=reply)).solve(IMAGE) == ALNUM_ANSWER
 
     def test_wrong_length_raises(self):
         with pytest.raises(CaptchaError, match="5-character"):
             _solver(ALNUM_5, FakeRun(stdout="K7Q2")).solve(IMAGE)
 
+    def test_error_quotes_the_reply_with_its_padding_stripped(self):
+        """The reply is stripped before it is parsed OR quoted, so the error
+        an operator reads names the reading and not its whitespace.
+
+        This also keeps `.strip()` pinned. The strip still matters for SUCCESS
+        — a padded but otherwise bare reply must full-match — but a wrong-length
+        reply like this one only proves the strip ran if the quoted text in the
+        error has no whitespace around it. Without this assertion nothing in the
+        file would notice the strip disappearing.
+        """
+        with pytest.raises(CaptchaError, match=r"answer: 'K7Q2'"):
+            _solver(ALNUM_5, FakeRun(stdout="\n  K7Q2  \n")).solve(IMAGE)
+
     def test_empty_output_raises(self):
         with pytest.raises(CaptchaError):
             _solver(ALNUM_5, FakeRun(stdout="")).solve(IMAGE)
 
     def test_refusal_prose_raises(self):
+        """NOTE — this test is green for a DIFFERENT reason than it used to be,
+        and it is a weaker guarantee than its name suggests.
+
+        Under the old uppercase-only rule it raised "no candidate": a refusal
+        contains no uppercase runs. Under the widened rule it raises
+        "ambiguous", because "image" and "sorry" are both 5-character runs.
+        Had this refusal happened to contain exactly ONE five-letter word, the
+        reader would now return that word as the captcha — see the report
+        accompanying this change; the safe fix is a prompt change (have the
+        model mark its answer when it adds prose) and is out of scope here.
+        """
         fake = FakeRun(stdout="I cannot make out this image, sorry.")
         with pytest.raises(CaptchaError):
             _solver(ALNUM_5, fake).solve(IMAGE)
@@ -444,19 +576,102 @@ class TestPromptFollowsShape:
         )
 
     def test_alnum_prompt(self):
+        """REQUIREMENT CHANGE: this test used to also assert
+        `"uppercase" in prompt.lower()`. That assertion encoded the old,
+        wrong requirement and now lives inverted in
+        `test_alnum_prompt_never_asks_for_uppercase`."""
         fake = FakeRun(stdout="AB12X")
         _solver(ALNUM_5, fake).solve(IMAGE)
         prompt = fake.cmd[-1]
         assert "5-character" in prompt
         assert "alphanumeric" in prompt.lower()
-        assert "uppercase" in prompt.lower()
         assert "6-digit" not in prompt
+
+    def test_alnum_prompt_never_asks_for_uppercase(self):
+        """The captcha is case sensitive, so asking the model to uppercase its
+        reading destroys the answer BEFORE extraction ever runs: shown `k7Qm2`,
+        a prompt that says "in UPPERCASE" gets `K7QM2` back and the true
+        reading is gone for good — no amount of care in `_extract_alnum` can
+        recover it. This is the assertion that protects the data itself."""
+        fake = FakeRun(stdout="AB12X")
+        _solver(ALNUM_5, fake).solve(IMAGE)
+        prompt = fake.cmd[-1].lower()
+        assert "uppercase" not in prompt
+        assert "upper-case" not in prompt
+        assert "upper case" not in prompt
+        assert "lowercase" not in prompt
+        assert "capital" not in prompt
+
+    def test_alnum_prompt_demands_the_exact_case_shown(self):
+        """Not asking for uppercase is not the same as asking for exact case:
+        left unsaid, a model may still tidy the reading. The prompt has to say
+        the case carries meaning."""
+        fake = FakeRun(stdout="AB12X")
+        _solver(ALNUM_5, fake).solve(IMAGE)
+        prompt = fake.cmd[-1]
+        assert "Case is significant" in prompt
+        assert "exactly as" in prompt
+        assert "preserving upper and lower case" in prompt
 
     def test_system_prompt_is_honest_for_both_shapes(self):
         """One system prompt serves both shapes, so it must not promise
         digits when the answer can contain letters."""
         import anyror.captcha_solver as mod
         assert "digit" not in mod.SYSTEM_PROMPT.lower()
+
+    def test_numeric_invocation_is_byte_for_byte_unchanged(self):
+        """NUMERIC_6 (AnyRoR) must be untouched by the case-sensitivity work.
+
+        Its 15/15 bake-off was measured under exactly these argv bytes. Note
+        the system prompt is SHARED with the alnum shape, so a "small" wording
+        fix there would silently change the AnyRoR call too — this pins it.
+        """
+        fake = FakeRun(stdout="483920")
+        CaptchaSolver(logger=logging.getLogger("test.captcha"),
+                      runner=fake).solve(IMAGE)
+        cmd = fake.cmd
+        path = _image_path_from(cmd)
+        assert cmd == [
+            "claude", "-p",
+            "--model", "claude-opus-5",
+            "--strict-mcp-config",
+            "--settings",
+            '{"effortLevel":"high","enabledPlugins":{},"autoMemoryEnabled":false,'
+            '"autoDreamEnabled":false,"promptSuggestionEnabled":false}',
+            "--allowedTools", "Read",
+            "--system-prompt",
+            "You are a CAPTCHA reader. Output ONLY the characters, nothing else.",
+            f"Read the image at {path} . It is a 6-digit numeric CAPTCHA. The "
+            "digits vary in colour, size and vertical position. Output exactly "
+            "the 6 digits, left to right, no spaces and no other text.",
+        ]
+
+    def test_numeric_extraction_still_strips_letters_of_either_case(self):
+        r"""The digits path is `re.sub(r"\D", "", raw)` and stays that way: the
+        case widening is confined to the alnum shape, where letters are part
+        of the answer."""
+        fake = FakeRun(stdout="Reading it as 4 8 3 9 2 0 (the aBc is noise).")
+        s = CaptchaSolver(logger=logging.getLogger("test.captcha"), runner=fake)
+        assert s.solve(IMAGE) == "483920"
+
+    def test_numeric_extraction_path_is_unchanged(self):
+        r"""Pinned as source text, not just behaviour: the brief is that the
+        AnyRoR path keeps the exact `re.sub(r"\D", "", raw)` it was measured
+        with, so a "harmless" rewrite to `[^A-Za-z0-9]` cannot slip in."""
+        src = inspect.getsource(CaptchaSolver._extract_digits)
+        assert r're.sub(r"\D", "", raw)' in src
+
+    def test_numeric_errors_are_unchanged(self):
+        """Same errors, same wording, on the shape whose bake-off we are
+        protecting."""
+        s = lambda out: CaptchaSolver(  # noqa: E731
+            logger=logging.getLogger("test.captcha"), runner=FakeRun(stdout=out))
+        with pytest.raises(CaptchaError, match="captcha read returned 5 digits, "
+                                               "expected 6"):
+            s("48392").solve(IMAGE)
+        with pytest.raises(CaptchaError, match="captcha read returned 0 digits, "
+                                               "expected 6"):
+            s("no digits here at all").solve(IMAGE)
 
 
 class TestAlnumInvocationGuards:
@@ -536,3 +751,56 @@ class TestRunnerInjection:
         assert kwargs["capture_output"] is True
         assert kwargs["text"] is True
         assert kwargs["timeout"] == DEFAULT_TIMEOUT
+
+
+# --------------------------------------------------------------------------
+# The refusal hazard. Widening the standalone rule to mixed case made ordinary
+# English words candidates, so the model's own REFUSAL came back as an answer:
+# "I cannot read the image." returned 'image'. Measured 2026-08-29.
+#
+# The fix is not a cleverer filter. It is to stop guessing at prose entirely and
+# make the model mark its answer, which it already does reliably for emphasis.
+# --------------------------------------------------------------------------
+
+
+class TestARefusalIsNeverReadAsAnAnswer:
+    @pytest.mark.parametrize("reply", [
+        "I cannot read the image.",
+        "Sorry, the picture is too blurred to read.",
+        "The image is unclear.",
+        "I am unable to make out these characters.",
+    ])
+    def test_a_refusal_never_returns_a_word_from_its_own_text(self, solver_alnum, reply):
+        """Each of these contains exactly one 5-character word, so the old
+        standalone rule returned it as the captcha. Submitting 'image' as an
+        answer spends a request and reads back as 'wrong captcha' when what
+        actually happened is that the model declined."""
+        with pytest.raises(CaptchaError):
+            solver_alnum._extract_alnum(reply)
+
+    def test_unmarked_prose_is_refused_even_when_a_human_can_see_the_answer(
+            self, solver_alnum):
+        """This is the cost of the fix, and it is the cheap side of the trade:
+        one re-read of a fresh image, instead of a wrong answer submitted."""
+        with pytest.raises(CaptchaError, match="mark"):
+            solver_alnum._extract_alnum(
+                "Looking at it closely, the captcha is k7Qm2 and nothing else.")
+
+    def test_a_marked_answer_in_prose_is_read(self, solver_alnum):
+        """Backticks are an explicit pointer from the model. Ordinary words in
+        a refusal never carry them, which is exactly why this is safe."""
+        assert solver_alnum._extract_alnum(
+            "I had to look carefully, but the captcha is `k7Qm2`.") == "k7Qm2"
+
+    def test_a_bold_answer_in_prose_is_read(self, solver_alnum):
+        assert solver_alnum._extract_alnum(
+            "The captcha reads **k7Qm2** as far as I can tell.") == "k7Qm2"
+
+    def test_a_bare_reply_is_still_the_normal_path(self, solver_alnum):
+        assert solver_alnum._extract_alnum("k7Qm2") == "k7Qm2"
+
+    def test_the_prompt_tells_the_model_how_to_mark_an_answer(self):
+        """If the prompt does not ask for backticks, refusing unmarked prose
+        just breaks the reader. The two changes only work together."""
+        prompt = ALNUM_PROMPT_TEMPLATE.format(path="/tmp/c.png", length=5)
+        assert "backtick" in prompt.lower()

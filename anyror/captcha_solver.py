@@ -10,6 +10,11 @@ prompt wording, same flags, same errors. Pass `shape=ALNUM_5` for Garvi, whose
 answer contains letters — which is why extraction is per-shape rather than the
 old `re.sub(r"\D", "", raw)` for everyone (see `_extract_alnum`).
 
+Garvi's captcha is CASE SENSITIVE. Nothing in this module may upper- or
+lower-case a reading, and the prompt must ask for the case as shown: the model
+folds case if you let it, and by the time the reply reaches `_extract_alnum`
+the true reading is already gone.
+
 AnyRoR's captcha is 6 numeric digits that vary in colour, size and vertical
 position. This module reads it by shelling out to the `claude` CLI in print
 mode (`claude -p`), which uses the machine's logged-in Claude Code subscription
@@ -89,8 +94,12 @@ ALNUM_5 = CaptchaShape(length=5, alphabet=ALNUM)
 # injected one" from a real injection — see the late binding there.
 _DEFAULT_RUNNER = subprocess.run
 
-# One system prompt serves both shapes, so it must not promise digits: on Garvi
-# the answer contains letters.
+# One system prompt serves both shapes, so it must not promise digits (on Garvi
+# the answer contains letters) and it must not mention case at all: it is sent
+# verbatim on the NUMERIC_6 call too, whose argv bytes are what the 15/15
+# bake-off measured. Case is a per-shape concern, so it is stated in
+# ALNUM_PROMPT_TEMPLATE and nowhere else. "the characters" is already
+# case-neutral — do not "clarify" it here.
 SYSTEM_PROMPT = "You are a CAPTCHA reader. Output ONLY the characters, nothing else."
 
 # For NUMERIC_6 this renders the exact prompt the 15/15 bake-off measured.
@@ -100,14 +109,24 @@ NUMERIC_PROMPT_TEMPLATE = (
     "left to right, no spaces and no other text."
 )
 
-# Garvi's captcha mixes letters and digits. Uppercase is asked for explicitly:
-# it is what the portal shows, and it is what makes prose replies parseable
-# (see _extract_alnum).
+# Garvi's captcha mixes letters and digits, and the portal checks it CASE
+# SENSITIVELY: k7Qm2 and K7QM2 are different answers. This prompt therefore
+# demands the case as shown and must never ask for uppercase.
+#
+# An earlier version did ask for uppercase, to keep prose replies easy to
+# parse (see _extract_alnum). That was the wrong trade: the case-folding
+# happens inside the MODEL, before any of our code runs, so a genuine k7Qm2
+# came back as K7QM2 and the true reading was gone for good. Extraction can be
+# made stricter after the fact; a destroyed reading cannot be recovered.
 ALNUM_PROMPT_TEMPLATE = (
     "Read the image at {path} . It is a {length}-character alphanumeric CAPTCHA "
     "(letters and digits). The characters vary in colour, size and vertical "
-    "position. Output exactly the {length} characters, left to right, in "
-    "UPPERCASE, no spaces and no other text."
+    "position. Case is significant: reproduce each character exactly as it "
+    "appears in the image, preserving upper and lower case, and never convert "
+    "between them. Output exactly the {length} characters, left to right, no "
+    "spaces and no other text. If you cannot read it, say so plainly and do not "
+    "guess. If you add any explanation at all, put the answer in backticks like "
+    "`Ab3xY`, so it can be told apart from the words around it."
 )
 
 PROMPT_TEMPLATES = {
@@ -212,14 +231,28 @@ class CaptchaSolver:
         * an exact full-match reply is the answer;
         * an answer the model emphasised (**ABC12** or `ABC12`) is the model
           pointing at its own conclusion, and counts when it is unambiguous;
-        * otherwise, standalone UPPERCASE-or-digit runs of the right length.
-          Uppercase-only matters: the prompt asks for uppercase, and ordinary
-          lowercase words of the right length ("reads", "image") would
-          otherwise look like candidates and make every prose reply ambiguous.
+        * otherwise, standalone letter-or-digit runs of the right length, in
+          EITHER case.
 
-        More than one distinct candidate raises rather than picking. A guess is
-        not free: it costs a portal request against a shared office exit IP,
-        and on AnyRoR a whole fresh session.
+        Every branch returns the reply VERBATIM. The captcha is case
+        sensitive, so `.upper()` here would be the same data loss the prompt
+        used to cause — see ALNUM_PROMPT_TEMPLATE.
+
+        The standalone rule used to be uppercase-only, which conveniently
+        excluded ordinary English words of the right length ("reads",
+        "image", "which"). Now that case carries meaning that filter is no
+        longer available: a real lowercase or mixed-case answer sitting in a
+        prose reply has to be visible to this rule, or the reader raises "no
+        candidate" on an answer it read correctly. The price is that more
+        prose replies are AMBIGUOUS.
+
+        Ambiguity raises; it never picks. That is deliberate and must stay.
+        A refusal costs one re-read of a fresh image. A wrong answer costs a
+        request against the firm's single office exit IP, on AnyRoR a whole
+        fresh session, and can put a wrong reading into a search. Do not add
+        a tie-breaker that "resolves" ambiguity — preferring the candidate
+        containing a digit, or filtering out dictionary words — those trade a
+        cheap failure for an expensive one.
         """
         n = self.shape.length
         reply = (raw or "").strip()
@@ -233,19 +266,11 @@ class CaptchaSolver:
             if len(set(marked)) == 1:
                 return marked[0]
 
-        standalone = re.findall(
-            r"(?<![A-Za-z0-9])([A-Z0-9]{%d})(?![A-Za-z0-9])" % n, reply)
-        unique = list(dict.fromkeys(standalone))
-        if not unique:
-            raise CaptchaError(
-                f"no {n}-character candidate in the captcha read: "
-                f"{reply[:200]!r}")
-        if len(unique) > 1:
-            raise CaptchaError(
-                f"ambiguous captcha read — {len(unique)} candidates "
-                f"{unique[:5]} in {reply[:200]!r}; re-read a fresh image "
-                f"rather than submitting one of them")
-        return unique[0]
+        raise CaptchaError(
+            f"the reply is not a bare {n}-character reading and does not mark "
+            f"one in backticks, so there is nothing here that can be trusted "
+            f"as the answer: {reply[:200]!r}. Re-read a fresh image."
+        )
 
     def solve(self, image_data):
         """Recognize the CAPTCHA in `image_data`.
