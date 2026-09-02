@@ -98,6 +98,25 @@ def _match_option(opts, wanted_ascii, wanted_guj=None):
     return None, None
 
 
+class WAFBlocked(Exception):
+    """AnyRoR's WAF answered. STOP -- never retried.
+
+    This is deliberately not a RuntimeError. `fetch_record_html` retries the
+    whole walk on RuntimeError, which is right for a rejected captcha and
+    catastrophic here: each attempt is seven requests, so a block that should
+    cost one walk cost three, from the single office IP that is already blocked.
+    Three full sessions in about six minutes tripped the WAF on 2026-08-21, and
+    a browser-shaped client drew an Attack ID that burned the source IP on
+    2026-07-31. Retrying into a block is how both happened.
+    """
+
+
+class CaptchaRejected(RuntimeError):
+    """AnyRoR did not accept the reading. A FRESH walk is the correct response:
+    the image is spent, and re-reading it at temperature zero reproduces the
+    same wrong answer."""
+
+
 class AnyRoRHttpFetcher:
     def __init__(self, logger=None):
         self.log = logger or logging.getLogger("anyror.http_fetch")
@@ -127,7 +146,7 @@ class AnyRoRHttpFetcher:
         r = s.post(URL, data=data, timeout=STEP_TIMEOUT,
                    headers={'Content-Type': 'application/x-www-form-urlencoded'})
         if 'Web Page Blocked' in r.text or 'Attack ID' in r.text:
-            raise RuntimeError("WAF block page returned on postback")
+            raise WAFBlocked("AnyRoR returned a WAF block page on a postback. Do not retry — the firm reaches this portal from one office IP and a retry deepens the block for everyone. Report it.")
         return r.text
 
     def _captcha_from(self, html):
@@ -307,15 +326,20 @@ class AnyRoRHttpFetcher:
                            headers={'Content-Type': 'application/x-www-form-urlencoded'})
                 out = r.text
                 if 'Web Page Blocked' in out or 'Attack ID' in out:
-                    raise RuntimeError("WAF block on final submit")
+                    raise WAFBlocked("AnyRoR returned a WAF block page on the final submit. Do not retry — the firm reaches this portal from one office IP and a retry deepens the block for everyone. Report it.")
                 # AnyRoR's wrong-captcha alert: "Capcha is not matched. કેપ્ચા
                 # બરાબર નથી ફરીથી ટાઇપ કરો." -> retry with a fresh captcha.
                 if ('Capcha is not matched' in out or 'બરાબર નથી' in out
                         or 'not matched' in out.lower()):
-                    raise RuntimeError("captcha rejected by AnyRoR (fresh retry)")
+                    raise CaptchaRejected("captcha rejected by AnyRoR — retrying with a fresh walk")
                 # Captcha accepted -> this is the record response.
                 return out, {'taluka': ttext, 'village': vtext, 'survey': stext,
                              'captcha': answer}
+            except WAFBlocked:
+                # Never retried. Every other failure here earns a fresh walk;
+                # this one earns a stop, because the next walk is seven more
+                # requests into a WAF that has already said no.
+                raise
             except Exception as e:
                 last_err = e
                 self.log.warning(f"[http_fetch] attempt {attempt} failed: {e}")
@@ -407,8 +431,40 @@ class AnyRoRHttpFetcher:
                 district_name, taluka_name, taluka_name,
                 village_name, village_name, str(survey_block_number).strip())
             self._render_pdf(record_html, output_path)
+
+            # Record what was fetched beside it. The old check was
+            # "the file is over 1000 bytes", which a WAF block page passes
+            # comfortably, and nothing noticed AnyRoR re-serving the previous
+            # survey's record after a failed postback.
+            entry = None
+            try:
+                from gujtsr.manifest import Manifest
+                manifest_path = os.path.join(os.path.dirname(output_path) or '.',
+                                             'manifest.json')
+                manifest = Manifest(manifest_path, survey=str(survey_block_number),
+                                    village={'district': district_name,
+                                             'taluka': taluka_name,
+                                             'village': village_name})
+                entry = manifest.record('7/12', output_path, portal='anyror',
+                                        lane='anyror_record', **meta)
+                manifest.save()
+            except Exception as manifest_error:
+                # A manifest problem must not discard a record that was fetched
+                # correctly -- but it is reported rather than swallowed, because
+                # a missing checksum is exactly what nobody notices.
+                self.log.warning(f"[http_fetch] manifest not written: {manifest_error}")
+
             self.log.info(f"[http_fetch] saved PDF -> {output_path} ({meta})")
             return {'success': True, 'output_path': output_path,
+                    'manifest': entry,
                     'message': 'Land record fetched via http_fetch'}
+        except WAFBlocked as e:
+            # Kept distinct from an ordinary failure all the way to the caller:
+            # the correct response is to stop fetching entirely, not to try the
+            # next survey number.
+            return {'success': False, 'blocked_on': 'waf', 'error': str(e)}
+        except CaptchaRejected as e:
+            return {'success': False, 'blocked_on': 'captcha', 'error': str(e)}
         except Exception as e:
-            return {'success': False, 'error': f"http_fetch failed: {e}"}
+            return {'success': False, 'blocked_on': 'portal',
+                    'error': f"http_fetch failed: {e}"}
