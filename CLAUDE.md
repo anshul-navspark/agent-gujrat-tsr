@@ -123,3 +123,7 @@ Project journal is at `docs/journal.md`. **At session start, read it.** Then:
 3. **During the session**, append bullets to "Active Draft" as milestones are hit (commits, abandoned approaches, surprising results, key decisions).
 
 Goal: avoid repeating mistakes, document approach so future sessions know what's coming, suggest improvements based on past patterns. Never auto-compact — monthly compactification is PR-based and user-reviewed.
+
+
+## TSR knowledge home
+Lawyer corrections and TSR lessons for Gujarat live in `docs/TSR_LESSONS.md`. Read it before drafting; record every new correction there and commit.
